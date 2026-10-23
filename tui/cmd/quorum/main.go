@@ -21,9 +21,13 @@ func main() {
 	engine := flag.String("engine", os.Getenv("QUORUM_ENGINE"), "engine command (default: auto-detected)")
 	flag.Parse()
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "quorum needs an interactive terminal; run it directly in a terminal rather than piping or redirecting.")
-		os.Exit(2)
+	// The UI needs a real terminal. Without one (piped, CI, or an editor's "run" box) say how to
+	// start it and succeed, so wrappers like `pnpm tui` do not report a failure for a non-error.
+	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Println("Quorum is an interactive terminal app and needs a real terminal.")
+		fmt.Println("Open a terminal window and run:  pnpm tui   (or  pnpm tui:mock  for scripted agents)")
+		fmt.Println("For a non-interactive run:       pnpm -C engine exec tsx src/cli.ts run --topic \"...\"")
+		return
 	}
 
 	dir := *repo
