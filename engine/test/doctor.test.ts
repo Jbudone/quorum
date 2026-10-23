@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadPreset } from "../src/config.js";
-import { doctor, probe, readHealth, resolveAvailable, usableClis, writeHealth } from "../src/doctor.js";
+import { doctor, installedClis, probe, readHealth, resolveAvailable, usableClis, writeHealth } from "../src/doctor.js";
 import { MockTransport } from "../src/transports/mock.js";
 import type { AgentTransport } from "../src/transports/types.js";
 
@@ -32,6 +32,13 @@ describe("probe", () => {
       },
     };
     expect((await probe(hang, 20)).error).toMatch(/timed out/);
+  });
+});
+
+describe("installedClis", () => {
+  it("skips the retired gemini CLI when agy is installed, but keeps it otherwise", () => {
+    expect(installedClis(() => true)).toEqual(["claude", "codex", "agy", "opencode"]);
+    expect(installedClis((b) => b === "gemini" || b === "claude")).toEqual(["claude", "gemini"]);
   });
 });
 

@@ -22,7 +22,10 @@ export const defaultHealthPath = (): string =>
   join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "quorum", "health.json");
 
 export function installedClis(which = (bin: string) => spawnSync("which", [bin]).status === 0): CliName[] {
-  return REAL_CLIS.filter((c) => which(c));
+  const found = REAL_CLIS.filter((c) => which(c));
+  // Gemini CLI was replaced by agy (Antigravity); it only still works for enterprise licenses, so
+  // when agy is present, probing it just reports a failure nobody can act on.
+  return found.includes("agy") ? found.filter((c) => c !== "gemini") : found;
 }
 
 /** Sends one tiny read-only turn through a transport; healthy only if it answers cleanly. */

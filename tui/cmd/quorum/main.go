@@ -19,6 +19,11 @@ func main() {
 	engine := flag.String("engine", os.Getenv("QUORUM_ENGINE"), "engine command (default: auto-detected)")
 	flag.Parse()
 
+	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		fmt.Fprintln(os.Stderr, "quorum needs an interactive terminal; run it directly in a terminal rather than piping or redirecting.")
+		os.Exit(2)
+	}
+
 	dir := *repo
 	if dir == "" {
 		dir, _ = os.Getwd()
