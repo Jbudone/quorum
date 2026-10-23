@@ -8,13 +8,16 @@ import type { AgentTransport } from "./transports/index.js";
 /** Events the engine emits to whoever drives it (RPC server, headless runner, tests). */
 export type EngineEvent =
   | { event: "round.start"; data: { round: number } }
-  | { event: "turn.start"; data: { round: number; agent: string } }
+  | { event: "turn.start"; data: { round: number; agent: string; artifact?: "plan" | "chair-report" } }
   | { event: "turn.delta"; data: { agent: string; delta: string } }
   | { event: "turn.tool"; data: { agent: string; name: string } }
   | { event: "turn.done"; data: { round: number; agent: string; text: string } }
   | { event: "usage"; data: { agent: string; quotaUtilization?: number; rateLimited?: boolean } }
   | { event: "plan.updated"; data: { round: number; text: string } }
-  | { event: "chair.summary"; data: { round: number; summary: string; converged: boolean } }
+  | {
+      event: "chair.summary";
+      data: { round: number; summary: string; converged: boolean; dissent: string; questions: string };
+    }
   | { event: "round.done"; data: { round: number } }
   | { event: "awaiting_human"; data: { round: number; finished: boolean } }
   | { event: "error"; data: { agent?: string; message: string } };
@@ -140,7 +143,7 @@ export class Engine {
     if (!persona) throw new Error(`unknown agent "${turn.agent}"`);
     const transport = this.o.transportFor(turn.agent);
     const prompt = typeof turn.prompt === "function" ? turn.prompt(this.roundOutputs) : turn.prompt;
-    this.emit({ event: "turn.start", data: { round, agent: turn.agent } });
+    this.emit({ event: "turn.start", data: { round, agent: turn.agent, artifact: turn.artifact } });
     let text = "";
     for await (const e of transport.send(prompt, {
       cwd: this.o.repo,
@@ -193,7 +196,10 @@ export class Engine {
       }
       this.session.write("open-questions.md", /^none\.?$/i.test(r.questions) ? "" : r.questions);
       this.converged = r.converged;
-      this.emit({ event: "chair.summary", data: { round, summary: r.summary, converged: r.converged } });
+      this.emit({
+        event: "chair.summary",
+        data: { round, summary: r.summary, converged: r.converged, dissent: r.dissent, questions: r.questions },
+      });
     }
   }
 }

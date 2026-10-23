@@ -1,17 +1,18 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { loadPreset, type CliName, type CouncilConfig } from "../config.js";
+import { listPresets, loadPreset, mockify, type CliName, type CouncilConfig } from "../config.js";
 import { doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "../doctor.js";
 import { Engine, type TransportFor } from "../engine.js";
 import { createTransport } from "../transports/index.js";
+import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
 
 /**
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
  * {id, result|error} for requests, and {event, data} for engine events (no id).
  *
- * Methods: session.start {preset, topic, repo, rounds?, protocol?, pause?}, session.continue {stop?}, session.steer {text},
- * session.interject {to, text}, session.abort, doctor.
+ * Methods: session.start {preset, topic, repo, rounds?, protocol?, pause?, mock?}, session.continue {stop?}, session.steer {text},
+ * session.interject {to, text}, session.abort, presets.list, doctor.
  */
 export interface RpcOptions {
   /** Override transport creation (tests, playground). */
@@ -30,6 +31,14 @@ const defaultTransportFor =
     return createTransport({ id: agentId, cli: cli.cli, model: cli.model });
   };
 
+/** Scripted, role-aware mock agents; the persona file name picks each agent's voice. */
+function mockTransportFor(config: CouncilConfig, _assetsDir?: string): TransportFor {
+  return (agentId) => {
+    const spec = config.agents.find((a) => a.id === agentId);
+    return scriptedMock(agentId, spec?.persona ?? "chair");
+  };
+}
+
 export function serve(input: Readable, output: Writable, opts: RpcOptions = {}): Promise<void> {
   const write = (msg: unknown) => output.write(JSON.stringify(msg) + "\n");
   let engine: Engine | undefined;
@@ -44,10 +53,14 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
 
   // Long operations run in the background; their progress arrives as events.
   const background = (fn: () => Promise<unknown>) => {
-    running = running.then(fn).then(
-      () => {},
-      (e) => write({ event: "error", data: { message: e instanceof Error ? e.message : String(e) } }),
-    );
+    running = running
+      .then(fn)
+      .then(
+        () => {},
+        (e) => write({ event: "error", data: { message: e instanceof Error ? e.message : String(e) } }),
+      )
+      // Tells the client the engine is free to take the next request.
+      .then(() => write({ event: "idle", data: {} }));
   };
 
   async function handle(method: string, p: any): Promise<unknown> {
@@ -55,8 +68,10 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "session.start": {
         let config = loadPreset(String(p.preset), opts.assetsDir);
         let substitutions: unknown[] = [];
-        // Injected transports (tests, playground) bypass real-CLI resolution.
-        if (!opts.transportFor) {
+        const mock = Boolean(p.mock);
+        if (mock) config = mockify(config);
+        // Injected transports (tests, playground) and mock sessions bypass real-CLI resolution.
+        else if (!opts.transportFor) {
           const usable = (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
           ({ config, substitutions } = resolveAvailable(config, usable));
         }
@@ -67,14 +82,21 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           config,
           topic: String(p.topic),
           repo: String(p.repo),
-          transportFor: (opts.transportFor ?? defaultTransportFor)(config),
+          transportFor: mock ? mockTransportFor(config, opts.assetsDir) : (opts.transportFor ?? defaultTransportFor)(config),
           assetsDir: opts.assetsDir,
         });
         engine.on((e) => write(e));
         run = await councilWorkflow(engine).createRun();
         started = false;
-        return { sessionId: engine.session.id, dir: engine.session.dir, agents: config.agents.map((a) => a.id), substitutions };
+        return { sessionId: engine.session.id, dir: engine.session.dir, agents: config.agents.map((a) => a.id),
+          substitutions,
+          rounds: config.rounds,
+          protocol: config.protocol,
+          pause: config.pause,
+        };
       }
+      case "presets.list":
+        return listPresets(opts.assetsDir);
       case "doctor": {
         // Probes spend a little quota (one tiny turn per CLI), so it only runs when asked.
         const report = await doctor();

@@ -3,7 +3,11 @@
   "private": true,
   "scripts": {
     "test": "pnpm -C engine test",
-    "playground:run": "pnpm -C engine exec tsx ../playground/run.ts"
+    "playground:run": "pnpm -C engine exec tsx ../playground/run.ts",
+    "tui": "cd tui && go run ./cmd/quorum",
+    "tui:mock": "cd tui && go run ./cmd/quorum --mock",
+    "test:go": "cd tui && go test ./...",
+    "test:all": "pnpm test && cd tui && go test ./..."
   },
   "type": "module",
   "pnpm": {

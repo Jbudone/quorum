@@ -1,0 +1,800 @@
+{"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","persona":"user-advocate","role":"panelist"}]}]}
+{"id":2,"result":{"sessionId":"2026-10-23-22-15-45-trio","dir":"/tmp/rec-JtZKmi/.quorum/sessions/2026-10-23-22-15-45-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
+{"id":3,"result":{}}
+{"event":"round.start","data":{"round":1}}
+{"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Plan: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"replace "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"session "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Issue "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"10-minute "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"server-side.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Keep "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"existing "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"sessions "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"working "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"during "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"window.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Non-goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"No "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"changes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"milestone.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Design\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"A "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"signs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stores "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"hashes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"id.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Middleware "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"accepts "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"either "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"valid "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWT "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"legacy "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"logs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"which "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"it "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"saw.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Sequencing\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per-tenant "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"flag.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Turn "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"then "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"measure "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"login "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"3. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Retire "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"once "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"holds "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"two "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"weeks.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Risks\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"theft, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"defined "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"criteria "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read."}}
+{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read."}}
+{"event":"plan.updated","data":{"round":1,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read."}}
+{"event":"turn.start","data":{"round":1,"agent":"skeptic"}}
+{"event":"turn.start","data":{"round":1,"agent":"pragmatist"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**Critical:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"**High:** "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotation "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"without "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"two "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"migrations "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"one. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"theft "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"vector.\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**High:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"first, "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"window "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"flag, "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"has "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"cut "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"criteria "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"entirely.\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rollback "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"**Medium:** "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"path.\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"3. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"two-week "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**Medium:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"soak "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"nothing "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"says "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"where "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"guess; "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"signing "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"tie "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"keys "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"it "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"live "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"to "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"how "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"error-rate "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"they "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"threshold "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate."}}
+{"event":"turn.done","data":{"round":1,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate."}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead."}}
+{"event":"turn.done","data":{"round":1,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead."}}
+{"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Plan: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"replace "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"session "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Issue "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"10-minute "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"server-side.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Keep "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"existing "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"sessions "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"working "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"during "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"window.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Non-goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"No "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"changes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"milestone.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Design\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"A "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"signs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stores "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"hashes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"id.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Middleware "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"accepts "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"either "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"valid "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWT "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"legacy "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"logs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"which "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"it "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"saw.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Sequencing\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per-tenant "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"flag.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Turn "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"then "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"measure "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"login "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"3. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Retire "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"once "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"holds "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"two "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"weeks.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Risks\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"theft, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"defined "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"criteria "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Revision "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"notes\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Added "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"detection: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"revokes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"whole "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"exits "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"when "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"traffic "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"under "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"1% "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"14 "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"days; "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rollback "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tenant "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"flag.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Rejected "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"objections\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"**Dropping "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"window:** "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"too "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"risky "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"mobile "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"clients "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"that "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cannot "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"update "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"quickly."}}
+{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"plan.updated","data":{"round":1,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"turn.start","data":{"round":1,"agent":"chair","artifact":"chair-report"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"They "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"agree "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"short-lived "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"flag-based "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rollout. "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"They "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"still "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"disagree "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"how "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"much "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"to "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"ship "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"at "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"once: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Pragmatist "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"wants "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"alone, "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Skeptic "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"wants "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"first. "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"You "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"could "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"steer "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"toward "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"either "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"scope.\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"DISSENT\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Pragmatist: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"ship "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"only "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"milestone.\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Skeptic: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"must "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"land "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"same "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"release.\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"OPEN "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"QUESTIONS\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Who "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"owns "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"signing-key "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rotation?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"What "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"cookie-traffic "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"threshold "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"ends "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"window?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"CONVERGED: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"no"}}
+{"event":"turn.done","data":{"round":1,"agent":"chair","text":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.\n## DISSENT\n- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.\n## OPEN QUESTIONS\n- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?\nCONVERGED: no"}}
+{"event":"chair.summary","data":{"round":1,"summary":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.","converged":false,"dissent":"- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
+{"event":"round.done","data":{"round":1}}
+{"event":"awaiting_human","data":{"round":1,"finished":false}}
+{"id":4,"result":{}}
+{"id":5,"result":{}}
+{"event":"idle","data":{}}
+{"event":"turn.start","data":{"round":1,"agent":"chair"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"The "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Skeptic "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Pragmatist "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"disagree "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"about "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"scope, "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"not "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"direction: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"wants "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"more "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"safety "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"first "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"release, "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"other "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"wants "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"smaller "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"first "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"release. "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Either "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"defensible; "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"deciding "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"factor "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"how "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"costly "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"token-theft "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"incident "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"would "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"be "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"you."}}
+{"event":"turn.done","data":{"round":1,"agent":"chair","text":"The Skeptic and Pragmatist disagree about scope, not direction: one wants more safety in the first release, the other wants a smaller first release. Either is defensible; the deciding factor is how costly a token-theft incident would be for you."}}
+{"event":"idle","data":{}}
+{"id":6,"result":{}}
+{"event":"round.start","data":{"round":2}}
+{"event":"turn.start","data":{"round":2,"agent":"skeptic"}}
+{"event":"turn.start","data":{"round":2,"agent":"pragmatist"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**Critical:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"**High:** "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotation "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"without "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"two "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"migrations "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"one. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"theft "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"vector.\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**High:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"first, "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"window "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"flag, "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"has "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"cut "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"criteria "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"entirely.\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rollback "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"**Medium:** "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"path.\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"3. "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"two-week "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"**Medium:** "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"soak "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"nothing "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"says "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"where "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"guess; "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"signing "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"tie "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"keys "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"it "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"live "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"to "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"how "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"error-rate "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"they "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"threshold "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate."}}
+{"event":"turn.done","data":{"round":2,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate."}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead."}}
+{"event":"turn.done","data":{"round":2,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead."}}
+{"event":"turn.start","data":{"round":2,"agent":"architect","artifact":"plan"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Plan: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"replace "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"session "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Issue "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"10-minute "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"server-side.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Keep "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"existing "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"sessions "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"working "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"during "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"window.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Non-goals\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"No "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"changes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"milestone.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Design\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"A "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"signs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"access "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tokens "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stores "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"hashes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"id.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Middleware "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"accepts "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"either "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"valid "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWT "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"legacy "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"logs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"which "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"it "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"saw.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Sequencing\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"1. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per-tenant "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"flag.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"2. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Turn "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"then "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"measure "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"login "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"3. "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Retire "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"once "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rate "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"holds "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"two "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"weeks.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Risks\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"theft, "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"defined "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"criteria "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Revision "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"notes\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Added "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh-token "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"detection: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"revokes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"whole "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family.\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"exits "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"when "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookie "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"traffic "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"under "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"1% "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"14 "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"days; "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rollback "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tenant "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"flag.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Rejected "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"objections\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"**Dropping "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"window:** "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"too "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"risky "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"mobile "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"clients "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"that "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cannot "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"update "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"quickly."}}
+{"event":"turn.done","data":{"round":2,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"plan.updated","data":{"round":2,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"turn.start","data":{"round":2,"agent":"chair","artifact":"chair-report"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"The "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"council "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"has "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"settled "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"on "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"behind "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"a "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"flag, "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"measurable "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"criteria. "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"The "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"remaining "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"question "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"key "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rotation "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"ownership.\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"DISSENT\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Pragmatist: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"still "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"prefers "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"shipping "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"alone.\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"## "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"OPEN "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"QUESTIONS\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Who "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"owns "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"signing-key "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rotation?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"What "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"cookie-traffic "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"threshold "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"ends "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"dual-read "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"window?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"CONVERGED: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"yes"}}
+{"event":"turn.done","data":{"round":2,"agent":"chair","text":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.\n## DISSENT\n- Pragmatist: still prefers shipping the token service alone.\n## OPEN QUESTIONS\n- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?\nCONVERGED: yes"}}
+{"event":"chair.summary","data":{"round":2,"summary":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.","converged":true,"dissent":"- Pragmatist: still prefers shipping the token service alone.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
+{"event":"round.done","data":{"round":2}}
+{"event":"awaiting_human","data":{"round":2,"finished":true}}
+{"id":7,"result":{}}
+{"event":"idle","data":{}}
+{"event":"session.done","data":{}}
+{"event":"idle","data":{}}

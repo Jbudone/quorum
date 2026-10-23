@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { loadPreset, type CouncilConfig } from "./config.js";
+import { loadPreset, mockify } from "./config.js";
 import { doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "./doctor.js";
 import { Engine } from "./engine.js";
 import { serve } from "./rpc/server.js";
@@ -20,14 +20,6 @@ run options:
   --protocol <name> override the preset's protocol (e.g. round-robin)
   --mock            use scripted mock agents (no tokens)
 `;
-
-function mockify(config: CouncilConfig): CouncilConfig {
-  return {
-    ...config,
-    agents: config.agents.map((a) => ({ ...a, cli: "mock" as const })),
-    chair: { cli: "mock" },
-  };
-}
 
 async function run(argv: string[]): Promise<void> {
   const { values } = parseArgs({

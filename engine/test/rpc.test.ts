@@ -21,8 +21,8 @@ function harness() {
     transportFor: () => (id) => new MockTransport(id, { rules: [], fallback: `${id} reply` }),
   });
   const send = (msg: unknown) => input.write(JSON.stringify(msg) + "\n");
-  const waitFor = async (pred: (m: any) => boolean) => {
-    for (let i = 0; i < 200; i++) {
+  const waitFor = async (pred: (m: any) => boolean, timeoutMs = 1000) => {
+    for (let i = 0; i < timeoutMs / 5; i++) {
       const m = lines.find(pred);
       if (m) return m;
       await new Promise((r) => setTimeout(r, 5));
@@ -62,6 +62,38 @@ describe("rpc server", () => {
     expect((await h.waitFor((m) => m.id === 1)).error.message).toMatch(/session.start/);
     h.send({ id: 2, method: "nope" });
     expect((await h.waitFor((m) => m.id === 2)).error.message).toMatch(/unknown method/);
+    h.input.end();
+    await h.done;
+  });
+});
+
+describe("rpc server: TUI surface", () => {
+  it("lists the four presets with each member's role", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "presets.list" });
+    const res = (await h.waitFor((m) => m.id === 1)).result;
+    expect(res.map((p: any) => p.name)).toEqual(["solo", "trio", "delphi", "deep"]);
+    expect(res[1].agents[0]).toMatchObject({ id: "architect", role: "drafter" });
+    h.input.end();
+    await h.done;
+  });
+
+  it("runs a mock session end to end and reports effective settings, idle, and Chair notes", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "session.start", params: { preset: "trio", mock: true, rounds: 2, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
+    const started = (await h.waitFor((m) => m.id === 1)).result;
+    expect(started).toMatchObject({ rounds: 2, protocol: "draft-critique-revise", pause: "round", substitutions: [] });
+
+    h.send({ id: 2, method: "session.continue" });
+    const summary = await h.waitFor((m) => m.event === "chair.summary", 20_000);
+    expect(summary.data).toMatchObject({ round: 1, converged: false });
+    expect(summary.data.dissent).toContain("Pragmatist");
+    expect(summary.data.questions).toContain("signing-key");
+    // plan turns are labelled so the UI can show "updated the plan" instead of dumping the document
+    expect(h.lines.find((m) => m.event === "turn.start" && m.data.artifact === "plan")).toBeTruthy();
+    expect(h.lines.find((m) => m.event === "turn.start" && m.data.artifact === "chair-report")).toBeTruthy();
+    // idle follows every background job so clients can count in-flight work
+    await h.waitFor((m) => m.event === "idle", 5000);
     h.input.end();
     await h.done;
   });

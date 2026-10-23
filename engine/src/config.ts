@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "smol-toml";
@@ -91,4 +91,45 @@ export function parsePersona(src: string): Persona {
 export function loadPersona(name: string, assetsDir = DEFAULT_ASSETS): Persona {
   if (!/^[\w-]+$/.test(name)) fail(`bad persona name "${name}"`);
   return parsePersona(readFileSync(join(assetsDir, "personas", `${name}.md`), "utf8"));
+}
+
+/** Swaps every agent and the Chair to the scripted mock CLI (no tokens spent). */
+export function mockify(config: CouncilConfig): CouncilConfig {
+  return {
+    ...config,
+    agents: config.agents.map((a) => ({ ...a, cli: "mock" as const })),
+    chair: { cli: "mock" },
+  };
+}
+
+export interface PresetSummary {
+  name: string;
+  description: string;
+  protocol: string;
+  rounds: number;
+  agents: { id: string; cli: CliName; role: string; persona: string }[];
+}
+
+/** Every preset shipped with Quorum, for the start screen's picker. */
+export function listPresets(assetsDir = DEFAULT_ASSETS): PresetSummary[] {
+  const dir = join(assetsDir, "presets");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".toml"))
+    .map((f) => f.slice(0, -5))
+    .map((name) => {
+      const c = loadPreset(name, assetsDir);
+      return {
+        name,
+        description: c.description ?? "",
+        protocol: c.protocol,
+        rounds: c.rounds,
+        agents: c.agents.map((a) => ({
+          id: a.id,
+          cli: a.cli,
+          persona: a.persona,
+          role: loadPersona(a.persona, assetsDir).role,
+        })),
+      };
+    })
+    .sort((a, b) => ["solo", "trio", "delphi", "deep"].indexOf(a.name) - ["solo", "trio", "delphi", "deep"].indexOf(b.name));
 }
