@@ -2,7 +2,14 @@
 export type AgentEvent =
   | { type: "text"; delta: string }
   | { type: "tool"; name: string; summary?: string }
-  | { type: "usage"; inputTokens?: number; outputTokens?: number; rateLimited?: boolean }
+  | {
+      type: "usage";
+      inputTokens?: number;
+      outputTokens?: number;
+      rateLimited?: boolean;
+      /** Subscription quota used in the current window, 0..1, when the CLI reports it. */
+      quotaUtilization?: number;
+    }
   | { type: "done"; sessionId?: string }
   | { type: "error"; message: string };
 
