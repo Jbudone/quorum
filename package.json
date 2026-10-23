@@ -1,0 +1,14 @@
+{
+  "name": "quorum-root",
+  "private": true,
+  "scripts": {
+    "test": "pnpm -C engine test",
+    "playground:run": "pnpm -C engine exec tsx ../playground/run.ts"
+  },
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

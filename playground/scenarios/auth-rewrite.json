@@ -1,0 +1,8 @@
+{
+  "topic": "Plan a migration from session cookies to short-lived JWTs with refresh rotation in the fixture repo.",
+  "agents": [
+    { "id": "architect", "role": "drafter", "reply": "Propose a token service issuing 10 minute access tokens, rotating refresh tokens stored server-side, and a dual-read period for existing cookies." },
+    { "id": "skeptic", "role": "critic", "reply": "Refresh rotation without reuse detection is a theft vector, and the dual-read period has no exit criteria or rollback." },
+    { "id": "pragmatist", "role": "critic", "reply": "Ship behind a flag per tenant, measure login error rate, and cut scope: no SSO changes in this milestone." }
+  ]
+}
