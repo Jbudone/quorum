@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Launches the Quorum TUI from any directory (or via a symlink on your PATH):
+#   ./quorum/quorum [--mock] [--repo DIR]
+# The council is grounded in the directory you run it from unless --repo says otherwise.
+set -euo pipefail
+root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+bin="$root/tui/.bin/quorum"
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "quorum: Go is required to build the interface (https://go.dev/dl/)" >&2
+  exit 1
+fi
+if [ ! -x "$root/engine/node_modules/.bin/tsx" ]; then
+  echo "quorum: engine dependencies are missing; run: pnpm -C \"$root\" install" >&2
+  exit 1
+fi
+
+# Rebuild when the binary is missing or any Go source is newer than it.
+if [ ! -x "$bin" ] || [ -n "$(find "$root/tui" -name '*.go' -newer "$bin" -print -quit)" ]; then
+  (cd "$root/tui" && go build -o "$bin" ./cmd/quorum)
+fi
+exec "$bin" --repo "$PWD" "$@"

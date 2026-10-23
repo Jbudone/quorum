@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tui": "pnpm -w run tui",
+    "tui:mock": "pnpm -w run tui:mock"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

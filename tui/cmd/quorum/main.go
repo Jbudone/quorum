@@ -25,7 +25,8 @@ func main() {
 	// start it and succeed, so wrappers like `pnpm tui` do not report a failure for a non-error.
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
 		fmt.Println("Quorum is an interactive terminal app and needs a real terminal.")
-		fmt.Println("Open a terminal window and run:  pnpm tui   (or  pnpm tui:mock  for scripted agents)")
+		fmt.Println("Open a terminal window and run:  ./quorum   (or  ./quorum --mock  for scripted agents)")
+		fmt.Println("From the checkout you can also use:  pnpm tui   /  pnpm tui:mock")
 		fmt.Println("For a non-interactive run:       pnpm -C engine exec tsx src/cli.ts run --topic \"...\"")
 		return
 	}

@@ -3,3 +3,4 @@ dist/
 .quorum/
 *.log
 /tui/quorum
+/tui/.bin/

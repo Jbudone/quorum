@@ -43,8 +43,14 @@ func start(t *testing.T, w, h int, args ...string) *term {
 	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/quorum").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
+	return launch(t, w, h, filepath.Join(root, "playground", "fixture-repo"), bin, args...)
+}
+
+// launch runs a command in a pty of the given size, starting in dir.
+func launch(t *testing.T, w, h int, dir, bin string, args ...string) *term {
+	t.Helper()
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = filepath.Join(root, "playground", "fixture-repo")
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor", "XDG_CACHE_HOME="+t.TempDir())
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(h), Cols: uint16(w)})
 	if err != nil {

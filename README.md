@@ -10,11 +10,16 @@ A terminal UI where a council of AI agent CLIs (Claude Code, Codex, Antigravity/
 ## Try it
 
 ```sh
-pnpm install
-pnpm tui:mock        # scripted agents, no tokens
-pnpm tui             # real agents (run `pnpm -C engine exec tsx src/cli.ts doctor` first)
+cd quorum && pnpm install
+./quorum --mock      # scripted agents, no tokens; works from any directory
+./quorum             # real agents, grounded in the directory you run it from
+pnpm tui:mock        # same, via pnpm (from quorum/ or quorum/engine/ only)
 pnpm test:all        # engine + Go unit tests
 ```
+
+Run `pnpm -C engine exec tsx src/cli.ts doctor` once first to see which agent CLIs are usable.
+To start it from anywhere: `ln -s "$PWD/quorum" ~/.local/bin/quorum`, then run `quorum` inside any project.
+`pnpm tui` only exists inside this checkout; from elsewhere use `./quorum` or `pnpm -C path/to/quorum tui`.
 
 In the TUI: pick a council, say what to work out, and the council runs one round, then pauses.
 At a pause, press Enter to continue, type to ask the Chair, `@name` to ask one member,
