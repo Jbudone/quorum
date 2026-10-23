@@ -1,0 +1,24 @@
+name = "trio"
+description = "Claude, Codex and Gemini each take a role, with a Claude Chair."
+protocol = "draft-critique-revise"
+rounds = 3
+pause = "round"
+read_only = true
+
+[chair]
+cli = "claude"
+
+[[agents]]
+id = "architect"
+cli = "claude"
+persona = "architect"
+
+[[agents]]
+id = "skeptic"
+cli = "codex"
+persona = "skeptic"
+
+[[agents]]
+id = "pragmatist"
+cli = "gemini"
+persona = "pragmatist"

@@ -1,0 +1,24 @@
+name = "solo"
+description = "One CLI wearing three hats. Cheapest option."
+protocol = "draft-critique-revise"
+rounds = 3
+pause = "round"
+read_only = true
+
+[chair]
+cli = "claude"
+
+[[agents]]
+id = "architect"
+cli = "claude"
+persona = "architect"
+
+[[agents]]
+id = "skeptic"
+cli = "claude"
+persona = "skeptic"
+
+[[agents]]
+id = "pragmatist"
+cli = "claude"
+persona = "pragmatist"

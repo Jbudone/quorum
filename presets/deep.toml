@@ -1,0 +1,35 @@
+name = "deep"
+description = "Trio plus extra critics, evidence required, more rounds."
+protocol = "draft-critique-revise"
+rounds = 5
+pause = "round"
+read_only = true
+require_evidence = true
+
+[chair]
+cli = "claude"
+
+[[agents]]
+id = "architect"
+cli = "claude"
+persona = "architect"
+
+[[agents]]
+id = "skeptic"
+cli = "codex"
+persona = "skeptic"
+
+[[agents]]
+id = "pragmatist"
+cli = "gemini"
+persona = "pragmatist"
+
+[[agents]]
+id = "security"
+cli = "claude"
+persona = "security"
+
+[[agents]]
+id = "user-advocate"
+cli = "gemini"
+persona = "user-advocate"

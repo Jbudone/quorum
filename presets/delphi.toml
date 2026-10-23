@@ -1,0 +1,34 @@
+name = "delphi"
+description = "Five blind panelists, anonymized feedback each round, until they converge."
+protocol = "delphi"
+rounds = 4
+pause = "round"
+read_only = true
+
+[chair]
+cli = "claude"
+
+[[agents]]
+id = "architect"
+cli = "claude"
+persona = "architect"
+
+[[agents]]
+id = "skeptic"
+cli = "codex"
+persona = "skeptic"
+
+[[agents]]
+id = "pragmatist"
+cli = "gemini"
+persona = "pragmatist"
+
+[[agents]]
+id = "security"
+cli = "claude"
+persona = "security"
+
+[[agents]]
+id = "operator"
+cli = "codex"
+persona = "operator"
