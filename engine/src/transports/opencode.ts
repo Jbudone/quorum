@@ -1,0 +1,94 @@
+import { parseJson, SubprocessTransport, type Invocation, type LineMapper } from "./subprocess.js";
+import type { AgentEvent, SendOptions } from "./types.js";
+
+/**
+ * Opencode streams one `text` part per step. Steps that end in tool calls carry narration;
+ * the step that finishes with reason "stop" is the answer.
+ */
+export class OpencodeMapper implements LineMapper {
+  private text = "";
+  private answer = "";
+  private sessionId?: string;
+  private input?: number;
+  private output?: number;
+
+  push(line: string): AgentEvent[] {
+    const j = parseJson(line);
+    if (!j) return [];
+    this.sessionId ??= j.sessionID;
+    switch (j.type) {
+      case "text":
+        this.text += j.part?.text ?? "";
+        return [];
+      case "tool_use":
+        this.text = "";
+        return [{ type: "tool", name: String(j.part?.tool ?? "tool") }];
+      case "step_finish": {
+        const t = j.part?.tokens;
+        this.input = (this.input ?? 0) + (t?.input ?? 0);
+        this.output = (this.output ?? 0) + (t?.output ?? 0);
+        if (j.part?.reason === "stop") this.answer += this.text;
+        this.text = "";
+        return [];
+      }
+      case "error":
+        return [{ type: "error", message: String(j.error?.data?.message ?? j.error?.name ?? "opencode error") }];
+      default:
+        return [];
+    }
+  }
+
+  end(): AgentEvent[] {
+    const answer = this.answer || this.text;
+    return [
+      ...(answer ? [{ type: "text", delta: answer } as AgentEvent] : []),
+      { type: "usage", inputTokens: this.input, outputTokens: this.output },
+      { type: "done", sessionId: this.sessionId },
+    ];
+  }
+}
+
+export interface OpencodeOptions {
+  bin?: string;
+  /** provider/model, e.g. "anthropic/claude-sonnet-5-5". */
+  model?: string;
+}
+
+/** Drives `opencode run --format json`. The persona becomes a real system prompt via a read-only agent. */
+export class OpencodeTransport extends SubprocessTransport {
+  constructor(
+    id = "opencode",
+    private readonly o: OpencodeOptions = {},
+  ) {
+    super(id);
+  }
+
+  protected mapper(): LineMapper {
+    return new OpencodeMapper();
+  }
+
+  protected invocation(prompt: string, opts: SendOptions): Invocation {
+    const readOnly = opts.readOnly !== false;
+    const agentConfig = {
+      mode: "primary",
+      ...(opts.systemPrompt ? { prompt: opts.systemPrompt } : {}),
+      permission: readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {},
+    };
+    const args = ["run", "--format", "json", "--agent", "quorum"];
+    if (opts.cwd) args.push("--dir", opts.cwd);
+    if (this.o.model) args.push("-m", this.o.model);
+    if (opts.sessionId) args.push("-s", opts.sessionId);
+    args.push(prompt);
+    return {
+      cmd: this.o.bin ?? "opencode",
+      args,
+      env: {
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({ agent: { quorum: agentConfig } }),
+        // Opencode reads ~/.claude/CLAUDE.md by default, which would leak the user's own instructions.
+        OPENCODE_DISABLE_CLAUDE_CODE: "1",
+        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
+        OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
+      },
+    };
+  }
+}

@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { loadPreset, type CouncilConfig } from "../config.js";
+import { loadPreset, type CliName, type CouncilConfig } from "../config.js";
+import { doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "../doctor.js";
 import { Engine, type TransportFor } from "../engine.js";
 import { createTransport } from "../transports/index.js";
 import { councilWorkflow } from "../workflows/council.js";
@@ -10,12 +11,14 @@ import { councilWorkflow } from "../workflows/council.js";
  * {id, result|error} for requests, and {event, data} for engine events (no id).
  *
  * Methods: session.start {preset, topic, repo, rounds?, protocol?, pause?}, session.continue {stop?}, session.steer {text},
- * session.interject {to, text}, session.abort.
+ * session.interject {to, text}, session.abort, doctor.
  */
 export interface RpcOptions {
   /** Override transport creation (tests, playground). */
   transportFor?: (config: CouncilConfig) => TransportFor;
   assetsDir?: string;
+  /** CLIs allowed for this server; default is installed and not known broken (see doctor). */
+  usable?: () => CliName[];
 }
 
 const defaultTransportFor =
@@ -50,7 +53,13 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
   async function handle(method: string, p: any): Promise<unknown> {
     switch (method) {
       case "session.start": {
-        const config = loadPreset(String(p.preset), opts.assetsDir);
+        let config = loadPreset(String(p.preset), opts.assetsDir);
+        let substitutions: unknown[] = [];
+        // Injected transports (tests, playground) bypass real-CLI resolution.
+        if (!opts.transportFor) {
+          const usable = (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
+          ({ config, substitutions } = resolveAvailable(config, usable));
+        }
         if (p.rounds) config.rounds = Number(p.rounds);
         if (p.protocol) config.protocol = String(p.protocol);
         if (p.pause) config.pause = p.pause;
@@ -64,7 +73,13 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         engine.on((e) => write(e));
         run = await councilWorkflow(engine).createRun();
         started = false;
-        return { sessionId: engine.session.id, dir: engine.session.dir, agents: config.agents.map((a) => a.id) };
+        return { sessionId: engine.session.id, dir: engine.session.dir, agents: config.agents.map((a) => a.id), substitutions };
+      }
+      case "doctor": {
+        // Probes spend a little quota (one tiny turn per CLI), so it only runs when asked.
+        const report = await doctor();
+        writeHealth(report);
+        return report;
       }
       case "session.continue":
         {
