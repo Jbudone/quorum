@@ -21,7 +21,8 @@ persona = "skeptic"
 
 [[agents]]
 id = "pragmatist"
-cli = "gemini"
+cli = "agy"
+model = "gemini-4-argon-medium"
 persona = "pragmatist"
 
 [[agents]]
@@ -31,5 +32,6 @@ persona = "security"
 
 [[agents]]
 id = "user-advocate"
-cli = "gemini"
+cli = "agy"
+model = "gemini-4-argon-medium"
 persona = "user-advocate"

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { CliName, CouncilConfig } from "./config.js";
 import { createTransport, type AgentTransport } from "./transports/index.js";
 
-export const REAL_CLIS: CliName[] = ["claude", "codex", "opencode", "gemini"];
+export const REAL_CLIS: CliName[] = ["claude", "codex", "agy", "opencode", "gemini"];
 const HEALTH_TTL_MS = 24 * 3600_000;
 
 export interface CliHealth {

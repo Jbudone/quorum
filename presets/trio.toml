@@ -20,5 +20,6 @@ persona = "skeptic"
 
 [[agents]]
 id = "pragmatist"
-cli = "gemini"
+cli = "agy"
+model = "gemini-4-argon-medium"
 persona = "pragmatist"

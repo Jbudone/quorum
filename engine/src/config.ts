@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "smol-toml";
 
-export type CliName = "claude" | "codex" | "gemini" | "opencode" | "mock";
+export type CliName = "claude" | "codex" | "gemini" | "agy" | "opencode" | "mock";
 export type PauseMode = "round" | "message" | "auto";
 
 export interface AgentSpec {
@@ -36,7 +36,7 @@ export interface Persona {
 /** Repo-level presets/ and personas/ directories shipped with Quorum. */
 export const DEFAULT_ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const CLIS: CliName[] = ["claude", "codex", "gemini", "opencode", "mock"];
+const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "mock"];
 const PAUSES: PauseMode[] = ["round", "message", "auto"];
 
 function fail(msg: string): never {

@@ -1,4 +1,5 @@
 import type { CliName } from "../config.js";
+import { AgyTransport } from "./agy.js";
 import { ClaudeTransport } from "./claude.js";
 import { CodexTransport } from "./codex.js";
 import { GeminiTransport } from "./gemini.js";
@@ -27,6 +28,8 @@ export function createTransport(req: TransportRequest): AgentTransport {
       return new CodexTransport(req.id, { model: req.model });
     case "gemini":
       return new GeminiTransport(req.id, { model: req.model });
+    case "agy":
+      return new AgyTransport(req.id, { model: req.model });
     case "opencode":
       return new OpencodeTransport(req.id, { model: req.model });
   }

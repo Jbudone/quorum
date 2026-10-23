@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { AgyMapper, AgyTransport } from "../src/transports/agy.js";
 import { CodexMapper, CodexTransport } from "../src/transports/codex.js";
 import { GeminiMapper, GeminiTransport } from "../src/transports/gemini.js";
 import { OpencodeMapper, OpencodeTransport } from "../src/transports/opencode.js";
@@ -101,5 +102,44 @@ describe("GeminiMapper (documented shape, not a live capture)", () => {
     expect(new GeminiMapper().push('{"type":"result","status":"error","error":{"message":"nope"}}')).toEqual([
       { type: "error", message: "nope" },
     ]);
+  });
+});
+
+describe("AgyMapper (real capture)", () => {
+  const evs = run(new AgyMapper(), fixture("agy-simple.ndjson"));
+  it("keeps only the answer after the last tool call, not the narration", () => {
+    const text = textOf(evs);
+    expect(text).toContain("auth.ts");
+    expect(text).not.toContain("I will start by reading");
+    expect(text).not.toContain("I will now create the implementation plan");
+  });
+  it("reports tools, usage and the conversation id for resume", () => {
+    expect(evs.filter((e) => e.type === "tool").map((e) => (e as { name: string }).name)).toEqual(["read_file", "write_file"]);
+    expect(evs.some((e) => e.type === "usage" && (e.inputTokens ?? 0) > 0)).toBe(true);
+    expect(evs.at(-1)).toEqual({ type: "done", sessionId: "SESSION" });
+  });
+  it("surfaces failed results as errors and emits no done", () => {
+    const m = new AgyMapper();
+    const evs2 = run(m, ['{"event":"result","result":{"status":"ERROR","error":"unknown model"}}']);
+    expect(evs2).toEqual([{ type: "error", message: "unknown model" }]);
+  });
+});
+
+describe("AgyTransport invocation", () => {
+  const inv = (o = {}) => (new AgyTransport("a", { model: "gemini-4-argon-medium" }) as any).invocation("hello", o);
+  it("is read-only via plan mode and never disables slash commands (that would silently disable plan mode)", () => {
+    const i = inv({ cwd: "/repo" });
+    expect(i.args.slice(i.args.indexOf("--mode"), i.args.indexOf("--mode") + 2)).toEqual(["--mode", "plan"]);
+    expect(i.args).not.toContain("--disable-slash-commands");
+    expect(i.args).toEqual(expect.arrayContaining(["--add-dir", "/repo", "--model", "gemini-4-argon-medium"]));
+    expect(inv({ readOnly: false }).args).toContain("accept-edits");
+  });
+  it("sends the prompt as a stream-json user event on stdin, with the persona only on a fresh conversation", () => {
+    const fresh = JSON.parse(inv({ systemPrompt: "skeptic" }).stdin);
+    expect(fresh).toMatchObject({ event: "user" });
+    expect(fresh.message.content).toContain("<role>\nskeptic");
+    const resumed = inv({ systemPrompt: "skeptic", sessionId: "c1" });
+    expect(resumed.args).toEqual(expect.arrayContaining(["--conversation", "c1"]));
+    expect(JSON.parse(resumed.stdin).message.content).not.toContain("skeptic");
   });
 });

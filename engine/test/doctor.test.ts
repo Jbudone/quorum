@@ -57,7 +57,7 @@ describe("health + fallback", () => {
   it("swaps unusable CLIs for usable ones, round-robin, and reports it", () => {
     const { config, substitutions } = resolveAvailable(loadPreset("trio"), ["claude", "codex"]);
     expect(config.agents.map((a) => a.cli)).toEqual(["claude", "codex", "claude"]);
-    expect(substitutions).toEqual([{ agent: "pragmatist", from: "gemini", to: "claude" }]);
+    expect(substitutions).toEqual([{ agent: "pragmatist", from: "agy", to: "claude" }]);
     const diverse = resolveAvailable(loadPreset("trio"), ["claude", "codex", "opencode"]);
     expect(diverse.config.agents.map((a) => a.cli)).toEqual(["claude", "codex", "opencode"]);
   });
