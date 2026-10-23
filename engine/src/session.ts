@@ -62,6 +62,12 @@ export class Session {
     writeFileSync(join(this.dir, file), text);
   }
 
+  /** Keeps per-round snapshots (e.g. each plan revision) for diffs and replay. */
+  writeHistory(name: string, text: string): void {
+    mkdirSync(join(this.dir, "history"), { recursive: true });
+    writeFileSync(join(this.dir, "history", name), text);
+  }
+
   read(file: "plan.md" | "decisions.md" | "dissent.md" | "open-questions.md"): string {
     return readFileSync(join(this.dir, file), "utf8");
   }

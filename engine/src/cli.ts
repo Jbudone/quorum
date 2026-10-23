@@ -69,6 +69,8 @@ async function run(argv: string[]): Promise<void> {
       speaking = e.data.agent;
       process.stdout.write(e.data.delta);
     }
+    if (e.event === "chair.summary")
+      console.log(`\n\n┃ Chair${e.data.converged ? " (converged)" : ""}: ${e.data.summary}`);
     if (e.event === "error") console.error(`\n! ${e.data.agent ?? ""} ${e.data.message}`);
     if (e.event === "usage" && e.data.quotaUtilization !== undefined)
       console.error(`\n(quota ${(e.data.quotaUtilization * 100).toFixed(0)}% of window)`);

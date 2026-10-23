@@ -14,6 +14,9 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "smol-toml": "^1.9.1"
+    "@ai-sdk/provider": "^4.0.33",
+    "@mastra/core": "^1.79.0",
+    "smol-toml": "^1.9.1",
+    "zod": "^4.6.7"
   }
 }

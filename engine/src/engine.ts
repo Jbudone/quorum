@@ -1,6 +1,7 @@
 import { loadPersona, type CouncilConfig, type Persona } from "./config.js";
 import { renderTranscript } from "./prompts.js";
-import { getProtocol, type Turn } from "./protocols/index.js";
+import { parseChairReport } from "./protocols/chairReport.js";
+import { getProtocol, type Prior, type Turn } from "./protocols/index.js";
 import { Session } from "./session.js";
 import type { AgentTransport } from "./transports/index.js";
 
@@ -12,6 +13,8 @@ export type EngineEvent =
   | { event: "turn.tool"; data: { agent: string; name: string } }
   | { event: "turn.done"; data: { round: number; agent: string; text: string } }
   | { event: "usage"; data: { agent: string; quotaUtilization?: number; rateLimited?: boolean } }
+  | { event: "plan.updated"; data: { round: number; text: string } }
+  | { event: "chair.summary"; data: { round: number; summary: string; converged: boolean } }
   | { event: "round.done"; data: { round: number } }
   | { event: "awaiting_human"; data: { round: number; finished: boolean } }
   | { event: "error"; data: { agent?: string; message: string } };
@@ -33,6 +36,9 @@ export class Engine {
   private readonly vendorSessions = new Map<string, string>();
   private readonly directives: string[] = [];
   private round = 0;
+  private converged = false;
+  /** What each turn produced this round, keyed by Turn.key, so later steps can build on it. */
+  private roundOutputs: Prior = {};
   /** Steps of the current round not yet run (for pause = "message"). */
   private pending: Turn[][] = [];
   private abort = new AbortController();
@@ -53,8 +59,12 @@ export class Engine {
     for (const l of this.listeners) l(e);
   }
 
+  get currentRound(): number {
+    return this.round;
+  }
+
   get finished(): boolean {
-    return this.round >= this.o.config.rounds && this.pending.length === 0;
+    return (this.converged || this.round >= this.o.config.rounds) && this.pending.length === 0;
   }
 
   /** Runs until the next pause point per config.pause, then emits awaiting_human. */
@@ -90,12 +100,17 @@ export class Engine {
   private startRound(): void {
     this.round++;
     this.emit({ event: "round.start", data: { round: this.round } });
+    this.roundOutputs = {};
     this.pending = getProtocol(this.o.config.protocol).planRound({
       round: this.round,
+      totalRounds: this.o.config.rounds,
       topic: this.o.topic,
       agents: this.o.config.agents,
+      roles: Object.fromEntries(this.o.config.agents.map((a) => [a.id, this.personas.get(a.id)?.role ?? "panelist"])),
+      plan: this.session.read("plan.md"),
       transcript: this.session.transcript(),
       directives: [...this.directives],
+      requireEvidence: this.o.config.requireEvidence,
     });
     this.directives.length = 0;
   }
@@ -124,9 +139,10 @@ export class Engine {
     const persona = this.personas.get(turn.agent);
     if (!persona) throw new Error(`unknown agent "${turn.agent}"`);
     const transport = this.o.transportFor(turn.agent);
+    const prompt = typeof turn.prompt === "function" ? turn.prompt(this.roundOutputs) : turn.prompt;
     this.emit({ event: "turn.start", data: { round, agent: turn.agent } });
     let text = "";
-    for await (const e of transport.send(turn.prompt, {
+    for await (const e of transport.send(prompt, {
       cwd: this.o.repo,
       systemPrompt: persona.body,
       readOnly: this.o.config.readOnly,
@@ -158,8 +174,26 @@ export class Engine {
     }
     if (text) {
       this.session.append({ round, speaker: turn.agent, text });
+      this.roundOutputs[turn.key ?? turn.agent] = text;
       this.emit({ event: "turn.done", data: { round, agent: turn.agent, text } });
+      this.applyArtifact(round, turn, text);
     }
     return text;
+  }
+
+  private applyArtifact(round: number, turn: Turn, text: string): void {
+    if (turn.artifact === "plan") {
+      this.session.write("plan.md", text);
+      this.session.writeHistory(`plan-round-${round}.md`, text);
+      this.emit({ event: "plan.updated", data: { round, text } });
+    } else if (turn.artifact === "chair-report") {
+      const r = parseChairReport(text);
+      if (r.dissent && !/^none\.?$/i.test(r.dissent)) {
+        this.session.write("dissent.md", `${this.session.read("dissent.md")}## Round ${round}\n\n${r.dissent}\n\n`);
+      }
+      this.session.write("open-questions.md", /^none\.?$/i.test(r.questions) ? "" : r.questions);
+      this.converged = r.converged;
+      this.emit({ event: "chair.summary", data: { round, summary: r.summary, converged: r.converged } });
+    }
   }
 }

@@ -46,6 +46,12 @@ describe("rpc server", () => {
 
     h.send({ id: 3, method: "session.interject", params: { to: "chair", text: "summarize" } });
     await h.waitFor((m) => m.event === "turn.done" && m.data.agent === "chair");
+    h.send({ id: 4, method: "session.start", params: { preset: "solo", protocol: "round-robin", rounds: 1, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
+    await h.waitFor((m) => m.id === 4);
+    h.send({ id: 5, method: "session.continue" });
+    await h.waitFor((m) => m.event === "awaiting_human" && m.data.finished === true);
+    h.send({ id: 6, method: "session.continue" });
+    await h.waitFor((m) => m.event === "session.done");
     h.input.end();
     await h.done;
   });
