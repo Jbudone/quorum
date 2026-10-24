@@ -37,7 +37,9 @@ type entry struct {
 	text      string
 	artifact  string // "plan" or "chair-report" when the reply becomes a document
 	tools     []string
-	tldr      *rpc.Tldr // digest shown first; nil for Chair reports and human lines
+	diagram   *rpc.Diagram // arrives after the reply, in the background
+	diagramAt int          // animation clock value when it arrived or was replayed
+	tldr      *rpc.Tldr    // digest shown first; nil for Chair reports and human lines
 	streaming bool
 	converged bool
 	to        string // for human entries: who they were addressed to
@@ -93,6 +95,7 @@ type session struct {
 	pause     string
 	frame     int  // animation frame, advanced by the app on every tick
 	full      bool // show full replies under their digests
+	calm      bool // no animation: show final frames
 }
 
 func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
@@ -250,6 +253,15 @@ func (s *session) apply(ev rpc.Event) {
 			}
 		}
 
+	case rpc.TurnDiagram:
+		for i := len(s.entries) - 1; i >= 0; i-- {
+			if e := s.entries[i]; e.kind == kindAgent && e.speaker == d.Agent && e.round == d.Round && !e.streaming && e.diagram == nil {
+				dg := d.Diagram
+				e.diagram, e.diagramAt, e.cacheW = &dg, s.frame, 0
+				break
+			}
+		}
+
 	case rpc.Usage:
 		if d.QuotaUtilization != nil {
 			q := *d.QuotaUtilization
@@ -358,4 +370,29 @@ func (s *session) names() string {
 		ids = append(ids, m.id)
 	}
 	return strings.Join(ids, ", ")
+}
+
+// animating reports whether any diagram is still playing.
+func (s *session) animating() bool {
+	for _, e := range s.entries {
+		if e.playing(s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *entry) playing(s *session) bool {
+	return e.diagram != nil && !s.calm && s.frame-e.diagramAt < diagramTicks(e.diagram)
+}
+
+// replay restarts the newest diagram's animation.
+func (s *session) replay() bool {
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if e := s.entries[i]; e.diagram != nil {
+			e.diagramAt, e.cacheW = s.frame, 0
+			return true
+		}
+	}
+	return false
 }

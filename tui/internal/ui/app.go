@@ -28,6 +28,7 @@ type Options struct {
 	Messages <-chan rpc.Message
 	Repo     string
 	Mock     bool
+	Calm     bool // no animation: diagrams show their final frame
 }
 
 type screen int
@@ -149,7 +150,7 @@ func (a *App) needsTick() bool {
 		return true // the banner animates
 	}
 	s := a.sess
-	return s != nil && (s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
+	return s != nil && (s.animating() || s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
 }
 
 func (a *App) tick() tea.Cmd {
@@ -368,6 +369,11 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	case "esc":
 		a.help = false
 		return nil
+	case "ctrl+r":
+		if !s.replay() {
+			s.system("No diagram to replay yet.")
+		}
+		return nil
 	case "ctrl+o":
 		s.full = !s.full
 		for _, e := range s.entries {
@@ -433,6 +439,7 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 	params := a.start.startParams(a.opts.Repo)
 	p = a.start.effective()
 	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), 0)
+	a.sess.calm = a.opts.Calm
 	delete(a.start.drafts, "auto") // a designed council is for this topic only
 	a.sess.add(&entry{kind: kindHuman, to: "the council", text: a.sess.topic})
 	a.screen = screenSession
@@ -455,7 +462,7 @@ func (a *App) submit() tea.Cmd {
 		a.input.Reset()
 		return nil
 	case "help":
-		s.system("Enter continues the next round. Type to ask the Chair, @name to ask one member, /steer <directive> to guide the next round, /pause round|message|auto and /rounds N to retune the pacing, /stop to finish now, /plan to show the plan.")
+		s.system("Enter continues the next round. Type to ask the Chair, @name to ask one member, /steer <directive> to guide the next round, /pause round|message|auto and /rounds N to retune the pacing, /stop to finish now, /plan to show the plan, ctrl+r to replay the latest diagram.")
 		a.input.Reset()
 		return nil
 	case "configure":

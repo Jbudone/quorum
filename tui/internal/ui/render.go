@@ -34,11 +34,11 @@ func prefixLines(body string, bar string) string {
 
 // renderEntry renders one transcript block at the given width. spin is the current spinner frame.
 func renderEntry(s *session, e *entry, th theme.Theme, width int, spin string) string {
-	if !e.streaming && e.cache != "" && e.cacheW == width {
+	if !e.streaming && !e.playing(s) && e.cache != "" && e.cacheW == width {
 		return e.cache
 	}
 	out := drawEntry(s, e, th, width, spin)
-	if !e.streaming {
+	if !e.streaming && !e.playing(s) {
 		e.cache, e.cacheW = out, width
 	}
 	return out
@@ -114,6 +114,9 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 		for _, b := range t.Bullets {
 			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+fg(th.Text).Render(b), width-2, ""))
 		}
+	}
+	if e.diagram != nil {
+		rows = append(rows, "", renderDiagram(e.diagram, width-3, th, s.frame-e.diagramAt, !s.calm), "")
 	}
 	switch {
 	case e.artifact == "plan":

@@ -134,6 +134,20 @@ describe("rpc server: customizing a council", () => {
     await h.done;
   });
 
+  it("streams a diagram for a reply after the reply itself (mock)", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "session.start", params: { preset: "trio", mock: true, rounds: 1, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
+    await h.waitFor((m) => m.id === 1);
+    h.send({ id: 2, method: "session.continue" });
+    const ev = await h.waitFor((m) => m.event === "turn.diagram" && m.data.agent === "skeptic", 15000);
+    expect(ev.data.diagram).toMatchObject({ kind: "attack" });
+    const doneAt = h.lines.findIndex((m) => m.event === "turn.done" && m.data.agent === "skeptic");
+    expect(doneAt).toBeGreaterThan(-1);
+    expect(h.lines.indexOf(ev)).toBeGreaterThan(doneAt);
+    h.input.end();
+    await h.done;
+  }, 20000);
+
   it("returns every validation problem to the client", async () => {
     const h = harness();
     h.send({ id: 1, method: "session.start", params: { config: { ...goodConfig, rounds: 0, agents: [] }, topic: "t", repo: "/tmp" } });

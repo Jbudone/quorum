@@ -55,6 +55,30 @@ type (
 		Stance     string   `json:"stance"` // agree | disagree | mixed | neutral
 		Confidence *int     `json:"confidence"`
 	}
+	DiagramActor struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		Icon  string `json:"icon"`
+	}
+	DiagramStep struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Text   string `json:"text"`
+		Danger bool   `json:"danger"`
+	}
+	// Diagram is a validated sequence or attack chain the TUI animates.
+	Diagram struct {
+		Kind   string         `json:"kind"` // sequence | attack
+		Title  string         `json:"title"`
+		Actors []DiagramActor `json:"actors"`
+		Steps  []DiagramStep  `json:"steps"`
+	}
+	// TurnDiagram arrives some time after the turn it illustrates; the card gains it then.
+	TurnDiagram struct {
+		Round   int     `json:"round"`
+		Agent   string  `json:"agent"`
+		Diagram Diagram `json:"diagram"`
+	}
 	TurnDone struct {
 		Round int    `json:"round"`
 		Agent string `json:"agent"`
@@ -219,6 +243,8 @@ func Decode(line []byte) (Message, error) {
 		data = new(TurnTool)
 	case "turn.done":
 		data = new(TurnDone)
+	case "turn.diagram":
+		data = new(TurnDiagram)
 	case "usage":
 		data = new(Usage)
 	case "plan.updated":
@@ -258,6 +284,8 @@ func derefs(p any) any {
 	case *TurnTool:
 		return *v
 	case *TurnDone:
+		return *v
+	case *TurnDiagram:
 		return *v
 	case *Usage:
 		return *v

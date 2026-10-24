@@ -19,6 +19,7 @@ func main() {
 	repo := flag.String("repo", "", "project the council should ground itself in (default: current directory)")
 	mock := flag.Bool("mock", false, "start with scripted mock agents (no tokens spent)")
 	engine := flag.String("engine", os.Getenv("QUORUM_ENGINE"), "engine command (default: auto-detected)")
+	calm := flag.Bool("calm", os.Getenv("QUORUM_CALM") != "", "no animation: diagrams show their final frame")
 	flag.Parse()
 
 	// The UI needs a real terminal. Without one (piped, CI, or an editor's "run" box) say how to
@@ -56,7 +57,7 @@ func main() {
 	}
 	defer client.Close()
 
-	if err := ui.Run(ui.Options{Client: client, Messages: client.Messages(), Repo: dir, Mock: *mock}); err != nil {
+	if err := ui.Run(ui.Options{Client: client, Messages: client.Messages(), Repo: dir, Mock: *mock, Calm: *calm}); err != nil {
 		fmt.Fprintln(os.Stderr, "quorum:", err)
 		fmt.Fprintln(os.Stderr, "engine log:", logPath)
 		os.Exit(1)

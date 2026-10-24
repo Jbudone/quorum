@@ -1,3 +1,5 @@
+import { buildIllustrator } from "../settings.js";
+import { mockIllustrator } from "../illustrator.js";
 import { designCouncil, mockDesigner, realDesigner } from "../designer.js";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
@@ -88,6 +90,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           repo: String(p.repo),
           transportFor: mock ? mockTransportFor(config, opts.assetsDir) : (opts.transportFor ?? defaultTransportFor)(config),
           assetsDir: opts.assetsDir,
+          illustrate: p.diagrams === false ? undefined : mock ? mockIllustrator : opts.transportFor ? undefined : buildIllustrator(cliInfo(), String(p.repo)),
         });
         engine.on((e) => write(e));
         run = await councilWorkflow(engine).createRun();

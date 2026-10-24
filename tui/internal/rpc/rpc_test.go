@@ -63,7 +63,7 @@ func TestRecordedSessionDecodesStrictly(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"config.changed", "round.start", "turn.start", "turn.delta", "turn.done", "plan.updated", "chair.summary", "round.done", "awaiting_human", "idle", "session.done", "response"} {
+	for _, name := range []string{"config.changed", "turn.diagram", "round.start", "turn.start", "turn.delta", "turn.done", "plan.updated", "chair.summary", "round.done", "awaiting_human", "idle", "session.done", "response"} {
 		if counts[name] == 0 {
 			t.Errorf("recording has no %q messages (counts: %v)", name, counts)
 		}

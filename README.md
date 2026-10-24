@@ -36,3 +36,20 @@ Opt-in end-to-end tests: `cd tui && go test ./e2e` drives the real binary and en
 Every council reply ends with a machine-readable TL;DR (headline, up to three bullets, a stance and a confidence). The TUI shows that card first, with a consensus board in the sidebar; press `ctrl+o` to show full replies.
 
 Pick **auto** on the start screen and a model reads your topic, then proposes the council: protocol, rounds, which CLIs and models, and each member's role. You review it in the settings drawer, tweak anything, and press `g` to start.
+
+## Animated diagrams
+
+Replies can gain a small animated diagram a moment after they land: a message **sequence** (a packet travels between actors) or an **attack chain** (the threat moves step by step and the breach flashes). Agents never draw; a cheap model fills a fixed template and Quorum validates, repairs and animates it. `ctrl+r` replays the newest one; `--calm` (or `QUORUM_CALM=1`) shows final frames only.
+
+The drawing model is the first usable of opencode, agy, codex (Claude is never used silently). Pick your own in `~/.config/quorum/settings.toml`:
+
+```toml
+[illustrator]        # any cheap model reachable through a CLI, e.g. Qwen/Kimi/DeepSeek via opencode
+cli = "opencode"
+model = "..."
+
+[jev]                # optional, opt-in: TypeSafe's Jev classifier gates and verifies diagrams
+enabled = true       # needs OPENROUTER_API_KEY in your environment; reply text is sent to OpenRouter
+```
+
+With Jev on, a classifier first decides whether a diagram helps (skipping the generator call when not), then checks the finished diagram is faithful to the reply. If Jev is unreachable no unverified diagram is shown.

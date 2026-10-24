@@ -177,18 +177,15 @@ export const mockDesigner: Ask = async () =>
 
 const DESIGNER_PREFERENCE: CliName[] = ["claude", "codex", "agy", "opencode", "gemini"];
 
-/** A designer backed by the best usable CLI; read-only, with a time limit so a stuck CLI cannot hang the UI. */
-export function realDesigner(clis: CliInfo[], repo: string, timeoutMs = 120_000): { ask: Ask; cli: CliName } {
-  const usable = new Set(clis.filter((c) => c.usable).map((c) => c.cli));
-  const cli = DESIGNER_PREFERENCE.find((c) => usable.has(c));
-  if (!cli) throw new Error("no agent CLI is usable, so there is nothing to design a council from (run `quorum doctor`)");
-  const ask: Ask = async (prompt) => {
-    const transport = createTransport({ id: "designer", cli });
+/** An Ask backed by one CLI turn: read-only, with a time limit so a stuck CLI cannot hang the UI. */
+export function askVia(cli: CliName, model: string | undefined, repo: string, system: string, timeoutMs = 120_000): Ask {
+  return async (prompt) => {
+    const transport = createTransport({ id: "helper", cli, model });
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     let text = "";
     try {
-      for await (const e of transport.send(prompt, { cwd: repo, readOnly: true, signal: ctl.signal, systemPrompt: "You are the Quorum council designer. Answer with the JSON object only." })) {
+      for await (const e of transport.send(prompt, { cwd: repo, readOnly: true, signal: ctl.signal, systemPrompt: system })) {
         if (e.type === "text") text += e.delta;
         else if (e.type === "error") throw new Error(e.message);
       }
@@ -197,5 +194,12 @@ export function realDesigner(clis: CliInfo[], repo: string, timeoutMs = 120_000)
     }
     return text;
   };
-  return { ask, cli };
+}
+
+/** A designer backed by the best usable CLI. */
+export function realDesigner(clis: CliInfo[], repo: string, timeoutMs = 120_000): { ask: Ask; cli: CliName } {
+  const usable = new Set(clis.filter((c) => c.usable).map((c) => c.cli));
+  const cli = DESIGNER_PREFERENCE.find((c) => usable.has(c));
+  if (!cli) throw new Error("no agent CLI is usable, so there is nothing to design a council from (run `quorum doctor`)");
+  return { ask: askVia(cli, undefined, repo, "You are the Quorum council designer. Answer with the JSON object only.", timeoutMs), cli };
 }

@@ -1,3 +1,5 @@
+import type { Diagram } from "./diagram.js";
+import type { Illustrate } from "./illustrator.js";
 import { TLDR_INSTRUCTION, fallbackTldr, splitTldr, type Tldr } from "./tldr.js";
 import { loadPersona, type CouncilConfig, type PauseMode, type Persona } from "./config.js";
 import { renderTranscript } from "./prompts.js";
@@ -9,6 +11,7 @@ import type { AgentTransport } from "./transports/index.js";
 /** Events the engine emits to whoever drives it (RPC server, headless runner, tests). */
 export type EngineEvent =
   | { event: "config.changed"; data: { pause: PauseMode; rounds: number } }
+  | { event: "turn.diagram"; data: { round: number; agent: string; diagram: Diagram } }
   | { event: "round.start"; data: { round: number } }
   | { event: "turn.start"; data: { round: number; agent: string; artifact?: "plan" | "chair-report" } }
   | { event: "turn.delta"; data: { agent: string; delta: string } }
@@ -33,6 +36,8 @@ export interface EngineOptions {
   repo: string;
   transportFor: TransportFor;
   assetsDir?: string;
+  /** Draws a diagram for each reply in the background; omit to skip diagrams. */
+  illustrate?: Illustrate;
 }
 
 export class Engine {
@@ -207,9 +212,30 @@ export class Engine {
       this.roundOutputs[turn.key ?? turn.agent] = body;
       this.emit({ event: "turn.done", data: { round, agent: turn.agent, text: body, ...(tldr ? { tldr } : {}) } });
       this.applyArtifact(round, turn, body);
+      if (tldr) this.illustrate(round, turn.agent, body, tldr);
     }
     return text;
   }
+
+  /** Draws a diagram for a reply in the background; the card gains it whenever it arrives. */
+  private illustrate(round: number, agent: string, body: string, tldr: Tldr): void {
+    const draw = this.o.illustrate;
+    if (!draw) return;
+    const job = draw({ agent, body, tldr })
+      .then((diagram) => {
+        if (diagram) this.emit({ event: "turn.diagram", data: { round, agent, diagram } });
+      })
+      .catch(() => {})
+      .finally(() => this.illustrating.delete(job));
+    this.illustrating.add(job);
+  }
+
+  /** Resolves once every diagram requested so far has arrived or been given up on. */
+  async illustrated(): Promise<void> {
+    while (this.illustrating.size) await Promise.allSettled([...this.illustrating]);
+  }
+
+  private illustrating = new Set<Promise<void>>();
 
   private applyArtifact(round: number, turn: Turn, text: string): void {
     if (turn.artifact === "plan") {
