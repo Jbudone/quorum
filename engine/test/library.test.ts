@@ -22,7 +22,7 @@ const errs = (c: CouncilConfig) => validateCouncil(c, DEFAULT_ASSETS, tmp());
 
 describe("validateCouncil", () => {
   it("accepts every shipped preset", () => {
-    for (const n of ["solo", "trio", "delphi", "deep"]) expect(errs(loadPreset(n, DEFAULT_ASSETS, tmp()))).toEqual([]);
+    for (const n of ["solo", "trio", "delphi", "deep", "auto"]) expect(errs(loadPreset(n, DEFAULT_ASSETS, tmp()))).toEqual([]);
   });
 
   it("explains each kind of mistake in plain words", () => {
@@ -91,7 +91,7 @@ describe("saving presets and personas", () => {
     expect(back.agents).toEqual(c.agents);
 
     const list = listPresets(DEFAULT_ASSETS, user);
-    expect(list.map((p) => p.name)).toEqual(["solo", "trio", "delphi", "deep", "my-review"]);
+    expect(list.map((p) => p.name)).toEqual(["solo", "trio", "delphi", "deep", "auto", "my-review"]);
     const mine = list.at(-1)!;
     expect(mine).toMatchObject({ custom: true, pause: "message", requireEvidence: true });
     expect(mine.agents[0]).toMatchObject({ model: "sonnet", role: "drafter" });
@@ -111,7 +111,7 @@ describe("saving presets and personas", () => {
     const user = tmp();
     mkdirSync(join(user, "presets"));
     writeFileSync(join(user, "presets", "busted.toml"), "this is = not [valid");
-    expect(listPresets(DEFAULT_ASSETS, user).map((p) => p.name)).toEqual(["solo", "trio", "delphi", "deep"]);
+    expect(listPresets(DEFAULT_ASSETS, user).map((p) => p.name)).toEqual(["solo", "trio", "delphi", "deep", "auto"]);
   });
 
   it("lets a user persona add to or override the shipped ones", () => {

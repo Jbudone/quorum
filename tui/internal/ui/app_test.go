@@ -35,7 +35,7 @@ func TestFullSessionJourney(t *testing.T) {
 		st.params["topic"] != "Replace session cookies with JWTs" || st.params["repo"] != "/work/proj" {
 		t.Fatalf("bad session.start: %+v", st)
 	}
-	contains(t, h.screen(), "starting")
+	contains(t, h.screen(), "BOOTING")
 
 	h.reply(st.id)
 	if h.fc.last().method != "session.continue" {
@@ -46,10 +46,10 @@ func TestFullSessionJourney(t *testing.T) {
 	h.feedThrough("awaiting_human")
 	h.feedThrough("idle")
 	s = h.screen()
-	contains(t, s, "Round 1 of 2")
-	contains(t, s, "your turn")
-	contains(t, s, "updated the plan")
-	contains(t, s, "Chair · round 1 summary")
+	contains(t, s, "RND")
+	contains(t, s, "YOUR TURN")
+	contains(t, s, "plan updated")
+	contains(t, s, "CHAIR // round 1 briefing")
 	contains(t, s, "PLAN · REVISION 1")
 	contains(t, s, "OPEN QUESTIONS")
 	contains(t, s, "DISSENT")
@@ -100,8 +100,8 @@ func TestFullSessionJourney(t *testing.T) {
 	h.feedThrough("awaiting_human")
 	h.feedThrough("idle")
 	s = h.screen()
-	contains(t, s, "Round 2 of 2")
-	contains(t, s, "converged")
+	contains(t, s, "RND")
+	contains(t, s, "CONVERGED")
 	contains(t, s, "finished")
 
 	h.press("enter")
@@ -109,7 +109,7 @@ func TestFullSessionJourney(t *testing.T) {
 	h.feedThrough("session.done")
 	h.feedThrough("idle")
 	s = h.screen()
-	contains(t, s, "complete")
+	contains(t, s, "COMPLETE")
 	contains(t, s, "new session")
 	if h.app.sess.canType() {
 		t.Fatal("no input once the session is done")

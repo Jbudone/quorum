@@ -39,7 +39,7 @@ func TestRecordedSessionDecodesStrictly(t *testing.T) {
 				if err := DecodeResult(v.Result, &ps); err != nil {
 					t.Fatalf("presets: %v", err)
 				}
-				if len(ps) != 4 || ps[0].Name != "solo" || len(ps[1].Agents) != 3 {
+				if len(ps) != 5 || ps[0].Name != "solo" || len(ps[1].Agents) != 3 {
 					t.Fatalf("unexpected presets: %+v", ps)
 				}
 			case 2:
@@ -161,7 +161,7 @@ func TestRecordedSettingsDecodesStrictly(t *testing.T) {
 			}
 		}
 	}
-	if errs < 3 || oks < 4 {
+	if errs < 4 || oks < 5 {
 		t.Fatalf("expected a mix of successes and errors, got %d ok / %d errors", oks, errs)
 	}
 }

@@ -25,6 +25,8 @@ export interface CouncilConfig {
   requireEvidence: boolean;
   chair: { cli: CliName; model?: string };
   agents: AgentSpec[];
+  /** True when a model designs the council from the topic before the session starts. */
+  auto?: boolean;
 }
 
 export interface Persona {
@@ -78,6 +80,7 @@ export function parseCouncil(raw: Record<string, any>): CouncilConfig {
     requireEvidence: raw.require_evidence ?? false,
     chair: { cli: chair.cli, model: chair.model },
     agents: agents.map((a: any) => ({ id: a.id, cli: a.cli, model: a.model, persona: a.persona })),
+    ...(raw.auto === true ? { auto: true } : {}),
   };
 }
 
@@ -134,10 +137,12 @@ export interface PresetSummary {
   chair: { cli: CliName; model?: string };
   /** True for presets the user saved, as opposed to the ones shipped with Quorum. */
   custom: boolean;
+  /** True for the preset whose council is designed by a model once the topic is known. */
+  auto: boolean;
   agents: { id: string; cli: CliName; model?: string; role: string; persona: string }[];
 }
 
-const SHIPPED = ["solo", "trio", "delphi", "deep"];
+const SHIPPED = ["solo", "trio", "delphi", "deep", "auto"];
 
 function tomlNames(dir: string): string[] {
   try {
@@ -174,6 +179,7 @@ export function listPresets(assetsDir = DEFAULT_ASSETS, user = userDir()): Prese
         requireEvidence: c.requireEvidence,
         chair: c.chair,
         custom: !shipped.includes(name),
+        auto: c.auto === true,
         agents: c.agents.map((a) => ({
           id: a.id,
           cli: a.cli,

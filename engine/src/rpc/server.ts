@@ -1,3 +1,4 @@
+import { designCouncil, mockDesigner, realDesigner } from "../designer.js";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { listPersonas, listPresets, loadPreset, mockify, type CliName, type CouncilConfig } from "../config.js";
@@ -107,6 +108,14 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "presets.save": {
         const file = savePreset(String(p.name), councilFromWire(p.config, opts.assetsDir), opts.assetsDir);
         return { name: String(p.name), file };
+      }
+      case "council.design": {
+        const topic = String(p.topic ?? "").trim();
+        if (!topic) throw new Error("tell the designer what the council will work on");
+        const clis = p.mock ? [{ cli: "mock" as CliName, usable: true, models: [] as string[] }] : cliInfo();
+        const designer = p.mock ? { ask: mockDesigner, cli: "mock" } : realDesigner(clis, String(p.repo ?? process.cwd()));
+        const d = await designCouncil(designer.ask, { topic, clis, assetsDir: opts.assetsDir });
+        return { ...d, designer: designer.cli };
       }
       case "session.configure":
         return need().configure({ pause: p.pause, rounds: p.rounds });

@@ -38,13 +38,17 @@ type row struct {
 
 // settings is the drawer that edits a private copy of the selected council.
 type settings struct {
-	draft    rpc.Preset
-	base     rpc.Preset // the council as the engine listed it, for reset and the edited marker
-	cursor   int
-	naming   bool
-	name     textinput.Model
-	err      string
-	notice   string
+	draft  rpc.Preset
+	base   rpc.Preset // the council as the engine listed it, for reset and the edited marker
+	cursor int
+	naming bool
+	name   textinput.Model
+	err    string
+	notice string
+	// proposal is set when a model designed this council; the human reviews it before starting.
+	proposal *rpc.DesignResult
+	forced   bool // always send as a full config, even if unchanged from base
+	launch   bool // the human asked to start with these settings
 	personas []rpc.Persona
 	clis     []rpc.CLIInfo
 }
@@ -63,7 +67,7 @@ func clonePreset(p rpc.Preset) rpc.Preset {
 	return p
 }
 
-func (s *settings) dirty() bool { return presetDiffers(s.base, s.draft) }
+func (s *settings) dirty() bool { return s.forced || presetDiffers(s.base, s.draft) }
 
 func presetDiffers(a, b rpc.Preset) bool {
 	if a.Protocol != b.Protocol || a.Rounds != b.Rounds || a.Pause != b.Pause || a.ReadOnly != b.ReadOnly ||
@@ -287,6 +291,11 @@ func (s *settings) update(k tea.KeyPressMsg) (closeIt bool, save string, cmd tea
 		s.draft = clonePreset(s.base)
 		s.cursor = min(s.cursor, len(s.rows())-1)
 		s.notice = "Back to the original settings."
+	case "g", "ctrl+s":
+		if s.proposal != nil {
+			s.launch = true
+			return true, "", nil
+		}
 	case "s":
 		s.naming = true
 		s.name.SetValue("")
@@ -329,10 +338,23 @@ func (s *settings) label(r row) (name, value, hint string) {
 
 func (s *settings) view(th theme.Theme, w, h int) string {
 	title := "Settings · " + s.base.Name
-	if s.dirty() {
+	if s.proposal != nil {
+		title = "Proposed council"
+	} else if s.dirty() {
 		title += " · edited"
 	}
 	lines := []string{sectionTitle(title, w, th, true)}
+	reserve := 6
+	if p := s.proposal; p != nil {
+		why := ansi.Wrap(fg(th.Text).Render(p.Rationale), w-2, "")
+		if p.Source == "fallback" {
+			why += "\n" + fg(th.Warn).Render("⚠ the designer's answer was unusable; this is the standard council")
+		} else {
+			why += "\n" + fg(th.Subtle).Render("designed by "+p.Designer)
+		}
+		lines = append(lines, why, "")
+		reserve += strings.Count(why, "\n") + 2
+	}
 	rs := s.rows()
 	var body []string
 	for i, r := range rs {
@@ -355,7 +377,7 @@ func (s *settings) view(th theme.Theme, w, h int) string {
 		body = append(body, ansi.Truncate(line, w, "…"))
 	}
 	// Window the rows around the cursor when the screen is short.
-	room := max(h-6, 5)
+	room := max(h-reserve-3, 4)
 	start := 0
 	if len(body) > room {
 		start = min(max(s.cursor-room/2, 0), len(body)-room)
@@ -377,6 +399,9 @@ func (s *settings) view(th theme.Theme, w, h int) string {
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
 	sep := fg(th.Subtle).Render(" · ")
 	hints := []string{k("↑↓", "move"), k("←→", "change"), k("a", "add member"), k("d", "remove"), k("s", "save"), k("r", "reset"), k("esc", "done")}
+	if s.proposal != nil {
+		hints = append([]string{k("g", "start council")}, hints...)
+	}
 	if s.naming {
 		hints = []string{k("enter", "save"), k("esc", "cancel")}
 	}

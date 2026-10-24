@@ -1,0 +1,27 @@
+name = "auto"
+description = "A model reads your topic and designs the council: size, models, roles, protocol."
+protocol = "draft-critique-revise"
+auto = true
+rounds = 3
+pause = "round"
+read_only = true
+
+# Only used if the designer cannot produce a valid council; otherwise it is replaced.
+[chair]
+cli = "claude"
+
+[[agents]]
+id = "architect"
+cli = "claude"
+persona = "architect"
+
+[[agents]]
+id = "skeptic"
+cli = "codex"
+persona = "skeptic"
+
+[[agents]]
+id = "pragmatist"
+cli = "agy"
+model = "gemini-4-argon-medium"
+persona = "pragmatist"

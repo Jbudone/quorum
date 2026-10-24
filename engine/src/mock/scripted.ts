@@ -66,6 +66,17 @@ function chairReport(round: number, total: number): string {
   ].join("\n");
 }
 
+const TLDRS: Record<string, string> = {
+  skeptic: "headline: Rotation needs reuse detection and an exit plan\nstance: disagree\nconfidence: 80\n- Refresh theft is the critical gap\n- Dual-read has no exit or rollback\n- Key custody is undefined",
+  pragmatist: "headline: Ship the token service alone first\nstance: mixed\nconfidence: 70\n- Two migrations in one is too big\n- Cut SSO from this milestone\n- Tie the soak to an error rate",
+  security: "headline: Asymmetric signing, device-bound refresh\nstance: mixed\nconfidence: 72\n- Verifiers must not hold signing keys\n- Rate-limit the refresh endpoint",
+  operator: "headline: Needs a kill switch and runbook\nstance: mixed\nconfidence: 65\n- Per-tenant kill switch\n- Cookie vs JWT traffic dashboard\n- Key-rotation runbook",
+  "user-advocate": "headline: Never force a surprise logout\nstance: mixed\nconfidence: 68\n- Make rotation silent\n- Explain revoked sessions clearly",
+  architect: "headline: Short-lived JWTs with refresh rotation\nstance: agree\nconfidence: 78\n- Flag-gated per tenant\n- Dual-read bridges old cookies\n- Reuse detection revokes the family",
+};
+
+const withTldr = (reply: string, block: string): string => `${reply}\n\n<tldr>\n${block}\n</tldr>`;
+
 export function scriptedMock(id: string, personaKey: string, chunkDelayMs = 10): MockTransport {
   const t = new MockTransport(id, { rules: [], chunkDelayMs });
   t.send = (prompt, opts) => {
@@ -82,6 +93,10 @@ export function scriptedMock(id: string, personaKey: string, chunkDelayMs = 10):
     else if (/The human asks:/.test(prompt))
       reply = "The Skeptic and Pragmatist disagree about scope, not direction: one wants more safety in the first release, the other wants a smaller first release. Either is defensible; the deciding factor is how costly a token-theft incident would be for you.";
     else reply = CRITIQUES[personaKey] ?? "I broadly agree with the direction, with a few caveats worth tracking.";
+    if (!close && personaKey !== "chair" && !/POSITION:/.test(prompt)) {
+      const own = TLDRS[personaKey] ?? "headline: Broadly agree, with caveats\nstance: agree\nconfidence: 60\n- Direction is sound\n- A few caveats to track";
+      reply = withTldr(reply, /first full draft|Produce the full revised plan|Synthesize/.test(prompt) ? TLDRS.architect : own);
+    }
     return new MockTransport(id, { rules: [], fallback: reply, chunkDelayMs }).send(prompt, opts);
   };
   return t;

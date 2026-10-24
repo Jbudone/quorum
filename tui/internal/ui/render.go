@@ -47,23 +47,17 @@ func renderEntry(s *session, e *entry, th theme.Theme, width int, spin string) s
 func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) string {
 	switch e.kind {
 	case kindRound:
-		label := fmt.Sprintf(" Round %d of %d ", e.round, e.total)
-		side := (width - lipgloss.Width(label)) / 2
-		if side < 2 {
-			side = 2
-		}
-		rule := fg(th.Subtle).Render(strings.Repeat("─", side))
-		return rule + fg(th.Muted).Bold(true).Render(label) + rule
+		return glitchRule(fmt.Sprintf("ROUND %d/%d", e.round, e.total), width, s.frame, th)
 
 	case kindSystem:
-		return fg(th.Muted).Italic(true).Render(wrapPlain("· "+e.text, width, th))
+		return fg(th.Muted).Italic(true).Render(wrapPlain("» "+e.text, width, th))
 
 	case kindError:
 		return fg(th.Err).Render(ansi.Wrap("✗ "+e.text, width, ""))
 
 	case kindSummary:
-		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(th.Chair).Padding(0, 1).Width(width)
-		title := fg(th.Chair).Bold(true).Render(fmt.Sprintf("Chair · round %d summary", e.round))
+		box := lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForegroundBlend(th.Accent, th.Accent2, th.Chair).Padding(0, 1).Width(width)
+		title := theme.GradientShift(fmt.Sprintf("◆ CHAIR // round %d briefing", e.round), s.frame, th.Accent2, th.Chair, th.Accent)
 		body := wrapPlain(e.text, width-4, th)
 		if e.converged {
 			body += "\n\n" + fg(th.OK).Bold(true).Render("✓ The council has converged")
@@ -89,29 +83,70 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 	}
 	head := bar + " " + fg(col).Bold(true).Render(name) + "  " + fg(th.Muted).Render(meta)
 
-	var body string
-	switch {
-	case e.artifact == "chair-report" && !e.streaming:
+	if e.artifact == "chair-report" && !e.streaming {
 		return "" // the Chair's summary callout replaces the raw report
-	case e.artifact == "chair-report":
-		body = fg(th.Muted).Italic(true).Render("writing the round report…")
-	case e.artifact == "plan" && e.streaming:
-		body = fg(th.Muted).Italic(true).Render(spin + " working on the plan…")
-	case e.artifact == "plan":
-		body = fg(th.OK).Render("✎ updated the plan") + fg(th.Muted).Render(fmt.Sprintf("  (%s)", humanSize(len(e.text))))
-	case e.streaming && e.text == "":
-		body = fg(th.Muted).Italic(true).Render(spin + " thinking…")
-	default:
-		body = wrapPlain(strings.TrimSpace(e.text), width-2, th)
-		if e.streaming {
-			body += fg(col).Render("▍")
+	}
+	if e.streaming {
+		return head + "\n" + prefixLines(streamingBody(s, e, th, width-2, col, spin), bar)
+	}
+
+	var rows []string
+	if len(e.tools) > 0 {
+		rows = append(rows, fg(th.Subtle).Render("↳ "+strings.Join(e.tools, ", ")))
+	}
+	t := e.tldr
+	if t != nil {
+		// Verdict line: stance on the left, confidence meter on the right.
+		left := stanceChip(t.Stance, th)
+		right := ""
+		if t.Confidence != nil {
+			c := fg(th.Stance(t.Stance))
+			right = meter(*t.Confidence, 8, c, fg(th.Subtle)) + fg(th.Muted).Render(fmt.Sprintf(" %d%%", *t.Confidence))
+		}
+		gap := width - 3 - lipgloss.Width(left) - lipgloss.Width(right)
+		if gap < 1 {
+			right, gap = "", 1
+		}
+		rows = append(rows, left+strings.Repeat(" ", gap)+right)
+		if t.Headline != "" {
+			rows = append(rows, ansi.Wrap(fg(th.Text).Bold(true).Render("▸ "+t.Headline), width-2, ""))
+		}
+		for _, b := range t.Bullets {
+			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+fg(th.Text).Render(b), width-2, ""))
 		}
 	}
-	if len(e.tools) > 0 {
-		t := fg(th.Subtle).Render("↳ " + strings.Join(e.tools, ", "))
-		body = t + "\n" + body
+	switch {
+	case e.artifact == "plan":
+		rows = append(rows, fg(th.OK).Render("✎ plan updated")+fg(th.Muted).Render(fmt.Sprintf("  (%s) · ctrl+p to read", humanSize(len(e.text)))))
+	case s.full || t == nil || e.speaker == "chair":
+		rows = append(rows, "", wrapPlain(strings.TrimSpace(e.text), width-2, th))
+	default:
+		rows = append(rows, fg(th.Subtle).Render(fmt.Sprintf("⋯ %d words hidden · ctrl+o shows full replies", len(strings.Fields(e.text)))))
 	}
-	return head + "\n" + prefixLines(body, bar)
+	return head + "\n" + prefixLines(strings.Join(rows, "\n"), bar)
+}
+
+// streamingBody shows a live pulse and the tail of what has arrived, without the TL;DR block.
+func streamingBody(s *session, e *entry, th theme.Theme, width int, col color.Color, spin string) string {
+	text := e.text
+	if i := strings.Index(strings.ToLower(text), "<tldr"); i >= 0 {
+		text = text[:i]
+	}
+	label := "receiving"
+	switch {
+	case e.artifact == "plan":
+		label = "drafting the plan"
+	case e.artifact == "chair-report":
+		label = "writing the round report"
+	case strings.TrimSpace(text) == "":
+		label = "thinking"
+	}
+	line := fg(th.Muted).Italic(true).Render(spin+" "+label+" ") + wave(max(min(width-lipgloss.Width(label)-6, 24), 4), s.frame, th)
+	if e.artifact != "" || strings.TrimSpace(text) == "" {
+		return line
+	}
+	tail := strings.Split(strings.TrimSpace(ansi.Wrap(plainInline(text), width-2, "")), "\n")
+	return line + "\n" + fg(th.Subtle).Render("… "+ansi.Truncate(tail[len(tail)-1], width-4, "…")) + fg(col).Render("▍")
 }
 
 func humanSize(n int) string {
@@ -135,8 +170,8 @@ func renderTranscript(s *session, th theme.Theme, width int, spin string) string
 // ---- header / roster / footer ----
 
 func renderHeader(s *session, th theme.Theme, width int, spin string) string {
-	left := fg(th.Accent2).Render("✦ ") + theme.Gradient("Quorum", th.Accent2, th.Accent) +
-		fg(th.Muted).Render("  "+s.preset.Name+" · "+s.preset.Protocol)
+	left := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", s.frame, th.Accent2, th.Accent, th.Info, th.Speaker(2)) +
+		fg(th.Accent2).Render(" ░▒▓ ") + fg(th.Muted).Render("// "+s.preset.Name+" // "+s.preset.Protocol)
 
 	var chips []string
 	if s.total > 0 && s.round > 0 {
@@ -151,10 +186,10 @@ func renderHeader(s *session, th theme.Theme, width int, spin string) string {
 				dots += fg(th.Subtle).Render("○")
 			}
 		}
-		chips = append(chips, fg(th.Muted).Render("round ")+dots)
+		chips = append(chips, fg(th.Muted).Render("RND ")+dots)
 	}
 	if s.pause != "" && s.pause != "round" {
-		chips = append(chips, fg(th.Muted).Render("pause: "+s.pause))
+		chips = append(chips, fg(th.Muted).Render("PAUSE:"+strings.ToUpper(s.pause)))
 	}
 	if s.quota != nil {
 		q := *s.quota
@@ -164,24 +199,24 @@ func renderHeader(s *session, th theme.Theme, width int, spin string) string {
 		} else if q >= 0.7 {
 			c = th.Warn
 		}
-		chips = append(chips, fg(c).Render(fmt.Sprintf("quota %d%%", int(q*100+0.5))))
+		chips = append(chips, fg(c).Render(fmt.Sprintf("QUOTA %d%%", int(q*100+0.5))))
 	}
 	if s.converged {
-		chips = append(chips, fg(th.OK).Render("✓ converged"))
+		chips = append(chips, fg(th.OK).Bold(true).Render("✓ CONVERGED"))
 	}
 	switch s.phase {
 	case phaseStarting:
-		chips = append(chips, fg(th.Muted).Render(spin+" starting"))
+		chips = append(chips, fg(th.Muted).Render(spin+" BOOTING"))
 	case phaseRunning:
-		chips = append(chips, fg(th.Accent2).Render(spin+" deliberating"))
+		chips = append(chips, fg(th.Accent2).Render(spin+" DELIBERATING"))
 	case phasePaused:
 		if s.busy() {
-			chips = append(chips, fg(th.Accent2).Render(spin+" replying"))
+			chips = append(chips, fg(th.Accent2).Render(spin+" REPLYING"))
 		} else {
-			chips = append(chips, fg(th.Warn).Bold(true).Render("● your turn"))
+			chips = append(chips, fg(th.Warn).Bold(true).Render("● YOUR TURN"))
 		}
 	case phaseDone:
-		chips = append(chips, fg(th.OK).Render("✓ complete"))
+		chips = append(chips, fg(th.OK).Bold(true).Render("✓ COMPLETE"))
 	}
 	right := strings.Join(chips, fg(th.Subtle).Render("  ·  "))
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -242,7 +277,35 @@ func renderRoster(s *session, th theme.Theme, width int, spin string) string {
 		}
 		rows = append(rows, line+strings.Repeat(" ", gap)+r)
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(rows, "\n") + renderBoard(s, th, width)
+}
+
+// renderBoard is the consensus board: each member's latest stance and confidence at a glance.
+func renderBoard(s *session, th theme.Theme, width int) string {
+	var rows []string
+	agree, voted := 0, 0
+	for _, m := range s.members {
+		if m.stance == "" {
+			continue
+		}
+		voted++
+		if m.stance == "agree" {
+			agree++
+		}
+		c := fg(th.Stance(m.stance))
+		bar := meter(max(m.conf, 0), 5, c, fg(th.Subtle))
+		if m.conf < 0 {
+			bar = fg(th.Subtle).Render("▱▱▱▱▱")
+		}
+		rows = append(rows, fmt.Sprintf("%s %s %s", fg(s.memberColor(th, m.id)).Render(fmt.Sprintf("%-11s", ansi.Truncate(m.id, 11, "…"))), bar, c.Render(strings.ToLower(m.stance))))
+	}
+	if voted == 0 {
+		return ""
+	}
+	pct := agree * 100 / voted
+	head := sectionTitle("Consensus", width, th, false)
+	gauge := meter(pct, 12, fg(th.OK), fg(th.Subtle)) + fg(th.Muted).Render(fmt.Sprintf(" %d%% agree", pct))
+	return "\n\n" + head + "\n" + gauge + "\n" + strings.Join(rows, "\n")
 }
 
 // bullets returns up to maxItems list items from markdown-ish text, each wrapped to width.
@@ -306,9 +369,9 @@ func footerHint(s *session, th theme.Theme, width int) string {
 	case s.phase == phaseDone:
 		parts = []string{k("n", "new session"), k("q", "quit"), k("tab", "focus"), k("ctrl+p", "plan")}
 	case s.canType():
-		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
+		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+o", "full"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
 	default:
-		parts = []string{k("ctrl+x", "stop"), k("tab", "focus"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
+		parts = []string{k("ctrl+x", "stop"), k("ctrl+o", "full"), k("tab", "focus"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
 	}
 	for len(parts) > 1 && lipgloss.Width(strings.Join(parts, sep)) > width {
 		parts = parts[:len(parts)-1]

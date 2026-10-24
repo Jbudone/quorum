@@ -37,6 +37,7 @@ type entry struct {
 	text      string
 	artifact  string // "plan" or "chair-report" when the reply becomes a document
 	tools     []string
+	tldr      *rpc.Tldr // digest shown first; nil for Chair reports and human lines
 	streaming bool
 	converged bool
 	to        string // for human entries: who they were addressed to
@@ -53,6 +54,8 @@ type member struct {
 	status status
 	color  int // index into the theme's speaker palette
 	tool   string
+	stance string // latest declared stance, for the consensus board
+	conf   int    // -1 when unknown
 }
 
 type status int
@@ -88,6 +91,8 @@ type session struct {
 	quota     *float64
 	notes     []string
 	pause     string
+	frame     int  // animation frame, advanced by the app on every tick
+	full      bool // show full replies under their digests
 }
 
 func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
@@ -96,7 +101,7 @@ func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
 		s.total = rounds
 	}
 	for i, a := range p.Agents {
-		s.members = append(s.members, member{id: a.ID, cli: a.CLI, role: a.Role, color: i})
+		s.members = append(s.members, member{id: a.ID, cli: a.CLI, role: a.Role, color: i, conf: -1})
 	}
 	s.chair = member{id: "chair", cli: "", role: "chair", color: -1}
 	return s
@@ -236,7 +241,13 @@ func (s *session) apply(ev rpc.Event) {
 			m.status, m.tool = statusDone, ""
 		}
 		if e := s.streamingEntry(d.Agent); e != nil {
-			e.text, e.streaming, e.cacheW = d.Text, false, 0
+			e.text, e.streaming, e.cacheW, e.tldr = d.Text, false, 0, d.Tldr
+		}
+		if m := s.find(d.Agent); m != nil && d.Tldr != nil && d.Agent != "chair" {
+			m.stance, m.conf = d.Tldr.Stance, -1
+			if d.Tldr.Confidence != nil {
+				m.conf = *d.Tldr.Confidence
+			}
 		}
 
 	case rpc.Usage:

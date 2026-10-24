@@ -48,10 +48,18 @@ type (
 		Agent string `json:"agent"`
 		Name  string `json:"name"`
 	}
+	// Tldr is the short digest every council reply carries; the TUI shows it ahead of the full text.
+	Tldr struct {
+		Headline   string   `json:"headline"`
+		Bullets    []string `json:"bullets"`
+		Stance     string   `json:"stance"` // agree | disagree | mixed | neutral
+		Confidence *int     `json:"confidence"`
+	}
 	TurnDone struct {
 		Round int    `json:"round"`
 		Agent string `json:"agent"`
 		Text  string `json:"text"`
+		Tldr  *Tldr  `json:"tldr"`
 	}
 	Usage struct {
 		Agent            string   `json:"agent"`
@@ -115,6 +123,7 @@ type (
 		RequireEvidence bool          `json:"requireEvidence"`
 		Chair           ChairSpec     `json:"chair"`
 		Custom          bool          `json:"custom"`
+		Auto            bool          `json:"auto"` // a model designs the council once the topic is known
 		Agents          []PresetAgent `json:"agents"`
 	}
 	Persona struct {
@@ -130,6 +139,13 @@ type (
 		Error            string   `json:"error"`
 		QuotaUtilization *float64 `json:"quotaUtilization"`
 		Models           []string `json:"models"`
+	}
+	// DesignResult is the council a model proposed for a topic, with its reasoning.
+	DesignResult struct {
+		Config    Preset `json:"config"`
+		Rationale string `json:"rationale"`
+		Source    string `json:"source"` // model | fallback
+		Designer  string `json:"designer"`
 	}
 	SaveResult struct {
 		Name string `json:"name"`

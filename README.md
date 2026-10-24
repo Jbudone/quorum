@@ -30,3 +30,9 @@ Sessions are saved as plain files in `<repo>/.quorum/sessions/<id>/`.
 
 Opt-in end-to-end tests: `cd tui && go test ./e2e` drives the real binary and engine in a pty
 (`QUORUM_E2E_LIVE=1` runs one real Claude round; `QUORUM_E2E_OUT=dir` writes HTML screenshots).
+
+## Digests and the Auto council
+
+Every council reply ends with a machine-readable TL;DR (headline, up to three bullets, a stance and a confidence). The TUI shows that card first, with a consensus board in the sidebar; press `ctrl+o` to show full replies.
+
+Pick **auto** on the start screen and a model reads your topic, then proposes the council: protocol, rounds, which CLIs and models, and each member's role. You review it in the settings drawer, tweak anything, and press `g` to start.

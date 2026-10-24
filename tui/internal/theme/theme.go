@@ -31,12 +31,12 @@ func Default() Theme {
 		Muted:   c("#858392"), // Squid
 		Subtle:  c("#605F6B"), // Oyster
 		Border:  c("#4D4C57"), // Iron
-		Accent:  c("#6B50FF"), // Charple
+		Accent:  c("#7D5CFF"), // Charple, a touch hotter
 		Accent2: c("#FF60FF"), // Dolly
 		OK:      c("#12C78F"), // Guac
 		Warn:    c("#E8FE96"), // Zest
 		Err:     c("#FF388B"), // Cherry
-		Info:    c("#00A4FF"), // Malibu
+		Info:    c("#00B8FF"), // Malibu
 		Chair:   c("#9D8BFF"),
 		Speakers: []color.Color{
 			c("#00A4FF"), // Malibu
@@ -47,6 +47,19 @@ func Default() Theme {
 			c("#B4A0FF"),
 		},
 	}
+}
+
+// Stance colors a declared position: green for agree, red for disagree, yellow for mixed.
+func (t Theme) Stance(name string) color.Color {
+	switch name {
+	case "agree":
+		return t.OK
+	case "disagree":
+		return t.Err
+	case "mixed":
+		return t.Warn
+	}
+	return t.Muted
 }
 
 // Speaker returns the color for the i-th council member.
@@ -62,6 +75,23 @@ func Gradient(s string, stops ...color.Color) string {
 	out := ""
 	for i, r := range runes {
 		out += lipgloss.NewStyle().Foreground(cols[i]).Bold(true).Render(string(r))
+	}
+	return out
+}
+
+// GradientShift is Gradient on a loop: the colors rotate by offset cells, which animates when the
+// offset advances every frame.
+func GradientShift(s string, offset int, stops ...color.Color) string {
+	runes := []rune(s)
+	n := len(runes)
+	if n == 0 || len(stops) == 0 {
+		return s
+	}
+	loop := append(append([]color.Color{}, stops...), stops[0])
+	cols := lipgloss.Blend1D(n, loop...)
+	out := ""
+	for i, r := range runes {
+		out += lipgloss.NewStyle().Foreground(cols[((i+offset)%n+n)%n]).Bold(true).Render(string(r))
 	}
 	return out
 }

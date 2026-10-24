@@ -103,4 +103,9 @@ await record(process.argv[3], async (c) => {
   await c.until((m) => m.id === 6);
   c.send(7, "session.configure", { rounds: 99 });
   await c.until((m) => m.id === 7);
+  // The Auto council: a model designs the council from the topic.
+  c.send(8, "council.design", { topic: "Replace session cookies with JWTs", mock: true, repo: repo() });
+  await c.until((m) => m.id === 8);
+  c.send(9, "council.design", { topic: "  ", mock: true });
+  await c.until((m) => m.id === 9);
 });

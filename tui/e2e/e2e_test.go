@@ -184,8 +184,8 @@ func TestRealBinaryMockSession(t *testing.T) {
 	tm.snapshot("2-start-filled")
 	tm.send("\r")
 
-	s := tm.waitFor("your turn", 60*time.Second)
-	if !strings.Contains(s, "Round 1 of 3") || !strings.Contains(s, "Chair · round 1 summary") {
+	s := tm.waitFor("YOUR TURN", 60*time.Second)
+	if !strings.Contains(s, "RND ●○○") || !strings.Contains(s, "CHAIR //") {
 		t.Fatalf("round 1 incomplete:\n%s", s)
 	}
 	tm.snapshot("3-round1-paused")
@@ -193,23 +193,23 @@ func TestRealBinaryMockSession(t *testing.T) {
 	tm.typ("Why do they disagree?")
 	tm.send("\r")
 	tm.waitFor("scope, not direction", 30*time.Second)
-	tm.waitFor("your turn", 30*time.Second)
+	tm.waitFor("YOUR TURN", 30*time.Second)
 	tm.snapshot("4-asked-chair")
 
 	tm.send("\r") // continue
-	tm.waitFor("Round 2 of 3", 60*time.Second)
-	tm.waitFor("your turn", 60*time.Second)
+	tm.waitFor("RND ●●○", 60*time.Second)
+	tm.waitFor("YOUR TURN", 60*time.Second)
 	tm.send("\r") // round 3
-	tm.waitFor("Round 3 of 3", 60*time.Second)
-	s = tm.waitFor("converged", 60*time.Second)
-	tm.waitFor("your turn", 30*time.Second)
+	tm.waitFor("RND ●●●", 60*time.Second)
+	s = tm.waitFor("CONVERGED", 60*time.Second)
+	tm.waitFor("YOUR TURN", 30*time.Second)
 	tm.snapshot("5-converged")
 	_ = s
 
 	tm.send("\r") // finish
 	tm.waitFor("new session", 30*time.Second)
 	s = tm.text()
-	if !strings.Contains(s, "complete") {
+	if !strings.Contains(s, "COMPLETE") {
 		t.Fatalf("expected a complete session:\n%s", s)
 	}
 	tm.snapshot("6-done")
@@ -235,8 +235,8 @@ func TestRealBinaryLiveClaude(t *testing.T) {
 	tm.typ("Plan how to make src/auth.ts safe to ship: credential checking and session ids. Keep every reply under 100 words.")
 	tm.send("\r")
 
-	s := tm.waitFor("your turn", 5*time.Minute)
-	for _, want := range []string{"architect", "skeptic", "pragmatist", "Chair · round 1 summary", "PLAN · REVISION"} {
+	s := tm.waitFor("YOUR TURN", 5*time.Minute)
+	for _, want := range []string{"architect", "skeptic", "pragmatist", "CHAIR // round 1 briefing", "PLAN · REVISION"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("live round is missing %q:\n%s", want, s)
 		}

@@ -77,6 +77,7 @@ type App struct {
 	ticking    bool
 	quitting   bool
 	help       bool
+	frame      int    // animation clock
 	sideTop    string // roster, notes and plan title, rebuilt in refresh
 }
 
@@ -145,7 +146,7 @@ func (a *App) fail(msg string) {
 // needsTick reports whether something on screen is animating.
 func (a *App) needsTick() bool {
 	if a.screen == screenStart {
-		return !a.loaded && a.engineErr == ""
+		return true // the banner animates
 	}
 	s := a.sess
 	return s != nil && (s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
@@ -170,6 +171,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		a.ticking = false
+		a.frame++
+		if a.sess != nil {
+			a.sess.frame = a.frame
+		}
 		var c tea.Cmd
 		a.spin, c = a.spin.Update(m)
 		a.refresh()
@@ -243,6 +248,9 @@ func (a *App) handleResponse(r rpc.Response) {
 			// Nothing started, so go back and let the user adjust.
 			a.sess, a.screen = nil, screenStart
 			a.start.err = r.Err
+		case method == "council.design":
+			a.start.designing = false
+			a.start.err = r.Err
 		case method == "presets.save" && a.start.drawer != nil:
 			a.start.drawer.err = r.Err
 		case isJob(method):
@@ -286,6 +294,16 @@ func (a *App) handleResponse(r rpc.Response) {
 			return
 		}
 		a.start.clis = cs
+	case "council.design":
+		var dr rpc.DesignResult
+		if err := rpc.DecodeResult(r.Result, &dr); err != nil {
+			a.start.designing = false
+			a.fail("bad council design from engine: " + err.Error())
+			return
+		}
+		if a.start.designing { // not cancelled meanwhile
+			a.start.applyDesign(dr)
+		}
 	case "presets.save":
 		var sr rpc.SaveResult
 		if err := rpc.DecodeResult(r.Result, &sr); err != nil {
@@ -350,6 +368,12 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	case "esc":
 		a.help = false
 		return nil
+	case "ctrl+o":
+		s.full = !s.full
+		for _, e := range s.entries {
+			e.cacheW = 0
+		}
+		return nil
 	}
 	if s.phase == phaseDone {
 		switch key {
@@ -393,6 +417,15 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 		a.start.savingFrom = a.start.drawer.base.Name
 		a.call("presets.save", map[string]any{"name": name, "config": a.start.drawer.wire(name)})
 	}
+	if a.start.designReq {
+		a.start.designReq = false
+		params := map[string]any{"topic": strings.TrimSpace(a.start.topic.Value()), "repo": a.opts.Repo}
+		if a.start.mock {
+			params["mock"] = true
+		}
+		a.call("council.design", params)
+		return c
+	}
 	if !start {
 		return c
 	}
@@ -400,6 +433,7 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 	params := a.start.startParams(a.opts.Repo)
 	p = a.start.effective()
 	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), 0)
+	delete(a.start.drafts, "auto") // a designed council is for this topic only
 	a.sess.add(&entry{kind: kindHuman, to: "the council", text: a.sess.topic})
 	a.screen = screenSession
 	a.follow = true
@@ -598,7 +632,7 @@ func (a *App) View() tea.View {
 	var content string
 	if a.screen == screenStart {
 		repo := a.opts.Repo
-		content = a.start.view(a.th, a.w, a.h, repo, !a.loaded && a.engineErr == "", a.spin.View())
+		content = a.start.view(a.th, a.w, a.h, repo, !a.loaded && a.engineErr == "", a.spin.View(), a.frame)
 		if a.engineErr != "" {
 			content = lipgloss.JoinVertical(lipgloss.Left, content, fg(a.th.Err).Render("✗ "+a.engineErr))
 		}
@@ -635,7 +669,11 @@ func (a *App) sessionView() string {
 	if s.canType() {
 		border = a.th.Accent
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Width(a.w).Render(a.input.View())
+	boxStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Width(a.w)
+	if s.canType() {
+		boxStyle = boxStyle.BorderForegroundBlend(a.th.Accent2, a.th.Accent, a.th.Info, a.th.Speaker(2)).BorderForegroundBlendOffset(a.frame)
+	}
+	box := boxStyle.Render(a.input.View())
 	footer := footerHint(s, a.th, a.w)
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", body, box, footer)
 }

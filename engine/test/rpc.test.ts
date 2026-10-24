@@ -68,11 +68,11 @@ describe("rpc server", () => {
 });
 
 describe("rpc server: TUI surface", () => {
-  it("lists the four presets with each member's role", async () => {
+  it("lists the shipped presets with each member's role", async () => {
     const h = harness();
     h.send({ id: 1, method: "presets.list" });
     const res = (await h.waitFor((m) => m.id === 1)).result;
-    expect(res.map((p: any) => p.name)).toEqual(["solo", "trio", "delphi", "deep"]);
+    expect(res.map((p: any) => p.name)).toEqual(["solo", "trio", "delphi", "deep", "auto"]);
     expect(res[1].agents[0]).toMatchObject({ id: "architect", role: "drafter" });
     h.input.end();
     await h.done;
@@ -117,6 +117,19 @@ describe("rpc server: customizing a council", () => {
     h.send({ id: 1, method: "session.start", params: { config: goodConfig, mock: true, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
     const r = (await h.waitFor((m) => m.id === 1)).result;
     expect(r).toMatchObject({ agents: ["writer", "reviewer"], rounds: 1 });
+    h.input.end();
+    await h.done;
+  });
+
+  it("designs a council from the topic (mock) and rejects an empty topic", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "council.design", params: { topic: "Add SSO", mock: true, repo: "/tmp" } });
+    const r = (await h.waitFor((m) => m.id === 1)).result;
+    expect(r).toMatchObject({ source: "model", designer: "mock" });
+    expect(r.config.agents.map((a: any) => a.id)).toEqual(["architect", "skeptic", "security", "operator"]);
+    expect(r.rationale.length).toBeGreaterThan(10);
+    h.send({ id: 2, method: "council.design", params: { topic: "  ", mock: true } });
+    expect((await h.waitFor((m) => m.id === 2)).error.message).toContain("what the council will work on");
     h.input.end();
     await h.done;
   });

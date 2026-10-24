@@ -1,3 +1,4 @@
+import { TLDR_INSTRUCTION, fallbackTldr, splitTldr, type Tldr } from "./tldr.js";
 import { loadPersona, type CouncilConfig, type PauseMode, type Persona } from "./config.js";
 import { renderTranscript } from "./prompts.js";
 import { parseChairReport } from "./protocols/chairReport.js";
@@ -12,7 +13,7 @@ export type EngineEvent =
   | { event: "turn.start"; data: { round: number; agent: string; artifact?: "plan" | "chair-report" } }
   | { event: "turn.delta"; data: { agent: string; delta: string } }
   | { event: "turn.tool"; data: { agent: string; name: string } }
-  | { event: "turn.done"; data: { round: number; agent: string; text: string } }
+  | { event: "turn.done"; data: { round: number; agent: string; text: string; tldr?: Tldr } }
   | { event: "usage"; data: { agent: string; quotaUtilization?: number; rateLimited?: boolean } }
   | { event: "plan.updated"; data: { round: number; text: string } }
   | {
@@ -163,7 +164,9 @@ export class Engine {
     const persona = this.personas.get(turn.agent);
     if (!persona) throw new Error(`unknown agent "${turn.agent}"`);
     const transport = this.o.transportFor(turn.agent);
-    const prompt = typeof turn.prompt === "function" ? turn.prompt(this.roundOutputs) : turn.prompt;
+    const base = typeof turn.prompt === "function" ? turn.prompt(this.roundOutputs) : turn.prompt;
+    const wantsTldr = turn.artifact !== "chair-report" && turn.agent !== "chair"; // the Chair talks to the human directly
+    const prompt = wantsTldr ? `${base}\n\n${TLDR_INSTRUCTION}` : base;
     this.emit({ event: "turn.start", data: { round, agent: turn.agent, artifact: turn.artifact } });
     let text = "";
     for await (const e of transport.send(prompt, {
@@ -197,10 +200,13 @@ export class Engine {
       }
     }
     if (text) {
-      this.session.append({ round, speaker: turn.agent, text });
-      this.roundOutputs[turn.key ?? turn.agent] = text;
-      this.emit({ event: "turn.done", data: { round, agent: turn.agent, text } });
-      this.applyArtifact(round, turn, text);
+      const split = wantsTldr ? splitTldr(text) : { body: text, tldr: undefined };
+      const body = split.body || text;
+      const tldr = wantsTldr ? (split.tldr ?? fallbackTldr(body)) : undefined;
+      this.session.append({ round, speaker: turn.agent, text: body });
+      this.roundOutputs[turn.key ?? turn.agent] = body;
+      this.emit({ event: "turn.done", data: { round, agent: turn.agent, text: body, ...(tldr ? { tldr } : {}) } });
+      this.applyArtifact(round, turn, body);
     }
     return text;
   }

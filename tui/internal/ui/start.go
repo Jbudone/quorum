@@ -30,6 +30,8 @@ type startModel struct {
 	th         theme.Theme
 	notice     string
 	savingFrom string // the council the in-flight save was started from
+	designing  bool   // waiting for a model to design the council
+	designReq  bool   // set when a design should be requested; the app sends it and clears it
 	saveReq    string // set when the drawer asks to save; the app sends it and clears it
 }
 
@@ -100,13 +102,24 @@ func (m *startModel) canStart() bool {
 // update handles a key press; start is true when the user asked to begin.
 func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 	m.err = ""
+	if m.designing {
+		if msg.String() == "esc" {
+			m.designing = false // the answer, if it still arrives, is ignored
+		}
+		return false, nil
+	}
 	if m.drawer != nil {
-		closeIt, save, c := m.drawer.update(msg)
+		d := m.drawer
+		closeIt, save, c := d.update(msg)
 		if save != "" {
 			m.saveReq = save
 		}
 		if closeIt {
 			m.drawer = nil
+		}
+		if d.launch {
+			d.launch = false
+			return true, c
 		}
 		return false, c
 	}
@@ -167,10 +180,31 @@ func (m *startModel) tryStart() (bool, tea.Cmd) {
 		}
 		return false, nil
 	}
+	if p, _ := m.selected(); p.Auto {
+		if d := m.drafts[p.Name]; d == nil || !d.dirty() {
+			m.designing, m.designReq = true, true
+			return false, nil
+		}
+	}
 	return true, nil
 }
 
-func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, spin string) string {
+// applyDesign opens the drawer on the council a model proposed so the human can review and tweak it.
+func (m *startModel) applyDesign(r rpc.DesignResult) {
+	p, _ := m.selected()
+	cfg := r.Config
+	cfg.Name = p.Name
+	s := newSettings(p, m.personas, m.clis, m.th)
+	s.draft = clonePreset(cfg)
+	for i := range s.draft.Agents {
+		s.draft.Agents[i].Role = s.personaRole(s.draft.Agents[i].Persona)
+	}
+	s.forced, s.proposal = true, &r
+	m.drafts[p.Name] = s
+	m.drawer, m.designing = s, false
+}
+
+func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, spin string, frame int) string {
 	cw := w - 4
 	if cw > 84 {
 		cw = 84
@@ -178,16 +212,26 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 	if cw < 40 {
 		cw = 40
 	}
-	compact := h < 30
+	compact := h < 38
 	if m.drawer != nil {
-		logo := fg(th.Accent2).Render("✦ ") + theme.Gradient("Quorum", th.Accent2, th.Accent)
+		logo := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", frame, th.Accent2, th.Accent, th.Info, th.Speaker(2)) + fg(th.Accent2).Render(" ░▒▓")
 		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Width(cw).Render(logo+"\n\n"+m.drawer.view(th, cw, h)))
 	}
+	if m.designing {
+		var d strings.Builder
+		d.WriteString(renderLogo(th, frame) + "\n\n")
+		d.WriteString(sectionTitle("Designing the council", cw, th, true) + "\n")
+		d.WriteString(fg(th.Muted).Italic(true).Render(spin+" reading your topic, picking models and roles…") + "\n")
+		d.WriteString(wave(max(cw-4, 8), frame, th) + "\n\n")
+		d.WriteString(fg(th.Subtle).Render("esc to cancel"))
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Width(cw).Render(d.String()))
+	}
 	var b strings.Builder
-	logo := fg(th.Accent2).Render("✦ ") + theme.Gradient("Quorum", th.Accent2, th.Accent)
-	b.WriteString(logo + "\n")
-	if !compact {
-		b.WriteString(fg(th.Muted).Render("A council of AI agents that debates your plan, then writes it down.") + "\n\n")
+	if compact {
+		b.WriteString(fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", frame, th.Accent2, th.Accent, th.Info, th.Speaker(2)) + fg(th.Accent2).Render(" ░▒▓") + "\n")
+	} else {
+		b.WriteString(renderLogo(th, frame) + "\n")
+		b.WriteString(fg(th.Muted).Render("> a council of AI agents debates your plan, then writes it down_") + "\n\n")
 	}
 
 	b.WriteString(sectionTitle("Choose a council", cw, th, m.focus == 0) + "\n")

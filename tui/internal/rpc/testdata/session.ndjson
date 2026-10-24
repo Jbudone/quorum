@@ -1,7 +1,7 @@
-{"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"pause":"round","readOnly":true,"requireEvidence":true,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","model":"gemini-4-argon-medium","persona":"user-advocate","role":"panelist"}]}]}
+{"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"pause":"round","readOnly":true,"requireEvidence":true,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","model":"gemini-4-argon-medium","persona":"user-advocate","role":"panelist"}]},{"name":"auto","description":"A model reads your topic and designs the council: size, models, roles, protocol.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":true,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]}]}
 {"id":2,"result":[{"key":"architect","name":"Architect","role":"drafter","custom":false},{"key":"operator","name":"Operator","role":"panelist","custom":false},{"key":"pragmatist","name":"Pragmatist","role":"critic","custom":false},{"key":"security","name":"Security","role":"panelist","custom":false},{"key":"skeptic","name":"Skeptic","role":"critic","custom":false},{"key":"user-advocate","name":"User Advocate","role":"panelist","custom":false}]}
 {"id":3,"result":[{"cli":"claude","usable":true,"quotaUtilization":0.39,"models":["sonnet","opus","fable"]},{"cli":"codex","usable":true,"models":[]},{"cli":"agy","usable":true,"models":["gemini-4-argon-low","gemini-4-argon-medium","gemini-4-argon-high","gemini-3.8-flash-low","gemini-3.8-flash-medium","gemini-3.8-flash-high"]},{"cli":"opencode","usable":true,"models":[]}]}
-{"id":4,"result":{"sessionId":"2026-10-23-23-44-47-trio","dir":"/tmp/rec-ZXhGQC/.quorum/sessions/2026-10-23-23-44-47-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
+{"id":4,"result":{"sessionId":"2026-10-24-01-08-37-trio","dir":"/tmp/rec-jQQhjS/.quorum/sessions/2026-10-24-01-08-37-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
 {"id":5,"result":{}}
 {"event":"round.start","data":{"round":1}}
 {"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
@@ -121,8 +121,35 @@
 {"event":"turn.delta","data":{"agent":"architect","delta":"exit "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"criteria "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"for "}}
-{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read."}}
-{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read."}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"dual-read.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotation\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"agree\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"78\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Flag-gated "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tenant\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"bridges "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"old "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"revokes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.","tldr":{"headline":"Short-lived JWTs with refresh rotation","bullets":["Flag-gated per tenant","Dual-read bridges old cookies","Reuse detection revokes the family"],"stance":"agree","confidence":78}}}
 {"event":"plan.updated","data":{"round":1,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read."}}
 {"event":"turn.start","data":{"round":1,"agent":"skeptic"}}
 {"event":"turn.start","data":{"round":1,"agent":"pragmatist"}}
@@ -194,10 +221,79 @@
 {"event":"turn.delta","data":{"agent":"pragmatist","delta":"error-rate "}}
 {"event":"turn.delta","data":{"agent":"skeptic","delta":"they "}}
 {"event":"turn.delta","data":{"agent":"pragmatist","delta":"threshold "}}
-{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate."}}
-{"event":"turn.done","data":{"round":1,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate."}}
-{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead."}}
-{"event":"turn.done","data":{"round":1,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead."}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate.\n\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead.\n\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Rotation "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"needs "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"alone "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"first\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"plan\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"mixed\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"disagree\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"70\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"80\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Two "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"migrations "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Refresh "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"theft "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"too "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"critical "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"big\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"gap\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Cut "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"has "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"from "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"milestone\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rollback\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Tie "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Key "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"soak "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"custody "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"to "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"undefined\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":1,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate.","tldr":{"headline":"Rotation needs reuse detection and an exit plan","bullets":["Refresh theft is the critical gap","Dual-read has no exit or rollback","Key custody is undefined"],"stance":"disagree","confidence":80}}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"rate\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":1,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead.","tldr":{"headline":"Ship the token service alone first","bullets":["Two migrations in one is too big","Cut SSO from this milestone","Tie the soak to an error rate"],"stance":"mixed","confidence":70}}}
 {"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"Plan: "}}
@@ -362,8 +458,35 @@
 {"event":"turn.delta","data":{"agent":"architect","delta":"that "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"cannot "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"update "}}
-{"event":"turn.delta","data":{"agent":"architect","delta":"quickly."}}
-{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"quickly.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotation\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"agree\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"78\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Flag-gated "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tenant\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"bridges "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"old "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"revokes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":1,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly.","tldr":{"headline":"Short-lived JWTs with refresh rotation","bullets":["Flag-gated per tenant","Dual-read bridges old cookies","Reuse detection revokes the family"],"stance":"agree","confidence":78}}}
 {"event":"plan.updated","data":{"round":1,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
 {"event":"turn.start","data":{"round":1,"agent":"chair","artifact":"chair-report"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"They "}}
@@ -567,10 +690,79 @@
 {"event":"turn.delta","data":{"agent":"pragmatist","delta":"error-rate "}}
 {"event":"turn.delta","data":{"agent":"skeptic","delta":"they "}}
 {"event":"turn.delta","data":{"agent":"pragmatist","delta":"threshold "}}
-{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate."}}
-{"event":"turn.done","data":{"round":2,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate."}}
-{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead."}}
-{"event":"turn.done","data":{"round":2,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead."}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rotate.\n\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"instead.\n\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Rotation "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Ship "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"needs "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"reuse "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"token "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"service "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"and "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"alone "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"first\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"plan\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"mixed\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"disagree\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"70\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"80\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Two "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"migrations "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Refresh "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"in "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"theft "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"one "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"too "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"critical "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"big\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"gap\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Cut "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"has "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"from "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"no "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"exit "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"milestone\n"}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"or "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"rollback\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"Tie "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"Key "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"soak "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"custody "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"to "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"is "}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"an "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"undefined\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"error "}}
+{"event":"turn.delta","data":{"agent":"skeptic","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":2,"agent":"skeptic","text":"1. **Critical:** refresh rotation without reuse detection is a theft vector.\n2. **High:** the dual-read window has no exit criteria or rollback path.\n3. **Medium:** nothing says where signing keys live or how they rotate.","tldr":{"headline":"Rotation needs reuse detection and an exit plan","bullets":["Refresh theft is the critical gap","Dual-read has no exit or rollback","Key custody is undefined"],"stance":"disagree","confidence":80}}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"rate\n"}}
+{"event":"turn.delta","data":{"agent":"pragmatist","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":2,"agent":"pragmatist","text":"1. **High:** this is two migrations in one. Ship the token service first, behind a flag, and cut SSO entirely.\n2. **Medium:** the two-week soak is a guess; tie it to an error-rate threshold instead.","tldr":{"headline":"Ship the token service alone first","bullets":["Two migrations in one is too big","Cut SSO from this milestone","Tie the soak to an error rate"],"stance":"mixed","confidence":70}}}
 {"event":"turn.start","data":{"round":2,"agent":"architect","artifact":"plan"}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"Plan: "}}
@@ -735,8 +927,35 @@
 {"event":"turn.delta","data":{"agent":"architect","delta":"that "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"cannot "}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"update "}}
-{"event":"turn.delta","data":{"agent":"architect","delta":"quickly."}}
-{"event":"turn.done","data":{"round":2,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"quickly.\n\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"<tldr>\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"headline: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Short-lived "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"JWTs "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"with "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"refresh "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"rotation\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"stance: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"agree\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"confidence: "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"78\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Flag-gated "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"per "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"tenant\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Dual-read "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"bridges "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"old "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"cookies\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"Reuse "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"detection "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"revokes "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"the "}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"family\n"}}
+{"event":"turn.delta","data":{"agent":"architect","delta":"</tldr>"}}
+{"event":"turn.done","data":{"round":2,"agent":"architect","text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly.","tldr":{"headline":"Short-lived JWTs with refresh rotation","bullets":["Flag-gated per tenant","Dual-read bridges old cookies","Reuse detection revokes the family"],"stance":"agree","confidence":78}}}
 {"event":"plan.updated","data":{"round":2,"text":"# Plan: replace session cookies with short-lived JWTs\n\n## Goals\n- Issue 10-minute access tokens and rotate refresh tokens server-side.\n- Keep existing cookie sessions working during a dual-read window.\n\n## Non-goals\n- No SSO changes in this milestone.\n\n## Design\n- A token service signs access tokens and stores refresh-token hashes with a family id.\n- Middleware accepts either a valid JWT or a legacy cookie, and logs which one it saw.\n\n## Sequencing\n1. Ship the token service behind a per-tenant flag.\n2. Turn on dual-read, then measure the login error rate.\n3. Retire cookies once the error rate holds for two weeks.\n\n## Risks\n- Refresh-token theft, and no defined exit criteria for dual-read.\n\n## Revision notes\n- Added refresh-token reuse detection: reuse revokes the whole family.\n- Dual-read exits when cookie traffic is under 1% for 14 days; rollback is the tenant flag.\n\n## Rejected objections\n- **Dropping the dual-read window:** too risky for mobile clients that cannot update quickly."}}
 {"event":"turn.start","data":{"round":2,"agent":"chair","artifact":"chair-report"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"The "}}

@@ -6,7 +6,7 @@ import { loadPersona, loadPreset, parseCouncil } from "../src/config.js";
 import { Session } from "../src/session.js";
 
 describe("presets", () => {
-  it.each(["solo", "trio", "delphi", "deep"])("%s loads and every persona resolves", (name) => {
+  it.each(["solo", "trio", "delphi", "deep", "auto"])("%s loads and every persona resolves", (name) => {
     const c = loadPreset(name);
     expect(c.agents.length).toBeGreaterThanOrEqual(3);
     for (const a of c.agents) expect(loadPersona(a.persona).body.length).toBeGreaterThan(20);

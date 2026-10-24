@@ -36,7 +36,7 @@ export function chairReportTurn(s: RoundState, evidence: (prior: Prior) => strin
         evidence(prior),
         `You are closing round ${s.round} of ${s.totalRounds}. Write a report in exactly this format:`,
         "",
-        "<2-5 plain sentences for the human: where members agree, where they disagree and why it matters, and what the human might steer>",
+        "<2-4 plain sentences, 70 words at most, for the human: where members agree, where they disagree and why it matters, and what the human might steer>",
         "## DISSENT",
         "<bullets: reasoned positions the current plan did NOT adopt, with who holds them; write 'none' if none>",
         "## OPEN QUESTIONS",

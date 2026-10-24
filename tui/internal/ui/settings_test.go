@@ -189,3 +189,72 @@ func TestDrawerFitsSmallScreens(t *testing.T) {
 		}
 	}
 }
+
+const designJSON = `{"config":{"name":"auto","description":"Designed for this topic","protocol":"draft-critique-revise","rounds":2,"pause":"round","readOnly":true,"requireEvidence":true,"chair":{"cli":"mock"},"agents":[{"id":"architect","cli":"mock","persona":"architect"},{"id":"security","cli":"mock","persona":"security"}]},"rationale":"A security-sensitive change deserves a security lens.","source":"model","designer":"mock"}`
+
+func selectAuto(t *testing.T, h *harness) {
+	t.Helper()
+	for i, p := range h.app.start.presets {
+		if p.Auto {
+			h.app.start.cursor = i
+			return
+		}
+	}
+	t.Fatal("no auto preset in the recording")
+}
+
+func TestAutoCouncilIsDesignedThenReviewedThenStarted(t *testing.T) {
+	h := newHarness(t, 140, 44)
+	selectAuto(t, h)
+	h.press("tab")
+	h.press("enter") // no topic yet: must not ask the designer
+	if h.fc.last().method == "council.design" {
+		t.Fatal("designing needs a topic")
+	}
+	h.typ("Add SSO to the admin console")
+	h.press("enter")
+	c := h.fc.last()
+	if c.method != "council.design" || c.params["topic"] != "Add SSO to the admin console" || c.params["mock"] != true {
+		t.Fatalf("bad design request: %+v", c)
+	}
+	contains(t, h.screen(), "DESIGNING THE COUNCIL")
+
+	h.send(engineMsg{rpc.Response{ID: c.id, Result: []byte(designJSON)}})
+	s := h.screen()
+	contains(t, s, "PROPOSED COUNCIL")
+	contains(t, s, "security lens")
+	contains(t, s, "start council")
+
+	h.press("g")
+	st := h.fc.last()
+	cfg, ok := st.params["config"].(map[string]any)
+	if st.method != "session.start" || !ok || cfg["rounds"] != 2 || st.params["preset"] != nil {
+		t.Fatalf("starting should send the designed config: %+v", st)
+	}
+	if h.app.start.drafts["auto"] != nil {
+		t.Fatal("a designed council is for one topic only")
+	}
+}
+
+func TestAutoDesignCanBeCancelledAndErrorsReturn(t *testing.T) {
+	h := newHarness(t, 140, 44)
+	selectAuto(t, h)
+	h.press("tab")
+	h.typ("topic")
+	h.press("enter")
+	id := h.fc.last().id
+	h.press("esc")
+	h.send(engineMsg{rpc.Response{ID: id, Result: []byte(designJSON)}})
+	if h.app.start.drawer != nil {
+		t.Fatal("a cancelled design must not open the drawer")
+	}
+	contains(t, h.screen(), "CHOOSE A COUNCIL")
+
+	h.press("enter")
+	id = h.fc.last().id
+	h.send(engineMsg{rpcResponseErr(id, "no agent CLI is usable")})
+	contains(t, h.screen(), "no agent CLI is usable")
+	if h.app.start.designing {
+		t.Fatal("an error ends the designing state")
+	}
+}
