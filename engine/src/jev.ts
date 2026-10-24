@@ -3,13 +3,15 @@
  * Decisions API. It answers typed questions about a piece of text with calibrated probabilities;
  * it never writes prose, so Quorum uses it only to gate and verify, not to generate.
  *
- * The API is alpha and its docs disagree on a few details, so parsing here is deliberately
- * tolerant (answers may sit under `decisions` or `answers`).
+ * The API is alpha and its docs disagree with each other, so this follows what the live endpoint
+ * actually does (checked 2026-10): answers sit under `answers`; a noul answer is `{noul: p}`; a
+ * choice answer is `{choice, probabilities, confidence}`; choice and score questions take `criteria`.
+ * Older documented shapes (`decisions`, `value`, `probabilities.true`) are still accepted.
  */
 export type Question =
   | { type: "noul"; instructions: string }
-  | { type: "choice"; instructions: string; categories: string[] }
-  | { type: "score"; instructions: string; levels: string[] };
+  | { type: "choice"; instructions: string; /** label -> what it means */ criteria: Record<string, string> }
+  | { type: "score"; instructions: string; /** ordered lowest to highest */ criteria: string[] };
 
 export interface Decision {
   value: unknown;
@@ -50,7 +52,11 @@ export function makeJev(o: JevOptions = {}): Decide | undefined {
       if (!answers || typeof answers !== "object") throw new Error("Jev reply had no decisions");
       const out: Record<string, Decision> = {};
       for (const [k, v] of Object.entries<any>(answers)) {
-        out[k] = { value: v?.value, probabilities: v?.probabilities ?? {} };
+        if (typeof v?.noul === "number") {
+          out[k] = { value: v.noul >= 0.5, probabilities: { true: v.noul, false: 1 - v.noul } };
+          continue;
+        }
+        out[k] = { value: v?.choice ?? v?.value, probabilities: v?.probabilities ?? {} };
         // Some responses give only a confidence for the chosen value.
         if (!Object.keys(out[k].probabilities).length && typeof v?.confidence === "number" && typeof v?.value === "boolean") {
           out[k].probabilities = { true: v.value ? v.confidence : 1 - v.confidence, false: v.value ? 1 - v.confidence : v.confidence };

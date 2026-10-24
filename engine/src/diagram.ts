@@ -36,7 +36,16 @@ const clip = (s: unknown, n: number): string => {
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12);
 
 /** Checks a model's diagram and repairs what can be repaired deterministically. */
-export function checkDiagram(raw: any): Checked {
+/** True when most of the quoted words really occur in the message, so a step cannot be pure invention. */
+export function quoted(evidence: unknown, body: string): boolean {
+  const words = (t: string) => t.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [];
+  const q = words(String(evidence ?? ""));
+  if (q.length < 2) return false;
+  const have = new Set(words(body));
+  return q.filter((w) => have.has(w)).length / q.length >= 0.8;
+}
+
+export function checkDiagram(raw: any, body?: string): Checked {
   const errors: string[] = [];
   const repairs: string[] = [];
   const kind = raw?.kind;
@@ -80,10 +89,20 @@ export function checkDiagram(raw: any): Checked {
     }
     const text = clip(s?.text, LIMITS.text);
     if (!text) errors.push(`step ${i + 1} has no text`);
+    if (body !== undefined && !quoted(s?.evidence, body)) {
+      repairs.push(`dropped step ${i + 1}: its evidence is not in the message`);
+      return;
+    }
     steps.push({ from, to, text, danger: s?.danger === true });
   });
 
   if (errors.length) return { ok: false, errors };
+  if (body !== undefined) {
+    if (steps.length < 2) return { ok: false, errors: ["fewer than 2 steps were backed by a phrase quoted from the message"] };
+    // Actors no surviving step uses are not drawn.
+    const used = new Set(steps.flatMap((s) => [s.from, s.to]));
+    for (let i = actors.length - 1; i >= 0; i--) if (!used.has(actors[i].id)) actors.splice(i, 1);
+  }
   if (kind === "attack" && !steps.some((s) => s.danger)) {
     steps[steps.length - 1].danger = true;
     repairs.push("marked the last step as the breach");

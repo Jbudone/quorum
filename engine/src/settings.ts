@@ -4,11 +4,12 @@ import { parse } from "smol-toml";
 import { userDir, type CliName } from "./config.js";
 import type { CliInfo } from "./doctor.js";
 import { askVia } from "./designer.js";
-import { makeIllustrator, type Illustrate } from "./illustrator.js";
+import { makeIllustrator, type Ask, type Illustrate } from "./illustrator.js";
 import { JEV_ENDPOINT, JEV_MODEL, makeJev } from "./jev.js";
 
 export interface HelperModel {
-  cli: CliName;
+  /** An agent CLI, or "openrouter" for a direct one-shot call to a model through OpenRouter (fast, needs OPENROUTER_API_KEY). */
+  cli: CliName | "openrouter";
   model?: string;
 }
 export interface UserSettings {
@@ -40,20 +41,53 @@ export function readSettings(user = userDir()): UserSettings {
   }
 }
 
+/** One-shot JSON completion through OpenRouter, with no agent loop around it. */
+export function askOpenRouter(model: string, system: string, timeoutMs = 30_000, doFetch: typeof fetch = fetch): Ask {
+  return async (prompt) => {
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) throw new Error("OPENROUTER_API_KEY is not set");
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await doFetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        }),
+        signal: ctl.signal,
+      });
+      if (!res.ok) throw new Error(`OpenRouter returned HTTP ${res.status}`);
+      const body: any = await res.json();
+      const text = body?.choices?.[0]?.message?.content;
+      if (typeof text !== "string") throw new Error("OpenRouter reply had no content");
+      return text;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
 /** CLIs tried, in order, for drawing diagrams when settings.toml names none. Claude is left out so its quota is not spent silently. */
 const CHEAP_FIRST: CliName[] = ["opencode", "agy", "codex"];
 
 /** The diagram drawer for a session, or undefined when no suitable model is available. */
 export function buildIllustrator(clis: CliInfo[], repo: string, settings = readSettings()): Illustrate | undefined {
-  const usable = new Set(clis.filter((c) => c.usable).map((c) => c.cli));
+  const usable = new Set<string>(clis.filter((c) => c.usable).map((c) => c.cli));
+  if (process.env.OPENROUTER_API_KEY) usable.add("openrouter");
   const chosen: HelperModel | undefined = settings.illustrator ?? (() => {
     const cli = CHEAP_FIRST.find((c) => usable.has(c));
     return cli ? ({ cli } as HelperModel) : undefined;
   })();
   if (!chosen || !usable.has(chosen.cli)) return undefined;
   const sys = "You turn design-discussion messages into small structured diagrams. Answer with JSON only.";
-  const ask = askVia(chosen.cli, chosen.model, repo, sys, 60_000);
-  const v = settings.verifier && usable.has(settings.verifier.cli) ? askVia(settings.verifier.cli, settings.verifier.model, repo, sys, 60_000) : undefined;
+  const via = (h: HelperModel): Ask =>
+    h.cli === "openrouter" ? askOpenRouter(h.model ?? "qwen/qwen3-30b-a3b-instruct-2507", sys) : askVia(h.cli, h.model, repo, sys, 60_000);
+  const ask = via(chosen);
+  const v = settings.verifier && usable.has(settings.verifier.cli) ? via(settings.verifier) : undefined;
   const jev = settings.jev?.enabled ? makeJev({ model: settings.jev.model ?? JEV_MODEL, endpoint: settings.jev.endpoint ?? JEV_ENDPOINT }) : undefined;
   if (settings.jev?.enabled && !jev) {
     // Jev was asked for but cannot run; showing unverified diagrams would defeat the point.

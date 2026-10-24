@@ -9,7 +9,7 @@ const base = {
     { id: "client", label: "Client", icon: "user" },
     { id: "api", label: "API", icon: "server" },
   ],
-  steps: [{ from: "client", to: "api", text: "POST /login" }],
+  steps: [{ from: "client", to: "api", text: "POST /login", evidence: "client sends login request to the API" }, { from: "api", to: "client", text: "200 OK", evidence: "client sends login request" }],
 };
 
 describe("checkDiagram", () => {
@@ -36,7 +36,7 @@ describe("checkDiagram", () => {
 
   it("marks the last attack step as the breach when none is", () => {
     const r = checkDiagram({ ...base, kind: "attack" });
-    expect(r.ok && r.diagram.steps[0].danger).toBe(true);
+    expect(r.ok && r.diagram.steps[1].danger).toBe(true);
   });
 
   it("rejects what cannot be repaired", () => {
@@ -47,8 +47,33 @@ describe("checkDiagram", () => {
   });
 });
 
+describe("evidence check", () => {
+  const body = "An attacker steals the refresh token and exchanges it at the token API for new tokens.";
+  const mk = (steps: any[]) => ({ ...base, kind: "attack", actors: [{ id: "x", label: "Attacker", icon: "skull" }, { id: "api", label: "API", icon: "server" }, { id: "db", label: "DB", icon: "db" }], steps });
+  it("keeps quoted steps, drops invented ones, and prunes unused actors", () => {
+    const r = checkDiagram(mk([
+      { from: "x", to: "api", text: "exchanges token", evidence: "exchanges it at the token API for new tokens" },
+      { from: "api", to: "x", text: "new tokens", evidence: "for new tokens" },
+      { from: "api", to: "db", text: "check token", evidence: "validates the token against the database" },
+    ]), body);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.diagram.steps).toHaveLength(2);
+      expect(r.diagram.actors.map((a) => a.id)).toEqual(["x", "api"]);
+      expect(r.repairs.join()).toContain("dropped step 3");
+    }
+  });
+  it("fails when too little of the diagram is backed by the message", () => {
+    const r = checkDiagram(mk([{ from: "x", to: "api", text: "a", evidence: "completely unrelated words here" }, { from: "api", to: "db", text: "b" }]), body);
+    expect(r.ok).toBe(false);
+  });
+  it("is skipped when no message is given", () => {
+    expect(checkDiagram(mk([{ from: "x", to: "api", text: "a" }])).ok).toBe(true);
+  });
+});
+
 describe("makeIllustrator", () => {
-  const input = { agent: "skeptic", body: "Refresh tokens can be stolen." };
+  const input = { agent: "skeptic", body: "The client sends login request to the API every time." };
   it("returns undefined when the model says a diagram would not help", async () => {
     expect(await makeIllustrator(async () => '{"useful": false}')(input)).toBeUndefined();
   });

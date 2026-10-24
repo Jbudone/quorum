@@ -25,6 +25,13 @@ describe("makeJev", () => {
     expect(probTrue(out.helps)).toBe(0.9);
   });
 
+  it("parses the live shapes: noul as a number, choice with probabilities", async () => {
+    const jev = makeJev({ apiKey: "k", fetch: reply({ answers: { q: { type: "noul", noul: 0.98 }, k: { type: "choice", choice: "sequence", probabilities: { sequence: 0.89, none: 0.11 } } } }) as never })!;
+    const out = await jev("s", { q: { type: "noul", instructions: "?" }, k: { type: "choice", instructions: "?", criteria: { sequence: "a", none: "b" } } });
+    expect(probTrue(out.q)).toBe(0.98);
+    expect(out.k.value).toBe("sequence");
+  });
+
   it("accepts the `answers` shape and a bare confidence", async () => {
     const jev = makeJev({ apiKey: "k", fetch: reply({ answers: { q: { type: "noul", value: false, confidence: 0.8 } } }) as never })!;
     expect(probTrue((await jev("s", { q: { type: "noul", instructions: "?" } })).q)).toBeCloseTo(0.2);
@@ -39,9 +46,9 @@ describe("makeJev", () => {
 const good = JSON.stringify({
   useful: true, kind: "sequence", title: "t",
   actors: [{ id: "a", label: "A", icon: "user" }, { id: "b", label: "B", icon: "server" }],
-  steps: [{ from: "a", to: "b", text: "go" }],
+  steps: [{ from: "a", to: "b", text: "go", evidence: "client sends login request to the API" }, { from: "b", to: "a", text: "ok", evidence: "API answers the client" }],
 });
-const input = { agent: "x", body: "A calls B." };
+const input = { agent: "x", body: "The client sends login request to the API and the API answers the client." };
 const noul = (p: number) => ({ value: p > 0.5, probabilities: { true: p, false: 1 - p } });
 
 describe("illustrator with Jev", () => {
@@ -64,6 +71,16 @@ describe("illustrator with Jev", () => {
   it("drops a diagram Jev finds unfaithful", async () => {
     const draw = makeIllustrator(async () => good, { jev: async (_s, q) => ((q.helps ? { helps: noul(0.95), kind: { value: "sequence", probabilities: {} } } : { faithful: noul(0.4) }) as Record<string, Decision>) });
     expect(await draw(input)).toBeUndefined();
+  });
+
+  it("retries once when Jev finds the diagram unfaithful, then accepts a faithful one", async () => {
+    const prompts: string[] = [];
+    const verdicts = [0.4, 0.95];
+    const draw = makeIllustrator(async (p) => (prompts.push(p), good), {
+      jev: async (_s, q) => ((q.helps ? { helps: noul(0.95), kind: { value: "sequence", probabilities: {} } } : { faithful: noul(verdicts.shift()!) }) as Record<string, Decision>),
+    });
+    expect(await draw(input)).toBeDefined();
+    expect(prompts[1]).toContain("fact-checker");
   });
 
   it("survives a gate outage but never shows an unverified diagram", async () => {

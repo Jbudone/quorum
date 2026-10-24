@@ -16,8 +16,8 @@ export type Illustrate = (input: IllustrateInput) => Promise<Diagram | undefined
 export function illustratePrompt(input: IllustrateInput, errors: string[] = [], kindHint = ""): string {
   return [
     "You decide whether a short diagram would help a reader grasp this message from a design discussion, and if so describe it.",
-    'Use kind "sequence" for flows: who sends what to whom, in order. Use kind "attack" for security threats: each step is one move of how the exploit happens, and the step where it succeeds has "danger": true.',
-    'If the message is an opinion, a process note or too vague to draw faithfully, answer {"useful": false}. Never invent steps the message does not support.',
+    'Use kind "sequence" for flows: who sends what to whom, in order. Use kind "attack" for security threats: each step is one move of how the exploit happens, and "danger": true marks the one step where the attacker gets what they were after (not the victim's later reaction).',
+    'If the message is an opinion, a process note or too vague to draw faithfully, answer {"useful": false}. Use ONLY actors and steps the message explicitly states or directly implies. Do not add databases, checks, validations or components it never mentions, even if they would be typical. Prefer 3-4 short steps over a complete-looking one.',
     ...(kindHint ? [`A classifier already judged that a diagram of kind "${kindHint}" fits; use it unless the message clearly cannot support one.`] : []),
     "",
     `Limits: ${LIMITS.actors} actors max, ${LIMITS.steps} steps max, labels under ${LIMITS.label} characters, step text under ${LIMITS.text} characters.`,
@@ -26,7 +26,8 @@ export function illustratePrompt(input: IllustrateInput, errors: string[] = [], 
     "Reply with ONLY JSON:",
     '{"useful": true, "kind": "sequence|attack", "title": "...",',
     ' "actors": [{"id": "client", "label": "Client", "icon": "user"}],',
-    ' "steps": [{"from": "client", "to": "api", "text": "POST /login", "danger": false}]}',
+    ' "steps": [{"from": "client", "to": "api", "text": "POST /login", "danger": false, "evidence": "exact words copied from the message"}]}',
+    "Every step MUST carry an \"evidence\" phrase copied word for word from the message. A step you cannot quote is invented: leave it out.",
     "",
     `Message from ${input.agent}:`,
     input.tldr ? `Summary: ${input.tldr.headline}\n${input.tldr.bullets.map((b) => `- ${b}`).join("\n")}\n` : "",
@@ -73,14 +74,14 @@ export interface IllustratorOptions {
 export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): Illustrate {
   const o: IllustratorOptions = typeof opts === "function" ? { verify: opts } : opts;
   const gate = o.gate ?? 0.6;
-  const faithful = o.faithful ?? 0.8;
+  const faithful = o.faithful ?? 0.7;
   return async (input) => {
     let hint = "";
     if (o.jev) {
       try {
         const g = await o.jev(input.body, {
           helps: { type: "noul", instructions: "Would a small diagram of an ordered flow, or of the steps of a security exploit, make this message easier to understand? Answer false for opinions, process notes or anything without a concrete sequence." },
-          kind: { type: "choice", instructions: "Which diagram fits best?", categories: ["sequence", "attack", "none"] },
+          kind: { type: "choice", instructions: "Which diagram fits this message best?", criteria: { sequence: "an ordered flow of messages or data between parties", attack: "the steps of a security exploit or failure scenario", none: "no concrete sequence to draw" } },
         });
         if (probTrue(g.helps) < gate || g.kind?.value === "none") return undefined;
         if (g.kind?.value === "sequence" || g.kind?.value === "attack") hint = String(g.kind.value);
@@ -93,7 +94,7 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
       try {
         const raw = extractJson(await ask(illustratePrompt(input, errors, hint)));
         if (raw.useful === false) return undefined;
-        const checked = checkDiagram(raw);
+        const checked = checkDiagram(raw, input.body);
         if (!checked.ok) {
           errors = checked.errors;
           continue;
@@ -103,7 +104,9 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
           const v = await o.jev(`Message:\n${input.body}\n\nDiagram:\n${describe(d)}`, {
             faithful: { type: "noul", instructions: "Every actor and step in the diagram is supported by the message. Nothing is invented, reversed or exaggerated." },
           });
-          return probTrue(v.faithful) >= faithful ? d : undefined;
+          if (probTrue(v.faithful) >= faithful) return d;
+          errors = ["a fact-checker found steps or actors the message does not state; use only what it explicitly says"];
+          continue;
         }
         if (o.verify) {
           const verdict = extractJson(await o.verify(verifyPrompt(d, input.body)));
