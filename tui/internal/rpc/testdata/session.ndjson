@@ -1,7 +1,7 @@
 {"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"pause":"round","readOnly":true,"requireEvidence":true,"chair":{"cli":"claude"},"custom":false,"auto":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","model":"gemini-4-argon-medium","persona":"user-advocate","role":"panelist"}]},{"name":"auto","description":"A model reads your topic and designs the council: size, models, roles, protocol.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"auto":true,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]}]}
 {"id":2,"result":[{"key":"architect","name":"Architect","role":"drafter","custom":false},{"key":"operator","name":"Operator","role":"panelist","custom":false},{"key":"pragmatist","name":"Pragmatist","role":"critic","custom":false},{"key":"security","name":"Security","role":"panelist","custom":false},{"key":"skeptic","name":"Skeptic","role":"critic","custom":false},{"key":"user-advocate","name":"User Advocate","role":"panelist","custom":false}]}
 {"id":3,"result":[{"cli":"claude","usable":true,"quotaUtilization":0.39,"models":["sonnet","opus","fable"]},{"cli":"codex","usable":true,"models":[]},{"cli":"agy","usable":true,"models":["gemini-4-argon-low","gemini-4-argon-medium","gemini-4-argon-high","gemini-3.8-flash-low","gemini-3.8-flash-medium","gemini-3.8-flash-high"]},{"cli":"opencode","usable":true,"models":[]}]}
-{"id":4,"result":{"sessionId":"2026-10-24-02-30-25-trio","dir":"/tmp/rec-M01JGM/.quorum/sessions/2026-10-24-02-30-25-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
+{"id":4,"result":{"sessionId":"2026-10-24-03-05-22-trio","dir":"/tmp/rec-SUKyVw/.quorum/sessions/2026-10-24-03-05-22-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
 {"id":5,"result":{}}
 {"event":"round.start","data":{"round":1}}
 {"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
@@ -559,19 +559,45 @@
 {"event":"turn.delta","data":{"agent":"chair","delta":"Who "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"owns "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"signing-key "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"rotation?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rotation? "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":":: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Platform "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"team "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Security "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"team "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Decide "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"later\n"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"What "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"cookie-traffic "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"threshold "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"ends "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"[multi] "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Which "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"clients "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"need "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"dual-read "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"window?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"window? "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":":: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Web "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"iOS "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Android "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Partner "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"API\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Should "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"stay "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"out "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"of "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"milestone?\n"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"CONVERGED: "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"no"}}
-{"event":"turn.done","data":{"round":1,"agent":"chair","text":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.\n## DISSENT\n- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.\n## OPEN QUESTIONS\n- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?\nCONVERGED: no"}}
-{"event":"chair.summary","data":{"round":1,"summary":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.","converged":false,"dissent":"- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
+{"event":"turn.done","data":{"round":1,"agent":"chair","text":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.\n## DISSENT\n- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.\n## OPEN QUESTIONS\n- Who owns signing-key rotation? :: Platform team | Security team | Decide later\n- [multi] Which clients need the dual-read window? :: Web | iOS | Android | Partner API\n- Should SSO stay out of this milestone?\nCONVERGED: no"}}
+{"event":"chair.summary","data":{"round":1,"summary":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.","converged":false,"dissent":"- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.","questions":"- Who owns signing-key rotation?\n- Which clients need the dual-read window?\n- Should SSO stay out of this milestone?","openQuestions":[{"text":"Who owns signing-key rotation?","options":["Platform team","Security team","Decide later"],"multi":false},{"text":"Which clients need the dual-read window?","options":["Web","iOS","Android","Partner API"],"multi":true},{"text":"Should SSO stay out of this milestone?","options":["Yes","No","Decide later"],"multi":false}]}}
 {"event":"round.done","data":{"round":1}}
 {"event":"awaiting_human","data":{"round":1,"finished":false}}
 {"id":6,"result":{}}
@@ -1009,19 +1035,45 @@
 {"event":"turn.delta","data":{"agent":"chair","delta":"Who "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"owns "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"signing-key "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"rotation?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"rotation? "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":":: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Platform "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"team "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Security "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"team "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Decide "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"later\n"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"What "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"cookie-traffic "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"threshold "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"ends "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"[multi] "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Which "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"clients "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"need "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"the "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"dual-read "}}
-{"event":"turn.delta","data":{"agent":"chair","delta":"window?\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"window? "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":":: "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Web "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"iOS "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Android "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"| "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Partner "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"API\n"}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"- "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"Should "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"SSO "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"stay "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"out "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"of "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"this "}}
+{"event":"turn.delta","data":{"agent":"chair","delta":"milestone?\n"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"CONVERGED: "}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"yes"}}
-{"event":"turn.done","data":{"round":2,"agent":"chair","text":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.\n## DISSENT\n- Pragmatist: still prefers shipping the token service alone.\n## OPEN QUESTIONS\n- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?\nCONVERGED: yes"}}
-{"event":"chair.summary","data":{"round":2,"summary":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.","converged":true,"dissent":"- Pragmatist: still prefers shipping the token service alone.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
+{"event":"turn.done","data":{"round":2,"agent":"chair","text":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.\n## DISSENT\n- Pragmatist: still prefers shipping the token service alone.\n## OPEN QUESTIONS\n- Who owns signing-key rotation? :: Platform team | Security team | Decide later\n- [multi] Which clients need the dual-read window? :: Web | iOS | Android | Partner API\n- Should SSO stay out of this milestone?\nCONVERGED: yes"}}
+{"event":"chair.summary","data":{"round":2,"summary":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.","converged":true,"dissent":"- Pragmatist: still prefers shipping the token service alone.","questions":"- Who owns signing-key rotation?\n- Which clients need the dual-read window?\n- Should SSO stay out of this milestone?","openQuestions":[{"text":"Who owns signing-key rotation?","options":["Platform team","Security team","Decide later"],"multi":false},{"text":"Which clients need the dual-read window?","options":["Web","iOS","Android","Partner API"],"multi":true},{"text":"Should SSO stay out of this milestone?","options":["Yes","No","Decide later"],"multi":false}]}}
 {"event":"round.done","data":{"round":2}}
 {"event":"awaiting_human","data":{"round":2,"finished":true}}
 {"id":10,"result":{}}

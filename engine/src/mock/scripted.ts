@@ -61,7 +61,7 @@ function chairReport(round: number, total: number): string {
     "## DISSENT",
     done ? "- Pragmatist: still prefers shipping the token service alone." : "- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.",
     "## OPEN QUESTIONS",
-    "- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?",
+    "- Who owns signing-key rotation? :: Platform team | Security team | Decide later\n- [multi] Which clients need the dual-read window? :: Web | iOS | Android | Partner API\n- Should SSO stay out of this milestone?",
     `CONVERGED: ${done ? "yes" : "no"}`,
   ].join("\n");
 }

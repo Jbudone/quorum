@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadPreset } from "../src/config.js";
 import { Engine, type EngineEvent } from "../src/engine.js";
-import { parseChairReport } from "../src/protocols/chairReport.js";
+import { parseChairReport, parseOpenQuestions } from "../src/protocols/chairReport.js";
 import { anonymize } from "../src/protocols/delphi.js";
 import { MockTransport, type MockRule } from "../src/transports/mock.js";
 
@@ -106,5 +106,27 @@ describe("delphi", () => {
     expect(new Set(r1.values()).size).toBe(5);
     expect([...anonymize(ids, 1)]).toEqual([...r1]);
     expect([...anonymize(ids, 2)]).not.toEqual([...r1]);
+  });
+});
+
+describe("open questions with options", () => {
+  it("parses options, the multi flag, and gives yes/no questions default answers", () => {
+    const qs = parseOpenQuestions(
+      "- Who owns rotation? :: Platform team | Security team | Decide later\n- [multi] Which clients? :: Web | iOS | Android\n- Should SSO stay out?\n- What ends the window?\n- None.",
+    );
+    expect(qs).toEqual([
+      { text: "Who owns rotation?", options: ["Platform team", "Security team", "Decide later"], multi: false },
+      { text: "Which clients?", options: ["Web", "iOS", "Android"], multi: true },
+      { text: "Should SSO stay out?", options: ["Yes", "No", "Decide later"], multi: false },
+      { text: "What ends the window?", options: [], multi: false },
+    ]);
+  });
+  it("keeps the plain-bullet form for the sidebar and writes no questions for 'none'", () => {
+    const r = parseChairReport("Summary.\n## DISSENT\nnone\n## OPEN QUESTIONS\n- A? :: x | y\n- B?\nCONVERGED: no");
+    expect(r.questions).toBe("- A?\n- B?");
+    expect(parseChairReport("S\n## OPEN QUESTIONS\nnone\nCONVERGED: yes").openQuestions).toEqual([]);
+  });
+  it("a single option is not a multi-choice", () => {
+    expect(parseOpenQuestions("- [multi] Only one? :: Just this")[0].multi).toBe(false);
   });
 });

@@ -3,7 +3,10 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
@@ -82,9 +85,32 @@ type App struct {
 	sideTop    string // roster, notes and plan title, rebuilt in refresh
 }
 
+// animFPS is the animation clock. Every effect is counted in these ticks, so raising it speeds
+// them all up together (10 was the original pace; 24 is about 2.4x). QUORUM_FPS overrides it.
+func animFPS() int {
+	if v, err := strconv.Atoi(os.Getenv("QUORUM_FPS")); err == nil && v >= 5 && v <= 60 {
+		return v
+	}
+	return 24
+}
+
+// animSpinner is the dot spinner stretched so its glyph still turns at a calm ~8 steps a second
+// while the clock ticks faster.
+func animSpinner() spinner.Spinner {
+	fps := animFPS()
+	rep := max(fps/8, 1)
+	var frames []string
+	for _, f := range spinner.Dot.Frames {
+		for i := 0; i < rep; i++ {
+			frames = append(frames, f)
+		}
+	}
+	return spinner.Spinner{Frames: frames, FPS: time.Second / time.Duration(fps)}
+}
+
 // New builds the app.
 func New(o Options) *App {
-	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	sp := spinner.New(spinner.WithSpinner(animSpinner()))
 	th := theme.Default()
 	in := newInput(th, inputRows)
 	a := &App{
@@ -407,6 +433,23 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
+	if it := s.currentItem(); it != nil && len(it.options) > 0 && s.canType() {
+		empty := strings.TrimSpace(a.input.Value()) == ""
+		switch {
+		case key == "up":
+			s.moveOption(-1)
+			return nil
+		case key == "down":
+			s.moveOption(1)
+			return nil
+		case key == "space" && empty:
+			s.pickOption(s.qa.cursor)
+			return nil
+		case empty && len(key) == 1 && key[0] >= '1' && key[0] <= '9':
+			s.pickOption(int(key[0] - '1'))
+			return nil
+		}
+	}
 	if key == "enter" {
 		return a.submit()
 	}
@@ -446,6 +489,7 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 	a.sess.calm = a.opts.Calm
 	delete(a.start.drafts, "auto") // a designed council is for this topic only
 	a.sess.add(&entry{kind: kindHuman, to: "the council", text: a.sess.topic})
+	a.sess.add(&entry{kind: kindArt, diagramAt: a.sess.frame})
 	a.screen = screenSession
 	a.follow = true
 	a.input.Reset()
@@ -496,7 +540,17 @@ func (a *App) submit() tea.Cmd {
 // answerQuestion sends the typed answer as a decision (empty input skips the question).
 func (a *App) answerQuestion(q string) tea.Cmd {
 	s := a.sess
-	ans := strings.TrimSpace(a.input.Value())
+	typed := strings.TrimSpace(a.input.Value())
+	ans := strings.Join(s.chosen(), ", ")
+	if typed != "" {
+		if ans != "" {
+			ans += " — "
+		}
+		ans += typed
+	}
+	if s.qa.entry != nil {
+		s.qa.entry.answer, s.qa.entry.cacheW = ans, 0
+	}
 	if ans != "" {
 		s.add(&entry{kind: kindHuman, to: "the council", text: ans})
 		a.call("session.steer", map[string]any{"text": ans, "question": q})

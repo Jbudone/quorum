@@ -34,11 +34,11 @@ func prefixLines(body string, bar string) string {
 
 // renderEntry renders one transcript block at the given width. spin is the current spinner frame.
 func renderEntry(s *session, e *entry, th theme.Theme, width int, spin string) string {
-	if !e.streaming && !e.playing(s) && e.cache != "" && e.cacheW == width {
+	if e.kind != kindQuestion && !e.streaming && !e.playing(s) && e.cache != "" && e.cacheW == width {
 		return e.cache
 	}
 	out := drawEntry(s, e, th, width, spin)
-	if !e.streaming && !e.playing(s) {
+	if e.kind != kindQuestion && !e.streaming && !e.playing(s) {
 		e.cache, e.cacheW = out, width
 	}
 	return out
@@ -49,13 +49,55 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 	case kindRound:
 		return glitchRule(fmt.Sprintf("ROUND %d/%d", e.round, e.total), width, s.frame, th)
 
+	case kindArt:
+		return renderSprite(s.sprite, s.topic, width, th, s.frame-e.diagramAt, !s.calm)
+
 	case kindMap:
 		return renderDebate(e.debate, width, th, s.frame-e.diagramAt, !s.calm, s.frame)
 
 	case kindQuestion:
 		bar := fg(th.Warn).Render("▌")
-		head := bar + " " + fg(th.Warn).Bold(true).Render("? "+e.speaker) + fg(th.Muted).Render("  open question — your call")
-		return head + "\n" + prefixLines(wrapPlain(e.text, width-2, th), bar)
+		active := s.qa.active && s.qa.entry == e
+		title := "open question — your call"
+		if !active {
+			title = "open question"
+		}
+		rows := []string{bar + " " + fg(th.Warn).Bold(true).Render("? "+e.speaker) + fg(th.Muted).Render("  "+title), prefixLines(wrapPlain(e.text, width-2, th), bar)}
+		if active {
+			if it := s.currentItem(); it != nil {
+				for i, o := range it.options {
+					mark, c := "○", th.Text
+					if it.multi {
+						mark = "☐"
+					}
+					if s.qa.picked[i] {
+						mark, c = "◉", th.OK
+						if it.multi {
+							mark = "☑"
+						}
+					}
+					ptr := "  "
+					if s.qa.touched && i == s.qa.cursor {
+						ptr, c = fg(th.Accent2).Bold(true).Render("❯ "), th.Accent2
+					}
+					rows = append(rows, bar+"   "+ptr+fg(c).Render(fmt.Sprintf("%s %d  %s", mark, i+1, o)))
+				}
+				hint := "type your own answer below · Enter alone skips"
+				if len(it.options) > 0 {
+					verb := "space picks one"
+					if it.multi {
+						verb = "space ticks, pick several"
+					}
+					hint = "↑↓ move · " + verb + " · 1-9 jump · or type your own below · Enter sends"
+				}
+				rows = append(rows, bar+"   "+fg(th.Subtle).Render(ansi.Truncate(hint, width-6, "…")))
+			}
+		} else if e.answer != "" {
+			rows = append(rows, bar+"   "+fg(th.OK).Render("→ ")+fg(th.Text).Render(ansi.Truncate(e.answer, width-8, "…")))
+		} else {
+			rows = append(rows, bar+"   "+fg(th.Subtle).Render("skipped"))
+		}
+		return strings.Join(rows, "\n")
 
 	case kindSystem:
 		return fg(th.Muted).Italic(true).Render(wrapPlain("» "+e.text, width, th))
@@ -215,7 +257,7 @@ func renderTranscript(s *session, th theme.Theme, width int, spin string) string
 // ---- header / roster / footer ----
 
 func renderHeader(s *session, th theme.Theme, width int, spin string) string {
-	left := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", s.frame, th.Accent2, th.Accent, th.Info, th.Speaker(2)) +
+	left := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", s.frame/2, th.Accent2, th.Accent, th.Info, th.Speaker(2)) +
 		fg(th.Accent2).Render(" ░▒▓ ") + fg(th.Muted).Render("// "+s.preset.Name+" // "+s.preset.Protocol)
 
 	var chips []string
@@ -419,7 +461,11 @@ func footerHint(s *session, th theme.Theme, width int) string {
 	case s.phase == phaseDone:
 		parts = []string{k("n", "new session"), k("q", "quit"), k("tab", "focus"), k("ctrl+p", "plan")}
 	case s.canType() && s.qa.active:
-		parts = []string{k("enter", "answer"), k("enter ∅", "skip"), k("esc", "skip all"), k("ctrl+o", "full"), k("ctrl+c", "quit")}
+		if it := s.currentItem(); it != nil && len(it.options) > 0 {
+			parts = []string{k("↑↓", "move"), k("space", "pick"), k("enter", "send"), k("esc", "skip all"), k("ctrl+c", "quit")}
+		} else {
+			parts = []string{k("enter", "answer"), k("enter ∅", "skip"), k("esc", "skip all"), k("ctrl+c", "quit")}
+		}
 	case s.canType():
 		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+o", "full"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
 	default:

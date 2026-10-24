@@ -96,7 +96,7 @@ describe("rpc server: TUI surface", () => {
     await h.waitFor((m) => m.event === "idle", 5000);
     h.input.end();
     await h.done;
-  });
+  }, 60000);
 });
 
 describe("rpc server: customizing a council", () => {

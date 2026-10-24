@@ -107,6 +107,8 @@ type (
 		Converged bool   `json:"converged"`
 		Dissent   string `json:"dissent"`
 		Questions string `json:"questions"`
+		// OpenQuestions is the same list with suggested answers, for the interactive form.
+		OpenQuestions []OpenQuestion `json:"openQuestions"`
 	}
 	RoundDone struct {
 		Round int `json:"round"`
@@ -118,6 +120,12 @@ type (
 	EngineError struct {
 		Agent   string `json:"agent"`
 		Message string `json:"message"`
+	}
+	// OpenQuestion is something the Chair needs the human to decide, with suggested answers.
+	OpenQuestion struct {
+		Text    string   `json:"text"`
+		Options []string `json:"options"`
+		Multi   bool     `json:"multi"`
 	}
 	// ConfigChanged confirms a live change of pacing (see session.configure).
 	ConfigChanged struct {

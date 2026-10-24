@@ -3,7 +3,7 @@ import type { Illustrate } from "./illustrator.js";
 import { TLDR_INSTRUCTION, fallbackTldr, splitTldr, type Tldr } from "./tldr.js";
 import { loadPersona, type CouncilConfig, type PauseMode, type Persona } from "./config.js";
 import { renderTranscript } from "./prompts.js";
-import { parseChairReport } from "./protocols/chairReport.js";
+import { parseChairReport, type OpenQuestion } from "./protocols/chairReport.js";
 import { getProtocol, type Prior, type Turn } from "./protocols/index.js";
 import { Session } from "./session.js";
 import type { AgentTransport } from "./transports/index.js";
@@ -21,7 +21,7 @@ export type EngineEvent =
   | { event: "plan.updated"; data: { round: number; text: string } }
   | {
       event: "chair.summary";
-      data: { round: number; summary: string; converged: boolean; dissent: string; questions: string };
+      data: { round: number; summary: string; converged: boolean; dissent: string; questions: string; openQuestions: OpenQuestion[] };
     }
   | { event: "round.done"; data: { round: number } }
   | { event: "awaiting_human"; data: { round: number; finished: boolean } }
@@ -257,7 +257,7 @@ export class Engine {
       this.converged = r.converged;
       this.emit({
         event: "chair.summary",
-        data: { round, summary: r.summary, converged: r.converged, dissent: r.dissent, questions: r.questions },
+        data: { round, summary: r.summary, converged: r.converged, dissent: r.dissent, questions: r.questions, openQuestions: r.openQuestions },
       });
     }
   }

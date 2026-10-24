@@ -34,7 +34,7 @@ func verdictFits(d *rpc.Diagram, width int) bool {
 
 // renderVerdict plays each option being tried in turn: a little figure bites, reacts (red and
 // spitting, or green and sparkling), and at the end a box draws itself around the agreed winner.
-func renderVerdict(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool) string {
+func renderVerdict(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool, item string) string {
 	head := fg(th.OK).Bold(true).Render("◆ VERDICT") + fg(th.Text).Bold(true).Render("  "+d.Title)
 	n := len(d.Options)
 	if !verdictFits(d, width) {
@@ -116,8 +116,8 @@ func renderVerdict(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool) 
 		cv.put(1, fx-2, face, faceC, reacted)
 		cv.put(2, fx-1, "/|\\", th.Muted, false)
 		cv.put(3, fx-1, "/ \\", th.Muted, false)
-		if itemX < x0+colW-1 {
-			cv.put(itemY, itemX, "▬", itemC, true)
+		if itemX+len([]rune(item)) < x0+colW {
+			cv.put(itemY, itemX, item, itemC, true)
 		}
 
 		nameC := th.Text

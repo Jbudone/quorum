@@ -94,8 +94,13 @@ func diagramFits(d *rpc.Diagram, width int) bool { return width >= len(d.Actors)
 
 // renderDiagram draws the diagram at tick t of its playback; anim=false draws the finished frame.
 func renderDiagram(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool) string {
+	return renderDiagramItem(d, width, th, t, anim, "▬")
+}
+
+// renderDiagramItem is renderDiagram with the glyph a verdict's taster holds (the topic's own item).
+func renderDiagramItem(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool, item string) string {
 	if d != nil && d.Kind == "verdict" {
-		return renderVerdict(d, width, th, t, anim)
+		return renderVerdict(d, width, th, t, anim, item)
 	}
 	if d == nil || len(d.Actors) < 2 || len(d.Steps) == 0 {
 		return ""

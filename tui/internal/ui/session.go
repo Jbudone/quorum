@@ -28,6 +28,7 @@ const (
 	kindRound
 	kindMap      // the round's debate map
 	kindQuestion // an open question awaiting the human's answer
+	kindArt      // the topic's picture
 )
 
 // entry is one block in the transcript.
@@ -39,6 +40,8 @@ type entry struct {
 	text      string
 	artifact  string // "plan" or "chair-report" when the reply becomes a document
 	tools     []string
+	qIdx      int          // kindQuestion: index into the walkthrough
+	answer    string       // kindQuestion: what the human decided, once answered
 	debate    *debateData  // kindMap: who said what this round
 	diagram   *rpc.Diagram // arrives after the reply, in the background
 	diagramAt int          // animation clock value when it arrived or was replayed
@@ -76,6 +79,7 @@ const (
 
 // session is the pure state of one council run; it has no rendering or I/O so it is easy to test.
 type session struct {
+	sprite  *sprite // the picture for the topic
 	preset  rpc.Preset
 	repo    string
 	topic   string
@@ -94,6 +98,7 @@ type session struct {
 
 	dissent     string
 	questions   string
+	openQs      []rpc.OpenQuestion
 	converged   bool
 	quota       *float64
 	notes       []string
@@ -107,7 +112,7 @@ type session struct {
 }
 
 func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
-	s := &session{preset: p, repo: repo, topic: topic, phase: phaseStarting, total: p.Rounds, pause: p.Pause}
+	s := &session{sprite: spriteFor(topic), preset: p, repo: repo, topic: topic, phase: phaseStarting, total: p.Rounds, pause: p.Pause}
 	if rounds > 0 {
 		s.total = rounds
 	}
@@ -281,7 +286,7 @@ func (s *session) apply(ev rpc.Event) {
 		s.plan, s.planRev = d.Text, d.Round
 
 	case rpc.ChairSummary:
-		s.dissent, s.questions = d.Dissent, d.Questions
+		s.dissent, s.questions, s.openQs = d.Dissent, d.Questions, d.OpenQuestions
 		if d.Converged && !s.converged {
 			s.convergedAt = s.frame + 1
 		}
@@ -392,11 +397,22 @@ func (s *session) names() string {
 	return strings.Join(ids, ", ")
 }
 
+// qaItem is one open question with its suggested answers.
+type qaItem struct {
+	text    string
+	options []string
+	multi   bool
+}
+
 // qaState walks the human through the Chair's open questions at a pause.
 type qaState struct {
-	active bool
-	items  []string
-	idx    int
+	active  bool
+	items   []qaItem
+	idx     int
+	cursor  int          // highlighted option
+	touched bool         // the human has moved or picked something
+	picked  map[int]bool // chosen options for the current question
+	entry   *entry       // the card showing the current question
 }
 
 // questionItems splits the Chair's OPEN QUESTIONS section into individual questions.
@@ -413,7 +429,15 @@ func questionItems(text string) []string {
 }
 
 func (s *session) startQuestions() {
-	items := questionItems(s.questions)
+	var items []qaItem
+	for _, q := range s.openQs {
+		items = append(items, qaItem{text: q.Text, options: q.Options, multi: q.Multi})
+	}
+	if len(items) == 0 { // an engine that sent only plain bullets
+		for _, t := range questionItems(s.questions) {
+			items = append(items, qaItem{text: t})
+		}
+	}
 	if len(items) == 0 {
 		return
 	}
@@ -422,8 +446,9 @@ func (s *session) startQuestions() {
 }
 
 func (s *session) showQuestion() {
-	q := s.qa
-	s.add(&entry{kind: kindQuestion, speaker: fmt.Sprintf("Q%d/%d", q.idx+1, len(q.items)), text: q.items[q.idx]})
+	q := &s.qa
+	q.cursor, q.touched, q.picked = 0, false, map[int]bool{}
+	q.entry = s.add(&entry{kind: kindQuestion, speaker: fmt.Sprintf("Q%d/%d", q.idx+1, len(q.items)), text: q.items[q.idx].text, qIdx: q.idx})
 }
 
 // currentQuestion returns the open question being asked, if the walkthrough is active.
@@ -431,14 +456,66 @@ func (s *session) currentQuestion() (string, bool) {
 	if !s.qa.active || s.qa.idx >= len(s.qa.items) {
 		return "", false
 	}
-	return s.qa.items[s.qa.idx], true
+	return s.qa.items[s.qa.idx].text, true
+}
+
+func (s *session) currentItem() *qaItem {
+	if !s.qa.active || s.qa.idx >= len(s.qa.items) {
+		return nil
+	}
+	return &s.qa.items[s.qa.idx]
+}
+
+// moveOption moves the highlight within the current question's options.
+func (s *session) moveOption(d int) {
+	it := s.currentItem()
+	if it == nil || len(it.options) == 0 {
+		return
+	}
+	s.qa.cursor = (s.qa.cursor + d + len(it.options)) % len(it.options)
+	s.qa.touched = true
+}
+
+// pickOption selects option i (toggling when several may be chosen, exclusive otherwise).
+func (s *session) pickOption(i int) {
+	it := s.currentItem()
+	if it == nil || i < 0 || i >= len(it.options) {
+		return
+	}
+	s.qa.cursor, s.qa.touched = i, true
+	if it.multi {
+		s.qa.picked[i] = !s.qa.picked[i]
+		return
+	}
+	was := s.qa.picked[i]
+	s.qa.picked = map[int]bool{}
+	s.qa.picked[i] = !was
+}
+
+// chosen returns the selected option labels in order. A touched single-choice question with
+// nothing ticked answers with the highlighted option, so arrows then Enter is enough.
+func (s *session) chosen() []string {
+	it := s.currentItem()
+	if it == nil {
+		return nil
+	}
+	var out []string
+	for i, o := range it.options {
+		if s.qa.picked[i] {
+			out = append(out, o)
+		}
+	}
+	if len(out) == 0 && s.qa.touched && !it.multi && len(it.options) > 0 {
+		out = []string{it.options[s.qa.cursor]}
+	}
+	return out
 }
 
 // nextQuestion moves on after an answer or a skip; it reports whether any questions remain.
 func (s *session) nextQuestion() bool {
 	s.qa.idx++
 	if s.qa.idx >= len(s.qa.items) {
-		s.qa.active = false
+		s.qa.active, s.qa.entry = false, nil
 		return false
 	}
 	s.showQuestion()
@@ -467,6 +544,9 @@ func (e *entry) playing(s *session) bool {
 	if e.reveal && s.frame-e.revealAt < fxTicks(e.revealChars()) {
 		return true
 	}
+	if e.kind == kindArt {
+		return s.frame-e.diagramAt < artTicks
+	}
 	if e.debate != nil {
 		return s.frame-e.diagramAt < debateTicks(e.debate)
 	}
@@ -488,7 +568,7 @@ func (e *entry) revealChars() int {
 // replay restarts the newest diagram's animation.
 func (s *session) replay() bool {
 	for i := len(s.entries) - 1; i >= 0; i-- {
-		if e := s.entries[i]; e.diagram != nil || e.debate != nil {
+		if e := s.entries[i]; e.diagram != nil || e.debate != nil || e.kind == kindArt {
 			e.diagramAt, e.cacheW = s.frame, 0
 			return true
 		}
