@@ -146,7 +146,13 @@ export class Engine {
   }
 
   /** Human steering that the next round's protocol must honor. */
-  steer(text: string): void {
+  steer(text: string, question?: string): void {
+    // An answer to an open question is also a decision: keep it in decisions.md.
+    if (question) {
+      const entry = `## Round ${this.round}\n\n- **Q:** ${question}\n- **A:** ${text}\n\n`;
+      this.session.write("decisions.md", this.session.read("decisions.md") + entry);
+      text = `Decision on the open question "${question}": ${text}`;
+    }
     this.directives.push(text);
     this.session.append({ round: this.round, speaker: "human", text });
   }

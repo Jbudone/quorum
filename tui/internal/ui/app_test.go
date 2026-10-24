@@ -56,6 +56,24 @@ func TestFullSessionJourney(t *testing.T) {
 	lacks(t, s, "CONVERGED")  // raw chair report must not leak into the transcript
 	lacks(t, s, "## DISSENT") // ...or its markdown sections
 
+	// The Chair's open questions are asked one at a time before moving on.
+	contains(t, s, "? Q1/2")
+	h.typ("The platform team owns rotation.")
+	h.press("enter")
+	if c := h.fc.last(); c.method != "session.steer" || c.params["question"] != "Who owns signing-key rotation?" || c.params["text"] != "The platform team owns rotation." {
+		t.Fatalf("an answer is a decision tied to its question: %+v", c)
+	}
+	h.reply(h.fc.last().id)
+	contains(t, h.screen(), "? Q2/2")
+	h.press("enter") // an empty Enter skips the second question
+	if h.fc.last().method != "session.steer" || h.fc.last().params["text"] != "The platform team owns rotation." {
+		t.Fatalf("skipping must not send anything: %+v", h.fc.last())
+	}
+	contains(t, h.screen(), "every open question")
+	if h.app.sess.qa.active {
+		t.Fatal("the walkthrough ends after the last question")
+	}
+
 	// Steering is a directive, not a chat message.
 	h.typ("/steer Prefer the smallest shippable slice.")
 	h.press("enter")

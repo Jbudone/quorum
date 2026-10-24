@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -88,29 +89,105 @@ const solveWindow = 7 // how many cells ahead of the resolved edge show scramble
 // solveTicks is how long text of n characters takes to resolve.
 func solveTicks(n int) int { return min(max(n/5, 8), 22) }
 
-// solve renders text as if it is being decoded: the first `resolved` characters (counted across a
-// whole card from `offset`) are final, a short window after them flickers through glyphs, and the
-// rest is not there yet. It keeps one cell per rune, so wrapping is unchanged.
-func solve(text string, offset, resolved, frame int, final, flicker lipgloss.Style) string {
+// fxTicks is the whole reveal: resolving, then a one-off shimmer across the finished text.
+func fxTicks(n int) int { return solveTicks(n) + shimmerTicks }
+
+const shimmerTicks = 12
+
+// Reveal styles for text arriving on screen.
+const (
+	fxDecode = "decode" // scrambled glyphs resolve left to right
+	fxWipe   = "wipe"   // a bright block sweeps across, leaving text behind it
+	fxType   = "type"   // typewriter with a cursor
+	fxGlitch = "glitch" // everything starts as noise and snaps into place at random
+)
+
+// fxMode picks a reveal style for the i-th line of a card. QUORUM_FX forces one style everywhere;
+// the default mixes them so each kind of text arrives differently.
+func fxMode(slot int) string {
+	switch m := fxForced; m {
+	case fxDecode, fxWipe, fxType, fxGlitch:
+		return m
+	}
+	return [...]string{fxDecode, fxGlitch, fxWipe, fxType}[slot%4]
+}
+
+var fxForced = os.Getenv("QUORUM_FX")
+
+type solveOpts struct {
+	mode     string
+	offset   int // index of this text's first rune within the whole card
+	resolved int // runes (across the card) that are final
+	total    int // runes in the whole card
+	frame    int
+	final    lipgloss.Style
+	flicker  lipgloss.Style
+	alt      lipgloss.Style // second noise colour for glitch
+}
+
+// solve renders text part-way through arriving. It keeps one cell per rune, so wrapping and layout
+// never shift while it plays.
+func solve(text string, o solveOpts) string {
 	var b strings.Builder
 	var done []rune
 	flush := func() {
 		if len(done) > 0 {
-			b.WriteString(final.Render(string(done)))
+			b.WriteString(o.final.Render(string(done)))
 			done = done[:0]
 		}
 	}
+	noise := func(idx int, st lipgloss.Style) {
+		flush()
+		b.WriteString(st.Render(string(scrambleGlyphs[hash32(idx, o.frame)%uint32(len(scrambleGlyphs))])))
+	}
+	total := max(o.total, 1)
 	for i, r := range []rune(text) {
-		idx := offset + i
-		switch {
-		case r == ' ' || idx < resolved:
+		idx := o.offset + i
+		if r == ' ' {
 			done = append(done, r)
-		case idx < resolved+solveWindow:
-			flush()
-			g := scrambleGlyphs[hash32(idx, frame)%uint32(len(scrambleGlyphs))]
-			b.WriteString(flicker.Render(string(g)))
-		default:
-			done = append(done, ' ')
+			continue
+		}
+		switch o.mode {
+		case fxWipe:
+			switch {
+			case idx < o.resolved:
+				done = append(done, r)
+			case idx < o.resolved+2:
+				flush()
+				b.WriteString(o.flicker.Render("█"))
+			default:
+				done = append(done, ' ')
+			}
+		case fxType:
+			switch {
+			case idx < o.resolved:
+				done = append(done, r)
+			case idx == o.resolved:
+				flush()
+				b.WriteString(o.flicker.Render("▍"))
+			default:
+				done = append(done, ' ')
+			}
+		case fxGlitch:
+			// Each rune has its own moment to snap into place, spread across the whole reveal.
+			at := int(hash32(idx, 99) % uint32(total+solveWindow))
+			switch {
+			case at < o.resolved:
+				done = append(done, r)
+			case hash32(idx, o.frame)%5 == 0:
+				noise(idx, o.alt)
+			default:
+				noise(idx, o.flicker)
+			}
+		default: // decode
+			switch {
+			case idx < o.resolved:
+				done = append(done, r)
+			case idx < o.resolved+solveWindow:
+				noise(idx, o.flicker)
+			default:
+				done = append(done, ' ')
+			}
 		}
 	}
 	flush()
@@ -123,4 +200,17 @@ func resolvedAt(n, ticks, since int) int {
 		return n + solveWindow
 	}
 	return since * (n + solveWindow) / ticks
+}
+
+// shimmer sweeps a bright band across finished text once; pos is the band's centre in runes.
+func shimmer(text string, pos int, base, hi lipgloss.Style) string {
+	var b strings.Builder
+	for i, r := range []rune(text) {
+		if d := i - pos; d >= -2 && d <= 2 {
+			b.WriteString(hi.Render(string(r)))
+		} else {
+			b.WriteString(base.Render(string(r)))
+		}
+	}
+	return b.String()
 }

@@ -368,6 +368,10 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "esc":
 		a.help = false
+		if s.canType() && s.qa.active {
+			s.qa.active = false
+			s.system("Skipped the open questions. Press Enter to continue to the next round.")
+		}
 		return nil
 	case "ctrl+r":
 		if !s.replay() {
@@ -452,6 +456,9 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 // submit acts on the input line at a pause.
 func (a *App) submit() tea.Cmd {
 	s := a.sess
+	if q, ok := s.currentQuestion(); ok && !strings.HasPrefix(strings.TrimSpace(a.input.Value()), "/") {
+		return a.answerQuestion(q)
+	}
 	cmd := s.parseInput(a.input.Value())
 	switch cmd.kind {
 	case "error":
@@ -483,6 +490,22 @@ func (a *App) submit() tea.Cmd {
 	}
 	a.input.Reset()
 	a.follow = true
+	return nil
+}
+
+// answerQuestion sends the typed answer as a decision (empty input skips the question).
+func (a *App) answerQuestion(q string) tea.Cmd {
+	s := a.sess
+	ans := strings.TrimSpace(a.input.Value())
+	if ans != "" {
+		s.add(&entry{kind: kindHuman, to: "the council", text: ans})
+		a.call("session.steer", map[string]any{"text": ans, "question": q})
+	}
+	a.input.Reset()
+	a.follow = true
+	if !s.nextQuestion() {
+		s.system("That is every open question. Press Enter to continue to the next round, or keep talking to the Chair.")
+	}
 	return nil
 }
 
@@ -585,6 +608,8 @@ func (a *App) refresh() {
 
 	a.input.SetWidth(a.w - 6)
 	switch {
+	case a.sess.canType() && a.sess.qa.active:
+		a.input.Placeholder = "Your answer to the open question — Enter alone skips it, Esc skips them all"
 	case a.sess.canType():
 		a.input.Placeholder = "Ask the Chair, @name to ask one member, /steer to guide — or press Enter to continue"
 	case a.sess.phase == phaseDone:
@@ -597,6 +622,9 @@ func (a *App) refresh() {
 			return strings.Repeat(" ", 10)
 		}
 		target := "chair"
+		if _, asking := a.sess.currentQuestion(); asking && !strings.HasPrefix(a.input.Value(), "/") {
+			return fg(a.th.Warn).Bold(true).Render(fmt.Sprintf("%-8s", "answer")) + fg(a.th.Subtle).Render("▸ ")
+		}
 		if v := a.input.Value(); strings.HasPrefix(v, "@") {
 			target = strings.ToLower(strings.TrimPrefix(strings.Fields(v + " ")[0], "@"))
 		} else if strings.HasPrefix(v, "/") {

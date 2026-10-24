@@ -85,30 +85,40 @@ func TestVerdictNarrowFallsBackToList(t *testing.T) {
 	}
 }
 
-func TestSolveKeepsLayoutAndResolvesInOrder(t *testing.T) {
+func TestEveryRevealStyleKeepsLayoutAndEndsOnTheOriginal(t *testing.T) {
 	st := lipgloss.NewStyle()
 	text := "Rotation needs reuse detection"
-	for resolved := 0; resolved <= len(text)+solveWindow; resolved++ {
-		for frame := 0; frame < 3; frame++ {
-			out := ansi.Strip(solve(text, 0, resolved, frame, st, st))
-			if len([]rune(out)) != len([]rune(text)) {
-				t.Fatalf("rune count changed at %d: %q", resolved, out)
-			}
-			for i, r := range []rune(text) {
-				if r == ' ' && []rune(out)[i] != ' ' {
-					t.Fatalf("spaces must survive: %q", out)
+	n := len([]rune(text))
+	for _, mode := range []string{fxDecode, fxWipe, fxType, fxGlitch} {
+		for resolved := 0; resolved <= n+solveWindow; resolved++ {
+			for frame := 0; frame < 3; frame++ {
+				out := ansi.Strip(solve(text, solveOpts{mode: mode, resolved: resolved, total: n, frame: frame, final: st, flicker: st, alt: st}))
+				if len([]rune(out)) != n {
+					t.Fatalf("%s: rune count changed at %d: %q", mode, resolved, out)
 				}
-				if i < resolved && []rune(out)[i] != r {
-					t.Fatalf("char %d should be resolved at %d: %q", i, resolved, out)
+				for i, r := range []rune(text) {
+					if r == ' ' && []rune(out)[i] != ' ' {
+						t.Fatalf("%s: spaces must survive: %q", mode, out)
+					}
 				}
 			}
 		}
+		done := ansi.Strip(solve(text, solveOpts{mode: mode, resolved: n + solveWindow, total: n, final: st, flicker: st, alt: st}))
+		if done != text {
+			t.Errorf("%s: fully resolved text must equal the original, got %q", mode, done)
+		}
+		if start := ansi.Strip(solve(text, solveOpts{mode: mode, resolved: 0, total: n, final: st, flicker: st, alt: st})); strings.Contains(start, "Rotation") {
+			t.Errorf("%s: nothing should be readable at the start: %q", mode, start)
+		}
 	}
-	if ansi.Strip(solve(text, 0, len(text)+solveWindow, 0, st, st)) != text {
-		t.Fatal("fully resolved text must equal the original")
-	}
-	if got := ansi.Strip(solve(text, 0, 0, 0, st, st)); strings.Contains(got, "Rotation") {
-		t.Fatalf("nothing should be readable at the start: %q", got)
+}
+
+func TestShimmerKeepsTextIntact(t *testing.T) {
+	st := lipgloss.NewStyle()
+	for pos := -3; pos < 40; pos++ {
+		if got := ansi.Strip(shimmer("Ship the token service", pos, st, st)); got != "Ship the token service" {
+			t.Fatalf("pos %d: %q", pos, got)
+		}
 	}
 }
 

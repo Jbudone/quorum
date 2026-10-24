@@ -15,7 +15,7 @@ import { councilWorkflow } from "../workflows/council.js";
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
  * {id, result|error} for requests, and {event, data} for engine events (no id).
  *
- * Methods: session.start {preset | config, topic, repo, rounds?, protocol?, pause?, mock?}, session.continue {stop?}, session.steer {text},
+ * Methods: session.start {preset | config, topic, repo, rounds?, protocol?, pause?, mock?}, session.continue {stop?}, session.steer {text, question?},
  * session.interject {to, text}, session.abort, session.configure {pause?, rounds?}, presets.list, personas.list, clis.list,
  * presets.save {name, config}, doctor.
  */
@@ -143,7 +143,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         }
         return {};
       case "session.steer":
-        need().steer(String(p.text));
+        need().steer(String(p.text), p.question ? String(p.question) : undefined);
         return {};
       case "session.interject":
         {

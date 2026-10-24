@@ -190,15 +190,21 @@ func TestRealBinaryMockSession(t *testing.T) {
 	}
 	tm.snapshot("3-round1-paused")
 
+	tm.send("\x1b") // skip the open-question walkthrough to talk to the Chair instead
+	tm.waitFor("Skipped the open questions", 10*time.Second)
 	tm.typ("Why do they disagree?")
 	tm.send("\r")
 	tm.waitFor("scope, not direction", 30*time.Second)
 	tm.waitFor("YOUR TURN", 30*time.Second)
 	tm.snapshot("4-asked-chair")
 
-	tm.send("\r") // continue
+	tm.send("\x1b")                    // skip any open questions
+	time.Sleep(300 * time.Millisecond) // a lone Esc must not fuse with the next key into Alt+key
+	tm.send("\r")                      // continue
 	tm.waitFor("RND ●●○", 60*time.Second)
 	tm.waitFor("YOUR TURN", 60*time.Second)
+	tm.send("\x1b")
+	time.Sleep(300 * time.Millisecond)
 	tm.send("\r") // round 3
 	tm.waitFor("RND ●●●", 60*time.Second)
 	s = tm.waitFor("CONVERGED", 60*time.Second)
@@ -206,6 +212,8 @@ func TestRealBinaryMockSession(t *testing.T) {
 	tm.snapshot("5-converged")
 	_ = s
 
+	tm.send("\x1b")
+	time.Sleep(300 * time.Millisecond)
 	tm.send("\r") // finish
 	tm.waitFor("new session", 30*time.Second)
 	s = tm.text()

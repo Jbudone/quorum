@@ -26,6 +26,8 @@ const (
 	kindSystem
 	kindError
 	kindRound
+	kindMap      // the round's debate map
+	kindQuestion // an open question awaiting the human's answer
 )
 
 // entry is one block in the transcript.
@@ -37,6 +39,7 @@ type entry struct {
 	text      string
 	artifact  string // "plan" or "chair-report" when the reply becomes a document
 	tools     []string
+	debate    *debateData  // kindMap: who said what this round
 	diagram   *rpc.Diagram // arrives after the reply, in the background
 	diagramAt int          // animation clock value when it arrived or was replayed
 	reveal    bool         // the card's text decodes into view
@@ -89,15 +92,18 @@ type session struct {
 	plan    string
 	planRev int
 
-	dissent   string
-	questions string
-	converged bool
-	quota     *float64
-	notes     []string
-	pause     string
-	frame     int  // animation frame, advanced by the app on every tick
-	full      bool // show full replies under their digests
-	calm      bool // no animation: show final frames
+	dissent     string
+	questions   string
+	converged   bool
+	quota       *float64
+	notes       []string
+	pause       string
+	frame       int  // animation frame, advanced by the app on every tick
+	full        bool // show full replies under their digests
+	calm        bool // no animation: show final frames
+	qa          qaState
+	qaRound     int // the round whose questions were last offered
+	convergedAt int // animation clock when the council converged (0 = not yet)
 }
 
 func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
@@ -275,11 +281,22 @@ func (s *session) apply(ev rpc.Event) {
 		s.plan, s.planRev = d.Text, d.Round
 
 	case rpc.ChairSummary:
-		s.dissent, s.questions, s.converged = d.Dissent, d.Questions, d.Converged
+		s.dissent, s.questions = d.Dissent, d.Questions
+		if d.Converged && !s.converged {
+			s.convergedAt = s.frame + 1
+		}
+		s.converged = d.Converged
 		s.add(&entry{kind: kindSummary, speaker: "chair", round: d.Round, text: d.Summary, converged: d.Converged, reveal: true, revealAt: s.frame})
+		if db := s.buildDebate(d.Round); db != nil {
+			s.add(&entry{kind: kindMap, round: d.Round, debate: db, diagramAt: s.frame})
+		}
 
 	case rpc.AwaitingHuman:
 		s.phase = phasePaused
+		if !d.Finished && s.qaRound != s.round {
+			s.qaRound = s.round
+			s.startQuestions()
+		}
 		if d.Finished {
 			s.system("The council is finished. Press Enter to wrap up, or ask a last question.")
 		}
@@ -375,8 +392,66 @@ func (s *session) names() string {
 	return strings.Join(ids, ", ")
 }
 
-// animating reports whether any diagram is still playing.
+// qaState walks the human through the Chair's open questions at a pause.
+type qaState struct {
+	active bool
+	items  []string
+	idx    int
+}
+
+// questionItems splits the Chair's OPEN QUESTIONS section into individual questions.
+func questionItems(text string) []string {
+	var out []string
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "-*• "))
+		l = strings.TrimSpace(strings.TrimLeft(l, "0123456789.) "))
+		if l != "" && !strings.EqualFold(strings.TrimRight(l, "."), "none") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func (s *session) startQuestions() {
+	items := questionItems(s.questions)
+	if len(items) == 0 {
+		return
+	}
+	s.qa = qaState{active: true, items: items}
+	s.showQuestion()
+}
+
+func (s *session) showQuestion() {
+	q := s.qa
+	s.add(&entry{kind: kindQuestion, speaker: fmt.Sprintf("Q%d/%d", q.idx+1, len(q.items)), text: q.items[q.idx]})
+}
+
+// currentQuestion returns the open question being asked, if the walkthrough is active.
+func (s *session) currentQuestion() (string, bool) {
+	if !s.qa.active || s.qa.idx >= len(s.qa.items) {
+		return "", false
+	}
+	return s.qa.items[s.qa.idx], true
+}
+
+// nextQuestion moves on after an answer or a skip; it reports whether any questions remain.
+func (s *session) nextQuestion() bool {
+	s.qa.idx++
+	if s.qa.idx >= len(s.qa.items) {
+		s.qa.active = false
+		return false
+	}
+	s.showQuestion()
+	return true
+}
+
+const convergeTicks = 20 // how long the header celebrates convergence
+
+// animating reports whether anything is still playing.
 func (s *session) animating() bool {
+	if !s.calm && s.convergedAt > 0 && s.frame-s.convergedAt < convergeTicks {
+		return true
+	}
 	for _, e := range s.entries {
 		if e.playing(s) {
 			return true
@@ -389,8 +464,11 @@ func (e *entry) playing(s *session) bool {
 	if s.calm {
 		return false
 	}
-	if e.reveal && s.frame-e.revealAt < solveTicks(e.revealChars()) {
+	if e.reveal && s.frame-e.revealAt < fxTicks(e.revealChars()) {
 		return true
+	}
+	if e.debate != nil {
+		return s.frame-e.diagramAt < debateTicks(e.debate)
 	}
 	return e.diagram != nil && s.frame-e.diagramAt < diagramTicks(e.diagram)
 }
@@ -410,7 +488,7 @@ func (e *entry) revealChars() int {
 // replay restarts the newest diagram's animation.
 func (s *session) replay() bool {
 	for i := len(s.entries) - 1; i >= 0; i-- {
-		if e := s.entries[i]; e.diagram != nil {
+		if e := s.entries[i]; e.diagram != nil || e.debate != nil {
 			e.diagramAt, e.cacheW = s.frame, 0
 			return true
 		}

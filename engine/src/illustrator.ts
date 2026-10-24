@@ -64,6 +64,8 @@ export interface IllustratorOptions {
   verify?: Ask;
   /** Jev: gates whether a diagram is worth generating and verifies it afterwards. */
   jev?: Decide;
+  /** Receives one line per decision, so a missing diagram can be explained. */
+  log?: (line: string) => void;
   /** Minimum probability that a diagram helps before the generator is asked. */
   gate?: number;
   /** Minimum probability that the diagram is faithful before it is shown. */
@@ -80,6 +82,7 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
   const o: IllustratorOptions = typeof opts === "function" ? { verify: opts } : opts;
   const gate = o.gate ?? 0.6;
   const faithful = o.faithful ?? 0.7;
+  const log = o.log ?? (() => {});
   return async (input) => {
     let hint = "";
     if (o.jev) {
@@ -88,20 +91,25 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
           helps: { type: "noul", instructions: "Would a small diagram make this message easier to grasp: an ordered flow, the steps of a security exploit, or options being compared and judged (one liked, another disliked)? Answer false for vague remarks or process notes with nothing concrete to draw." },
           kind: { type: "choice", instructions: "Which diagram fits this message best?", criteria: { sequence: "an ordered flow of messages or data between parties", attack: "the steps of a security exploit or failure scenario", verdict: "options being compared and judged, with one preferred or ranked", none: "no concrete sequence, threat or comparison to draw" } },
         });
+        log(`${input.agent}: gate helps=${probTrue(g.helps).toFixed(2)} kind=${String(g.kind?.value)}`);
         if (probTrue(g.helps) < gate || g.kind?.value === "none") return undefined;
         if (g.kind?.value === "sequence" || g.kind?.value === "attack" || g.kind?.value === "verdict") hint = String(g.kind.value);
-      } catch {
-        // Gate unavailable: fall through and let the generator decide.
+      } catch (e) {
+        log(`${input.agent}: gate unavailable (${e instanceof Error ? e.message : e}); asking the generator anyway`);
       }
     }
     let errors: string[] = [];
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const raw = extractJson(await ask(illustratePrompt(input, errors, hint)));
-        if (raw.useful === false) return undefined;
+        if (raw.useful === false) {
+          log(`${input.agent}: generator said no diagram would help`);
+          return undefined;
+        }
         const checked = checkDiagram(raw, input.body);
         if (!checked.ok) {
           errors = checked.errors;
+          log(`${input.agent}: attempt ${attempt + 1} rejected: ${errors.join("; ")}`);
           continue;
         }
         const d = checked.diagram;
@@ -109,6 +117,7 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
           const v = await o.jev(`Message:\n${input.body}\n\nDiagram:\n${describe(d)}`, {
             faithful: { type: "noul", instructions: "Every actor and step in the diagram is supported by the message. Nothing is invented, reversed or exaggerated." },
           });
+          log(`${input.agent}: verify faithful=${probTrue(v.faithful).toFixed(2)} (need ${faithful})`);
           if (probTrue(v.faithful) >= faithful) return d;
           errors = ["a fact-checker found steps or actors the message does not state; use only what it explicitly says"];
           continue;
@@ -120,6 +129,7 @@ export function makeIllustrator(ask: Ask, opts: IllustratorOptions | Ask = {}): 
         return d;
       } catch (e) {
         errors = [e instanceof Error ? e.message : String(e)];
+        log(`${input.agent}: attempt ${attempt + 1} failed: ${errors[0]}`);
       }
     }
     return undefined;

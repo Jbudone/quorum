@@ -94,5 +94,5 @@ export function buildIllustrator(clis: CliInfo[], repo: string, settings = readS
     console.error("quorum: [jev] is enabled in settings.toml but OPENROUTER_API_KEY is not set; diagrams are off");
     return undefined;
   }
-  return makeIllustrator(ask, { verify: v, jev });
+  return makeIllustrator(ask, { verify: v, jev, log: (line) => console.error(`quorum: diagram: ${line}`) });
 }

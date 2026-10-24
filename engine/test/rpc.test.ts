@@ -148,6 +148,21 @@ describe("rpc server: customizing a council", () => {
     await h.done;
   }, 20000);
 
+  it("records an answer to an open question in decisions.md and steers the next round with it", async () => {
+    const h = harness();
+    const repo = mkdtempSync(join(tmpdir(), "q-"));
+    h.send({ id: 1, method: "session.start", params: { preset: "solo", mock: true, rounds: 1, topic: "t", repo } });
+    const started = (await h.waitFor((m) => m.id === 1)).result;
+    h.send({ id: 2, method: "session.steer", params: { text: "Use a 14 day window.", question: "What ends the dual-read window?" } });
+    await h.waitFor((m) => m.id === 2);
+    const { readFileSync } = await import("node:fs");
+    const decisions = readFileSync(join(started.dir, "decisions.md"), "utf8");
+    expect(decisions).toContain("**Q:** What ends the dual-read window?");
+    expect(decisions).toContain("**A:** Use a 14 day window.");
+    h.input.end();
+    await h.done;
+  });
+
   it("returns every validation problem to the client", async () => {
     const h = harness();
     h.send({ id: 1, method: "session.start", params: { config: { ...goodConfig, rounds: 0, agents: [] }, topic: "t", repo: "/tmp" } });

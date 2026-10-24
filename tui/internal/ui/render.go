@@ -49,6 +49,14 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 	case kindRound:
 		return glitchRule(fmt.Sprintf("ROUND %d/%d", e.round, e.total), width, s.frame, th)
 
+	case kindMap:
+		return renderDebate(e.debate, width, th, s.frame-e.diagramAt, !s.calm, s.frame)
+
+	case kindQuestion:
+		bar := fg(th.Warn).Render("▌")
+		head := bar + " " + fg(th.Warn).Bold(true).Render("? "+e.speaker) + fg(th.Muted).Render("  open question — your call")
+		return head + "\n" + prefixLines(wrapPlain(e.text, width-2, th), bar)
+
 	case kindSystem:
 		return fg(th.Muted).Italic(true).Render(wrapPlain("» "+e.text, width, th))
 
@@ -60,9 +68,10 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 		title := theme.GradientShift(fmt.Sprintf("◆ CHAIR // round %d briefing", e.round), s.frame, th.Accent2, th.Chair, th.Accent)
 		body := wrapPlain(e.text, width-4, th)
 		if e.reveal && !s.calm {
-			if since := s.frame - e.revealAt; since < solveTicks(len([]rune(e.text))) {
-				n := len([]rune(e.text))
-				body = ansi.Wrap(solve(e.text, 0, resolvedAt(n, solveTicks(n), since), s.frame, fg(th.Text), fg(th.Accent2)), width-4, "")
+			if n := len([]rune(e.text)); s.frame-e.revealAt < solveTicks(n) {
+				since := s.frame - e.revealAt
+				body = ansi.Wrap(solve(e.text, solveOpts{mode: fxMode(3), resolved: resolvedAt(n, solveTicks(n), since), total: n, frame: s.frame,
+					final: fg(th.Text), flicker: fg(th.Accent2), alt: fg(th.Info)}), width-4, "")
 			}
 		}
 		if e.converged {
@@ -114,24 +123,42 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 			right, gap = "", 1
 		}
 		rows = append(rows, left+strings.Repeat(" ", gap)+right)
-		// While a reply is fresh its text decodes into view, headline first, then bullets.
-		resolved, total := 1<<30, e.revealChars()
-		if e.reveal && !s.calm {
-			resolved = resolvedAt(total, solveTicks(total), s.frame-e.revealAt)
+		// A fresh reply arrives with an effect (see fxMode), then a one-off shimmer sweeps its headline.
+		total := e.revealChars()
+		since := s.frame - e.revealAt
+		live := e.reveal && !s.calm && since < fxTicks(total)
+		resolved := 1 << 30
+		if live {
+			resolved = resolvedAt(total, solveTicks(total), since)
 		}
-		final, flick := fg(th.Text), fg(th.Accent2)
+		opts := func(slot, off int, bold bool) solveOpts {
+			f := fg(th.Text)
+			if bold {
+				f = f.Bold(true)
+			}
+			return solveOpts{mode: fxMode(slot), offset: off, resolved: resolved, total: total, frame: s.frame, final: f, flicker: fg(th.Accent2), alt: fg(th.Info)}
+		}
 		off := 0
 		if t.Headline != "" {
-			rows = append(rows, ansi.Wrap(fg(th.Text).Bold(true).Render("▸ ")+solve(t.Headline, off, resolved, s.frame, final.Bold(true), flick), width-2, ""))
+			line := fg(th.Text).Bold(true).Render(t.Headline)
+			switch {
+			case live && since < solveTicks(total):
+				line = solve(t.Headline, opts(0, off, true))
+			case live: // decoding is done: sweep a highlight across
+				pos := (since - solveTicks(total)) * (len([]rune(t.Headline)) + 4) / shimmerTicks
+				line = shimmer(t.Headline, pos-2, fg(th.Text).Bold(true), fg(th.Accent2).Bold(true))
+			}
+			rows = append(rows, ansi.Wrap(fg(th.Text).Bold(true).Render("▸ ")+line, width-2, ""))
 			off += len([]rune(t.Headline))
 		}
-		for _, b := range t.Bullets {
-			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+solve(b, off, resolved, s.frame, final, flick), width-2, ""))
+		for i, b := range t.Bullets {
+			line := fg(th.Text).Render(b)
+			if live && since < solveTicks(total) {
+				line = solve(b, opts(i+1, off, false))
+			}
+			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+line, width-2, ""))
 			off += len([]rune(b))
 		}
-	}
-	if e.diagram != nil {
-		rows = append(rows, "", renderDiagram(e.diagram, width-3, th, s.frame-e.diagramAt, !s.calm), "")
 	}
 	switch {
 	case e.artifact == "plan":
@@ -220,7 +247,12 @@ func renderHeader(s *session, th theme.Theme, width int, spin string) string {
 		chips = append(chips, fg(c).Render(fmt.Sprintf("QUOTA %d%%", int(q*100+0.5))))
 	}
 	if s.converged {
-		chips = append(chips, fg(th.OK).Bold(true).Render("✓ CONVERGED"))
+		chip := fg(th.OK).Bold(true).Render("✓ CONVERGED")
+		if !s.calm && s.convergedAt > 0 && s.frame-s.convergedAt < convergeTicks {
+			sp := []string{"✦", "✧", "·", "✧"}
+			chip = fg(th.Warn).Render(sp[(s.frame/2)%4]) + " " + theme.GradientShift("✓ CONVERGED", s.frame, th.OK, th.Warn, th.Info) + " " + fg(th.Warn).Render(sp[(s.frame/2+2)%4])
+		}
+		chips = append(chips, chip)
 	}
 	switch s.phase {
 	case phaseStarting:
@@ -386,6 +418,8 @@ func footerHint(s *session, th theme.Theme, width int) string {
 	switch {
 	case s.phase == phaseDone:
 		parts = []string{k("n", "new session"), k("q", "quit"), k("tab", "focus"), k("ctrl+p", "plan")}
+	case s.canType() && s.qa.active:
+		parts = []string{k("enter", "answer"), k("enter ∅", "skip"), k("esc", "skip all"), k("ctrl+o", "full"), k("ctrl+c", "quit")}
 	case s.canType():
 		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+o", "full"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
 	default:
