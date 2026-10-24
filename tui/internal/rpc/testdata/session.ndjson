@@ -1,6 +1,8 @@
-{"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","persona":"user-advocate","role":"panelist"}]}]}
-{"id":2,"result":{"sessionId":"2026-10-23-22-15-45-trio","dir":"/tmp/rec-JtZKmi/.quorum/sessions/2026-10-23-22-15-45-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
-{"id":3,"result":{}}
+{"id":1,"result":[{"name":"solo","description":"One CLI wearing three hats. Cheapest option.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"claude","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"claude","persona":"pragmatist","role":"critic"}]},{"name":"trio","description":"Claude, Codex and Gemini each take a role, with a Claude Chair.","protocol":"draft-critique-revise","rounds":3,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"}]},{"name":"delphi","description":"Five blind panelists, anonymized feedback each round, until they converge.","protocol":"delphi","rounds":4,"pause":"round","readOnly":true,"requireEvidence":false,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"operator","cli":"codex","persona":"operator","role":"panelist"}]},{"name":"deep","description":"Trio plus extra critics, evidence required, more rounds.","protocol":"draft-critique-revise","rounds":5,"pause":"round","readOnly":true,"requireEvidence":true,"chair":{"cli":"claude"},"custom":false,"agents":[{"id":"architect","cli":"claude","persona":"architect","role":"drafter"},{"id":"skeptic","cli":"codex","persona":"skeptic","role":"critic"},{"id":"pragmatist","cli":"agy","model":"gemini-4-argon-medium","persona":"pragmatist","role":"critic"},{"id":"security","cli":"claude","persona":"security","role":"panelist"},{"id":"user-advocate","cli":"agy","model":"gemini-4-argon-medium","persona":"user-advocate","role":"panelist"}]}]}
+{"id":2,"result":[{"key":"architect","name":"Architect","role":"drafter","custom":false},{"key":"operator","name":"Operator","role":"panelist","custom":false},{"key":"pragmatist","name":"Pragmatist","role":"critic","custom":false},{"key":"security","name":"Security","role":"panelist","custom":false},{"key":"skeptic","name":"Skeptic","role":"critic","custom":false},{"key":"user-advocate","name":"User Advocate","role":"panelist","custom":false}]}
+{"id":3,"result":[{"cli":"claude","usable":true,"quotaUtilization":0.39,"models":["sonnet","opus","fable"]},{"cli":"codex","usable":true,"models":[]},{"cli":"agy","usable":true,"models":["gemini-4-argon-low","gemini-4-argon-medium","gemini-4-argon-high","gemini-3.8-flash-low","gemini-3.8-flash-medium","gemini-3.8-flash-high"]},{"cli":"opencode","usable":true,"models":[]}]}
+{"id":4,"result":{"sessionId":"2026-10-23-23-44-47-trio","dir":"/tmp/rec-ZXhGQC/.quorum/sessions/2026-10-23-23-44-47-trio","agents":["architect","skeptic","pragmatist"],"substitutions":[],"rounds":2,"protocol":"draft-critique-revise","pause":"round"}}
+{"id":5,"result":{}}
 {"event":"round.start","data":{"round":1}}
 {"event":"turn.start","data":{"round":1,"agent":"architect","artifact":"plan"}}
 {"event":"turn.delta","data":{"agent":"architect","delta":"# "}}
@@ -445,8 +447,8 @@
 {"event":"chair.summary","data":{"round":1,"summary":"They agree on short-lived tokens and a flag-based rollout. They still disagree on how much to ship at once: the Pragmatist wants the token service alone, the Skeptic wants reuse detection first. You could steer toward either scope.","converged":false,"dissent":"- Pragmatist: ship only the token service this milestone.\n- Skeptic: reuse detection must land in the same release.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
 {"event":"round.done","data":{"round":1}}
 {"event":"awaiting_human","data":{"round":1,"finished":false}}
-{"id":4,"result":{}}
-{"id":5,"result":{}}
+{"id":6,"result":{}}
+{"id":7,"result":{}}
 {"event":"idle","data":{}}
 {"event":"turn.start","data":{"round":1,"agent":"chair"}}
 {"event":"turn.delta","data":{"agent":"chair","delta":"The "}}
@@ -491,7 +493,9 @@
 {"event":"turn.delta","data":{"agent":"chair","delta":"you."}}
 {"event":"turn.done","data":{"round":1,"agent":"chair","text":"The Skeptic and Pragmatist disagree about scope, not direction: one wants more safety in the first release, the other wants a smaller first release. Either is defensible; the deciding factor is how costly a token-theft incident would be for you."}}
 {"event":"idle","data":{}}
-{"id":6,"result":{}}
+{"event":"config.changed","data":{"pause":"round","rounds":2}}
+{"id":8,"result":{"pause":"round","rounds":2}}
+{"id":9,"result":{}}
 {"event":"round.start","data":{"round":2}}
 {"event":"turn.start","data":{"round":2,"agent":"skeptic"}}
 {"event":"turn.start","data":{"round":2,"agent":"pragmatist"}}
@@ -794,7 +798,7 @@
 {"event":"chair.summary","data":{"round":2,"summary":"The council has settled on the token service behind a flag, with reuse detection and measurable dual-read exit criteria. The remaining question is key rotation ownership.","converged":true,"dissent":"- Pragmatist: still prefers shipping the token service alone.","questions":"- Who owns signing-key rotation?\n- What cookie-traffic threshold ends the dual-read window?"}}
 {"event":"round.done","data":{"round":2}}
 {"event":"awaiting_human","data":{"round":2,"finished":true}}
-{"id":7,"result":{}}
+{"id":10,"result":{}}
 {"event":"idle","data":{}}
 {"event":"session.done","data":{}}
 {"event":"idle","data":{}}

@@ -43,6 +43,16 @@ func TestRecordedSessionDecodesStrictly(t *testing.T) {
 					t.Fatalf("unexpected presets: %+v", ps)
 				}
 			case 2:
+				var ps []Persona
+				if err := DecodeResult(v.Result, &ps); err != nil || len(ps) < 3 {
+					t.Fatalf("personas: %v %+v", err, ps)
+				}
+			case 3:
+				var cs []CLIInfo
+				if err := DecodeResult(v.Result, &cs); err != nil || len(cs) == 0 {
+					t.Fatalf("clis: %v %+v", err, cs)
+				}
+			case 4:
 				var s StartResult
 				if err := DecodeResult(v.Result, &s); err != nil {
 					t.Fatalf("start result: %v", err)
@@ -53,7 +63,7 @@ func TestRecordedSessionDecodesStrictly(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"round.start", "turn.start", "turn.delta", "turn.done", "plan.updated", "chair.summary", "round.done", "awaiting_human", "idle", "session.done", "response"} {
+	for _, name := range []string{"config.changed", "round.start", "turn.start", "turn.delta", "turn.done", "plan.updated", "chair.summary", "round.done", "awaiting_human", "idle", "session.done", "response"} {
 		if counts[name] == 0 {
 			t.Errorf("recording has no %q messages (counts: %v)", name, counts)
 		}
@@ -125,5 +135,33 @@ func TestClientRoundTripOverPipes(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "response,idle,exit" {
 		t.Fatalf("got %v", got)
+	}
+}
+
+// The settings recording covers saving, validation errors and live configuration.
+func TestRecordedSettingsDecodesStrictly(t *testing.T) {
+	f, err := os.Open("testdata/settings.ndjson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 16<<20)
+	var errs, oks int
+	for sc.Scan() {
+		m, err := Decode(sc.Bytes())
+		if err != nil {
+			t.Fatalf("%v\n%.200s", err, sc.Text())
+		}
+		if r, ok := m.(Response); ok {
+			if r.Err != "" {
+				errs++
+			} else {
+				oks++
+			}
+		}
+	}
+	if errs < 3 || oks < 4 {
+		t.Fatalf("expected a mix of successes and errors, got %d ok / %d errors", oks, errs)
 	}
 }

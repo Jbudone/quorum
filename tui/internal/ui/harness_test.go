@@ -70,7 +70,9 @@ func newHarness(t *testing.T, w, h int) *harness {
 	hs.app = New(Options{Client: hs.fc, Repo: "/work/proj", Mock: true})
 	hs.send(tea.WindowSizeMsg{Width: w, Height: h})
 	hs.app.Init()
-	hs.reply(hs.fc.last().id)
+	for _, c := range hs.fc.calls { // presets.list, personas.list, clis.list
+		hs.reply(c.id)
+	}
 	return hs
 }
 
@@ -129,6 +131,10 @@ func keyMsg(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyUp}
 	case "esc":
 		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "right":
+		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "pgup":
 		return tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":

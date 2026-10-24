@@ -1,4 +1,4 @@
-import { loadPersona, type CouncilConfig, type Persona } from "./config.js";
+import { loadPersona, type CouncilConfig, type PauseMode, type Persona } from "./config.js";
 import { renderTranscript } from "./prompts.js";
 import { parseChairReport } from "./protocols/chairReport.js";
 import { getProtocol, type Prior, type Turn } from "./protocols/index.js";
@@ -7,6 +7,7 @@ import type { AgentTransport } from "./transports/index.js";
 
 /** Events the engine emits to whoever drives it (RPC server, headless runner, tests). */
 export type EngineEvent =
+  | { event: "config.changed"; data: { pause: PauseMode; rounds: number } }
   | { event: "round.start"; data: { round: number } }
   | { event: "turn.start"; data: { round: number; agent: string; artifact?: "plan" | "chair-report" } }
   | { event: "turn.delta"; data: { agent: string; delta: string } }
@@ -116,6 +117,26 @@ export class Engine {
       requireEvidence: this.o.config.requireEvidence,
     });
     this.directives.length = 0;
+  }
+
+  /**
+   * Retunes pacing mid-session. Rounds can be raised or lowered but never below the round already
+   * underway, so a finished council can be given more rounds and carry on.
+   */
+  configure(patch: { pause?: PauseMode; rounds?: number }): { pause: PauseMode; rounds: number } {
+    const c = this.o.config;
+    if (patch.pause !== undefined) {
+      if (!["round", "message", "auto"].includes(patch.pause)) throw new Error('pause must be "round", "message" or "auto"');
+      c.pause = patch.pause;
+    }
+    if (patch.rounds !== undefined) {
+      const n = Math.trunc(Number(patch.rounds));
+      if (!(n >= 1 && n <= 12)) throw new Error("rounds must be a whole number from 1 to 12");
+      c.rounds = Math.max(n, this.round);
+    }
+    const now = { pause: c.pause, rounds: c.rounds };
+    this.emit({ event: "config.changed", data: now });
+    return now;
   }
 
   /** Human steering that the next round's protocol must honor. */

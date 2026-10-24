@@ -23,7 +23,9 @@ To start it from anywhere: `ln -s "$PWD/quorum" ~/.local/bin/quorum`, then run `
 
 In the TUI: pick a council, say what to work out, and the council runs one round, then pauses.
 At a pause, press Enter to continue, type to ask the Chair, `@name` to ask one member,
-`/steer <directive>` to guide the next round, or `/stop` to finish. `ctrl+p` shows the plan.
+`/steer <directive>` to guide the next round, or `/stop` to finish. `ctrl+p` shows the plan. `/rounds N` and `/pause round|message|auto` retune pacing mid-session.
+
+On the start screen, `ctrl+a` (or `e`) opens the settings drawer for the selected council: change protocol, rounds, pause, repo access, the Chair, and each member's persona, CLI and model, add or remove members, and press `s` to save it as your own council (stored in `~/.config/quorum/presets/`).
 Sessions are saved as plain files in `<repo>/.quorum/sessions/<id>/`.
 
 Opt-in end-to-end tests: `cd tui && go test ./e2e` drives the real binary and engine in a pty

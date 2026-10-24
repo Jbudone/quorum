@@ -153,6 +153,9 @@ func renderHeader(s *session, th theme.Theme, width int, spin string) string {
 		}
 		chips = append(chips, fg(th.Muted).Render("round ")+dots)
 	}
+	if s.pause != "" && s.pause != "round" {
+		chips = append(chips, fg(th.Muted).Render("pause: "+s.pause))
+	}
 	if s.quota != nil {
 		q := *s.quota
 		c := th.Muted

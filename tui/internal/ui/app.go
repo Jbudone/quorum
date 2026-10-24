@@ -60,9 +60,10 @@ type App struct {
 	w, h   int
 	screen screen
 
-	start     startModel
-	loaded    bool // presets received
-	engineErr string
+	start           startModel
+	loaded          bool // presets received
+	engineErr       string
+	selectAfterLoad string // preset to highlight once presets.list is re-read (after a save)
 
 	sess       *session
 	reqs       map[int]string
@@ -97,6 +98,8 @@ func New(o Options) *App {
 
 func (a *App) Init() tea.Cmd {
 	a.call("presets.list", map[string]any{})
+	a.call("personas.list", map[string]any{})
+	a.call("clis.list", map[string]any{})
 	return tea.Batch(a.listen(), a.tick())
 }
 
@@ -240,6 +243,8 @@ func (a *App) handleResponse(r rpc.Response) {
 			// Nothing started, so go back and let the user adjust.
 			a.sess, a.screen = nil, screenStart
 			a.start.err = r.Err
+		case method == "presets.save" && a.start.drawer != nil:
+			a.start.drawer.err = r.Err
 		case isJob(method):
 			a.fail(r.Err)
 			if a.sess != nil {
@@ -258,6 +263,41 @@ func (a *App) handleResponse(r rpc.Response) {
 			return
 		}
 		a.start.presets, a.loaded = ps, true
+		if a.selectAfterLoad != "" {
+			for i, p := range ps {
+				if p.Name == a.selectAfterLoad {
+					a.start.cursor = i
+				}
+			}
+			a.selectAfterLoad = ""
+		}
+		a.start.cursor = min(a.start.cursor, max(len(ps)-1, 0))
+	case "personas.list":
+		var ps []rpc.Persona
+		if err := rpc.DecodeResult(r.Result, &ps); err != nil {
+			a.fail("bad personas from engine: " + err.Error())
+			return
+		}
+		a.start.personas = ps
+	case "clis.list":
+		var cs []rpc.CLIInfo
+		if err := rpc.DecodeResult(r.Result, &cs); err != nil {
+			a.fail("bad CLI list from engine: " + err.Error())
+			return
+		}
+		a.start.clis = cs
+	case "presets.save":
+		var sr rpc.SaveResult
+		if err := rpc.DecodeResult(r.Result, &sr); err != nil {
+			a.fail("bad save result from engine: " + err.Error())
+			return
+		}
+		delete(a.start.drafts, a.start.savingFrom)
+		a.start.drawer = nil
+		a.start.notice = "Saved “" + sr.Name + "”. It will be listed with the others."
+		a.selectAfterLoad = sr.Name
+		a.call("presets.list", map[string]any{})
+		a.call("personas.list", map[string]any{})
 	case "session.start":
 		var sr rpc.StartResult
 		if err := rpc.DecodeResult(r.Result, &sr); err != nil {
@@ -346,13 +386,20 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
+	a.start.notice = ""
 	start, c := a.start.update(k)
+	if name := a.start.saveReq; name != "" {
+		a.start.saveReq = ""
+		a.start.savingFrom = a.start.drawer.base.Name
+		a.call("presets.save", map[string]any{"name": name, "config": a.start.drawer.wire(name)})
+	}
 	if !start {
 		return c
 	}
 	p, _ := a.start.selected()
 	params := a.start.startParams(a.opts.Repo)
-	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), a.start.rounds)
+	p = a.start.effective()
+	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), 0)
 	a.sess.add(&entry{kind: kindHuman, to: "the council", text: a.sess.topic})
 	a.screen = screenSession
 	a.follow = true
@@ -374,9 +421,11 @@ func (a *App) submit() tea.Cmd {
 		a.input.Reset()
 		return nil
 	case "help":
-		s.system("Enter continues the next round. Type to ask the Chair, @name to ask one member, /steer <directive> to guide the next round, /stop to finish now, /plan to show the plan.")
+		s.system("Enter continues the next round. Type to ask the Chair, @name to ask one member, /steer <directive> to guide the next round, /pause round|message|auto and /rounds N to retune the pacing, /stop to finish now, /plan to show the plan.")
 		a.input.Reset()
 		return nil
+	case "configure":
+		a.call("session.configure", cmd.params)
 	case "continue":
 		s.startJob()
 		a.call("session.continue", map[string]any{})

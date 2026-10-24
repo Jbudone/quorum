@@ -133,3 +133,41 @@ export function resolveAvailable(
     substitutions,
   };
 }
+
+/** Model choices worth offering in a picker; the CLI's own default is always available too. */
+export const MODEL_SUGGESTIONS: Record<CliName, string[]> = {
+  claude: ["sonnet", "opus", "fable"],
+  codex: [],
+  opencode: [],
+  gemini: [],
+  mock: [],
+  agy: [
+    "gemini-4-argon-low",
+    "gemini-4-argon-medium",
+    "gemini-4-argon-high",
+    "gemini-3.8-flash-low",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-high",
+  ],
+};
+
+export interface CliInfo {
+  cli: CliName;
+  usable: boolean;
+  /** Why the last health probe failed, if it did. */
+  error?: string;
+  quotaUtilization?: number;
+  models: string[];
+}
+
+/** Installed agent CLIs and whether they are usable, from the cached health probes (spends no quota). */
+export function cliInfo(installed = installedClis(), health = readHealth()): CliInfo[] {
+  const usable = usableClis(installed, health);
+  return installed.map((cli) => ({
+    cli,
+    usable: usable.includes(cli),
+    error: health[cli]?.ok === false ? health[cli]?.error : undefined,
+    quotaUtilization: health[cli]?.quotaUtilization,
+    models: MODEL_SUGGESTIONS[cli],
+  }));
+}

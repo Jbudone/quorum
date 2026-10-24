@@ -1,8 +1,9 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { listPresets, loadPreset, mockify, type CliName, type CouncilConfig } from "../config.js";
-import { doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "../doctor.js";
+import { listPersonas, listPresets, loadPreset, mockify, type CliName, type CouncilConfig } from "../config.js";
+import { cliInfo, doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "../doctor.js";
 import { Engine, type TransportFor } from "../engine.js";
+import { councilFromWire, savePreset } from "../library.js";
 import { createTransport } from "../transports/index.js";
 import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
@@ -11,8 +12,9 @@ import { councilWorkflow } from "../workflows/council.js";
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
  * {id, result|error} for requests, and {event, data} for engine events (no id).
  *
- * Methods: session.start {preset, topic, repo, rounds?, protocol?, pause?, mock?}, session.continue {stop?}, session.steer {text},
- * session.interject {to, text}, session.abort, presets.list, doctor.
+ * Methods: session.start {preset | config, topic, repo, rounds?, protocol?, pause?, mock?}, session.continue {stop?}, session.steer {text},
+ * session.interject {to, text}, session.abort, session.configure {pause?, rounds?}, presets.list, personas.list, clis.list,
+ * presets.save {name, config}, doctor.
  */
 export interface RpcOptions {
   /** Override transport creation (tests, playground). */
@@ -66,7 +68,8 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
   async function handle(method: string, p: any): Promise<unknown> {
     switch (method) {
       case "session.start": {
-        let config = loadPreset(String(p.preset), opts.assetsDir);
+        // A full config (from the settings drawer) wins over a preset name.
+        let config = p.config ? councilFromWire(p.config, opts.assetsDir) : loadPreset(String(p.preset), opts.assetsDir);
         let substitutions: unknown[] = [];
         const mock = Boolean(p.mock);
         if (mock) config = mockify(config);
@@ -97,6 +100,16 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "presets.list":
         return listPresets(opts.assetsDir);
+      case "personas.list":
+        return listPersonas(opts.assetsDir);
+      case "clis.list":
+        return cliInfo();
+      case "presets.save": {
+        const file = savePreset(String(p.name), councilFromWire(p.config, opts.assetsDir), opts.assetsDir);
+        return { name: String(p.name), file };
+      }
+      case "session.configure":
+        return need().configure({ pause: p.pause, rounds: p.rounds });
       case "doctor": {
         // Probes spend a little quota (one tiny turn per CLI), so it only runs when asked.
         const report = await doctor();

@@ -80,6 +80,11 @@ type (
 		Agent   string `json:"agent"`
 		Message string `json:"message"`
 	}
+	// ConfigChanged confirms a live change of pacing (see session.configure).
+	ConfigChanged struct {
+		Pause  string `json:"pause"`
+		Rounds int    `json:"rounds"`
+	}
 	// Idle means the engine finished a background job and can take the next request.
 	Idle        struct{}
 	SessionDone struct{}
@@ -90,15 +95,45 @@ type (
 	PresetAgent struct {
 		ID      string `json:"id"`
 		CLI     string `json:"cli"`
+		Model   string `json:"model"`
 		Persona string `json:"persona"`
 		Role    string `json:"role"`
 	}
+	// ChairSpec is which agent CLI (and optionally model) plays the Chair.
+	ChairSpec struct {
+		CLI   string `json:"cli"`
+		Model string `json:"model"`
+	}
+	// Preset carries the full settings so the settings drawer can edit a copy.
 	Preset struct {
-		Name        string        `json:"name"`
-		Description string        `json:"description"`
-		Protocol    string        `json:"protocol"`
-		Rounds      int           `json:"rounds"`
-		Agents      []PresetAgent `json:"agents"`
+		Name            string        `json:"name"`
+		Description     string        `json:"description"`
+		Protocol        string        `json:"protocol"`
+		Rounds          int           `json:"rounds"`
+		Pause           string        `json:"pause"`
+		ReadOnly        bool          `json:"readOnly"`
+		RequireEvidence bool          `json:"requireEvidence"`
+		Chair           ChairSpec     `json:"chair"`
+		Custom          bool          `json:"custom"`
+		Agents          []PresetAgent `json:"agents"`
+	}
+	Persona struct {
+		Key    string `json:"key"`
+		Name   string `json:"name"`
+		Role   string `json:"role"`
+		Custom bool   `json:"custom"`
+	}
+	// CLIInfo describes an installed agent CLI, from the engine's cached health checks.
+	CLIInfo struct {
+		CLI              string   `json:"cli"`
+		Usable           bool     `json:"usable"`
+		Error            string   `json:"error"`
+		QuotaUtilization *float64 `json:"quotaUtilization"`
+		Models           []string `json:"models"`
+	}
+	SaveResult struct {
+		Name string `json:"name"`
+		File string `json:"file"`
 	}
 	Substitution struct {
 		Agent string `json:"agent"`
@@ -156,6 +191,8 @@ func Decode(line []byte) (Message, error) {
 	}
 	var data any
 	switch env.Event {
+	case "config.changed":
+		data = new(ConfigChanged)
 	case "round.start":
 		data = new(RoundStart)
 	case "turn.start":
@@ -194,6 +231,8 @@ func Decode(line []byte) (Message, error) {
 // derefs converts the decoded pointer to a value so consumers can type-switch on plain structs.
 func derefs(p any) any {
 	switch v := p.(type) {
+	case *ConfigChanged:
+		return *v
 	case *RoundStart:
 		return *v
 	case *TurnStart:

@@ -24,7 +24,7 @@ func TestFullSessionJourney(t *testing.T) {
 	h.press("tab")
 	h.press("enter") // no topic yet: must not start
 	contains(t, h.screen(), "Tell the council what to work on")
-	if h.fc.last().method != "presets.list" {
+	if h.fc.last().method != "clis.list" {
 		t.Fatalf("started without a topic: %+v", h.fc.last())
 	}
 	h.typ("Replace session cookies with JWTs")
@@ -80,6 +80,16 @@ func TestFullSessionJourney(t *testing.T) {
 		t.Fatal("input should unlock once the engine is idle")
 	}
 	contains(t, h.screen(), "scope, not direction")
+
+	// Pacing can be retuned mid-session.
+	h.typ("/rounds 2")
+	h.press("enter")
+	if c := h.fc.last(); c.method != "session.configure" || c.params["rounds"] != 2 {
+		t.Fatalf("bad configure: %+v", c)
+	}
+	h.reply(h.fc.last().id)
+	h.feedThrough("config.changed")
+	contains(t, h.screen(), "Pacing updated: 2 rounds")
 
 	// An empty Enter continues; round 2 converges.
 	h.press("enter")

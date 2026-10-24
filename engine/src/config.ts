@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "smol-toml";
@@ -36,6 +37,14 @@ export interface Persona {
 /** Repo-level presets/ and personas/ directories shipped with Quorum. */
 export const DEFAULT_ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+/**
+ * Where a user's own presets and personas live (`presets/*.toml`, `personas/*.md`). Read from the
+ * environment on each call so tests and the TUI can point it elsewhere.
+ */
+export function userDir(): string {
+  return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "quorum");
+}
+
 const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "mock"];
 const PAUSES: PauseMode[] = ["round", "message", "auto"];
 
@@ -72,9 +81,18 @@ export function parseCouncil(raw: Record<string, any>): CouncilConfig {
   };
 }
 
-export function loadPreset(name: string, assetsDir = DEFAULT_ASSETS): CouncilConfig {
+/** First existing file among the shipped assets and the user's own directory. */
+function findAsset(kind: "presets" | "personas", file: string, assetsDir: string, user: string): string {
+  for (const dir of [join(assetsDir, kind), join(user, kind)]) {
+    if (existsSync(join(dir, file))) return join(dir, file);
+  }
+  fail(`no ${kind === "presets" ? "preset" : "persona"} named "${file.replace(/\.[^.]+$/, "")}"`);
+}
+
+export function loadPreset(name: string, assetsDir = DEFAULT_ASSETS, user = userDir()): CouncilConfig {
   if (!/^[\w-]+$/.test(name)) fail(`bad preset name "${name}"`);
-  return parseCouncil(parse(readFileSync(join(assetsDir, "presets", `${name}.toml`), "utf8")));
+  const c = parseCouncil(parse(readFileSync(findAsset("presets", `${name}.toml`, assetsDir, user), "utf8")));
+  return { ...c, name };
 }
 
 /** Parses a persona markdown file with simple `key: value` frontmatter. */
@@ -88,9 +106,12 @@ export function parsePersona(src: string): Persona {
   return { name: meta.name ?? "Unnamed", role: meta.role ?? "panelist", body: (m?.[2] ?? src).trim() };
 }
 
-export function loadPersona(name: string, assetsDir = DEFAULT_ASSETS): Persona {
+/** A user's persona file of the same name overrides the shipped one. */
+export function loadPersona(name: string, assetsDir = DEFAULT_ASSETS, user = userDir()): Persona {
   if (!/^[\w-]+$/.test(name)) fail(`bad persona name "${name}"`);
-  return parsePersona(readFileSync(join(assetsDir, "personas", `${name}.md`), "utf8"));
+  const mine = join(user, "personas", `${name}.md`);
+  if (existsSync(mine)) return parsePersona(readFileSync(mine, "utf8"));
+  return parsePersona(readFileSync(findAsset("personas", `${name}.md`, assetsDir, user), "utf8"));
 }
 
 /** Swaps every agent and the Chair to the scripted mock CLI (no tokens spent). */
@@ -107,29 +128,93 @@ export interface PresetSummary {
   description: string;
   protocol: string;
   rounds: number;
-  agents: { id: string; cli: CliName; role: string; persona: string }[];
+  pause: PauseMode;
+  readOnly: boolean;
+  requireEvidence: boolean;
+  chair: { cli: CliName; model?: string };
+  /** True for presets the user saved, as opposed to the ones shipped with Quorum. */
+  custom: boolean;
+  agents: { id: string; cli: CliName; model?: string; role: string; persona: string }[];
 }
 
-/** Every preset shipped with Quorum, for the start screen's picker. */
-export function listPresets(assetsDir = DEFAULT_ASSETS): PresetSummary[] {
-  const dir = join(assetsDir, "presets");
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".toml"))
-    .map((f) => f.slice(0, -5))
-    .map((name) => {
-      const c = loadPreset(name, assetsDir);
-      return {
+const SHIPPED = ["solo", "trio", "delphi", "deep"];
+
+function tomlNames(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".toml"))
+      .map((f) => f.slice(0, -5))
+      .filter((n) => /^[\w-]+$/.test(n));
+  } catch {
+    return [];
+  }
+}
+
+export function isShippedPreset(name: string, assetsDir = DEFAULT_ASSETS): boolean {
+  return tomlNames(join(assetsDir, "presets")).includes(name);
+}
+
+/** Every preset available: the shipped ones first, then the user's own, with full settings for editing. */
+export function listPresets(assetsDir = DEFAULT_ASSETS, user = userDir()): PresetSummary[] {
+  const shipped = tomlNames(join(assetsDir, "presets"));
+  const mine = tomlNames(join(user, "presets")).filter((n) => !shipped.includes(n));
+  const order = (n: string) => (SHIPPED.includes(n) ? SHIPPED.indexOf(n) : SHIPPED.length);
+  const names = [...shipped.sort((a, b) => order(a) - order(b) || a.localeCompare(b)), ...mine.sort()];
+  const out: PresetSummary[] = [];
+  for (const name of names) {
+    try {
+      const c = loadPreset(name, assetsDir, user);
+      out.push({
         name,
         description: c.description ?? "",
         protocol: c.protocol,
         rounds: c.rounds,
+        pause: c.pause,
+        readOnly: c.readOnly,
+        requireEvidence: c.requireEvidence,
+        chair: c.chair,
+        custom: !shipped.includes(name),
         agents: c.agents.map((a) => ({
           id: a.id,
           cli: a.cli,
+          model: a.model,
           persona: a.persona,
-          role: loadPersona(a.persona, assetsDir).role,
+          role: loadPersona(a.persona, assetsDir, user).role,
         })),
-      };
+      });
+    } catch {
+      // A broken user preset must not take the picker down; it simply does not appear.
+    }
+  }
+  return out;
+}
+
+export interface PersonaSummary {
+  key: string;
+  name: string;
+  role: string;
+  custom: boolean;
+}
+
+/** Shipped personas plus the user's own (a user file with a shipped name overrides it). */
+export function listPersonas(assetsDir = DEFAULT_ASSETS, user = userDir()): PersonaSummary[] {
+  const names = (dir: string) => {
+    try {
+      return readdirSync(dir)
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => f.slice(0, -3))
+        .filter((n) => /^[\w-]+$/.test(n));
+    } catch {
+      return [];
+    }
+  };
+  const shipped = names(join(assetsDir, "personas"));
+  const mine = names(join(user, "personas"));
+  return [...new Set([...shipped, ...mine])]
+    .filter((key) => key !== "chair")
+    .map((key) => {
+      const p = loadPersona(key, assetsDir, user);
+      return { key, name: p.name, role: p.role, custom: mine.includes(key) };
     })
-    .sort((a, b) => ["solo", "trio", "delphi", "deep"].indexOf(a.name) - ["solo", "trio", "delphi", "deep"].indexOf(b.name));
+    .sort((a, b) => Number(a.custom) - Number(b.custom) || a.key.localeCompare(b.key));
 }

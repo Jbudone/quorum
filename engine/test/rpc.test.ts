@@ -98,3 +98,75 @@ describe("rpc server: TUI surface", () => {
     await h.done;
   });
 });
+
+describe("rpc server: customizing a council", () => {
+  const goodConfig = {
+    name: "pair",
+    protocol: "draft-critique-revise",
+    rounds: 1,
+    pause: "round",
+    agents: [
+      { id: "writer", cli: "mock", persona: "architect" },
+      { id: "reviewer", cli: "mock", persona: "skeptic" },
+    ],
+    chair: { cli: "mock" },
+  };
+
+  it("starts a session from a full custom config instead of a preset name", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "session.start", params: { config: goodConfig, mock: true, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
+    const r = (await h.waitFor((m) => m.id === 1)).result;
+    expect(r).toMatchObject({ agents: ["writer", "reviewer"], rounds: 1 });
+    h.input.end();
+    await h.done;
+  });
+
+  it("returns every validation problem to the client", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "session.start", params: { config: { ...goodConfig, rounds: 0, agents: [] }, topic: "t", repo: "/tmp" } });
+    const err = (await h.waitFor((m) => m.id === 1)).error.message;
+    expect(err).toContain("at least one member");
+    expect(err).toContain("1 to 12");
+    h.input.end();
+    await h.done;
+  });
+
+  it("lists personas (without the Chair), CLIs and saves presets", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "personas.list" });
+    const personas = (await h.waitFor((m) => m.id === 1)).result;
+    expect(personas.map((p: any) => p.key)).toEqual(expect.arrayContaining(["architect", "skeptic", "pragmatist"]));
+    expect(personas.some((p: any) => p.key === "chair")).toBe(false);
+
+    h.send({ id: 2, method: "clis.list" });
+    const clis = (await h.waitFor((m) => m.id === 2)).result;
+    expect(Array.isArray(clis)).toBe(true);
+    for (const c of clis) expect(c).toHaveProperty("models");
+
+    const name = `pair-${Date.now().toString(36)}`;
+    h.send({ id: 3, method: "presets.save", params: { name, config: goodConfig } });
+    const saved = (await h.waitFor((m) => m.id === 3)).result;
+    expect(saved.file).toContain(`${name}.toml`);
+    h.send({ id: 4, method: "presets.list" });
+    const presets = (await h.waitFor((m) => m.id === 4)).result;
+    expect(presets.find((p: any) => p.name === name)).toMatchObject({ custom: true, protocol: "draft-critique-revise" });
+
+    h.send({ id: 5, method: "presets.save", params: { name: "trio", config: goodConfig } });
+    expect((await h.waitFor((m) => m.id === 5)).error.message).toMatch(/built-in/);
+    h.input.end();
+    await h.done;
+  });
+
+  it("retunes a running session and announces it", async () => {
+    const h = harness();
+    h.send({ id: 1, method: "session.start", params: { preset: "solo", mock: true, topic: "t", repo: mkdtempSync(join(tmpdir(), "q-")) } });
+    await h.waitFor((m) => m.id === 1);
+    h.send({ id: 2, method: "session.configure", params: { pause: "auto", rounds: 4 } });
+    expect((await h.waitFor((m) => m.id === 2)).result).toEqual({ pause: "auto", rounds: 4 });
+    expect(h.lines.find((m) => m.event === "config.changed")).toMatchObject({ data: { pause: "auto", rounds: 4 } });
+    h.send({ id: 3, method: "session.configure", params: { rounds: 500 } });
+    expect((await h.waitFor((m) => m.id === 3)).error.message).toMatch(/1 to 12/);
+    h.input.end();
+    await h.done;
+  });
+});

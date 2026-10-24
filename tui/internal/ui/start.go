@@ -16,22 +16,28 @@ import (
 var pauseModes = []string{"round", "message", "auto"}
 
 type startModel struct {
-	presets  []rpc.Preset
-	cursor   int
-	topic    textarea.Model
-	focus    int // 0 = preset list, 1 = topic
-	mock     bool
-	advanced bool
-	rounds   int // 0 = use the preset's own
-	pause    int // index into pauseModes
-	err      string
+	presets []rpc.Preset
+	cursor  int
+	topic   textarea.Model
+	focus   int // 0 = preset list, 1 = topic
+	mock    bool
+	err     string
+
+	personas   []rpc.Persona
+	clis       []rpc.CLIInfo
+	drafts     map[string]*settings // per-council edits made in the drawer, kept while choosing
+	drawer     *settings            // non-nil while the settings drawer is open
+	th         theme.Theme
+	notice     string
+	savingFrom string // the council the in-flight save was started from
+	saveReq    string // set when the drawer asks to save; the app sends it and clears it
 }
 
 func newStart(th theme.Theme, mock bool) startModel {
 	ta := newInput(th, 3)
 	ta.Placeholder = "Describe the feature or decision you want the council to work out…"
 	ta.Prompt = ""
-	return startModel{topic: ta, mock: mock, focus: 0}
+	return startModel{topic: ta, mock: mock, focus: 0, drafts: map[string]*settings{}, th: th}
 }
 
 func (m *startModel) selected() (rpc.Preset, bool) {
@@ -48,15 +54,42 @@ func (m *startModel) startParams(repo string) map[string]any {
 		"preset": p.Name,
 		"topic":  strings.TrimSpace(m.topic.Value()),
 		"repo":   repo,
-		"pause":  pauseModes[m.pause],
+	}
+	// An edited council travels as a full config; an untouched one is just its name.
+	if d := m.drafts[p.Name]; d != nil && d.dirty() {
+		delete(params, "preset")
+		params["config"] = d.wire(p.Name)
 	}
 	if m.mock {
 		params["mock"] = true
 	}
-	if m.rounds > 0 {
-		params["rounds"] = m.rounds
-	}
 	return params
+}
+
+// effective is the council as it will run: the drawer's edits if there are any.
+func (m *startModel) effective() rpc.Preset {
+	p, _ := m.selected()
+	if d := m.drafts[p.Name]; d != nil && d.dirty() {
+		return d.draft
+	}
+	return p
+}
+
+// openDrawer shows the settings for the selected council.
+func (m *startModel) openDrawer() {
+	p, ok := m.selected()
+	if !ok {
+		m.err = "Still loading the councils — one moment."
+		return
+	}
+	d := m.drafts[p.Name]
+	if d == nil {
+		d = newSettings(p, m.personas, m.clis, m.th)
+		m.drafts[p.Name] = d
+	}
+	d.personas, d.clis = m.personas, m.clis
+	m.drawer = d
+	m.topic.Blur()
 }
 
 func (m *startModel) canStart() bool {
@@ -67,6 +100,16 @@ func (m *startModel) canStart() bool {
 // update handles a key press; start is true when the user asked to begin.
 func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 	m.err = ""
+	if m.drawer != nil {
+		closeIt, save, c := m.drawer.update(msg)
+		if save != "" {
+			m.saveReq = save
+		}
+		if closeIt {
+			m.drawer = nil
+		}
+		return false, c
+	}
 	switch msg.String() {
 	case "tab", "shift+tab":
 		m.focus = 1 - m.focus
@@ -76,7 +119,7 @@ func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 		m.topic.Blur()
 		return false, nil
 	case "ctrl+a":
-		m.advanced = !m.advanced
+		m.openDrawer()
 		return false, nil
 	case "ctrl+t":
 		m.mock = !m.mock
@@ -97,25 +140,8 @@ func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 		case "enter":
 			m.focus = 1
 			return false, m.topic.Focus()
-		case "left", "h":
-			if m.advanced && m.rounds > 0 {
-				m.rounds--
-			}
-		case "right", "l":
-			if m.advanced {
-				if m.rounds == 0 {
-					if p, ok := m.selected(); ok {
-						m.rounds = p.Rounds
-					}
-				}
-				if m.rounds < 12 {
-					m.rounds++
-				}
-			}
-		case "p":
-			if m.advanced {
-				m.pause = (m.pause + 1) % len(pauseModes)
-			}
+		case "e":
+			m.openDrawer()
 		}
 		return false, nil
 	}
@@ -153,6 +179,10 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		cw = 40
 	}
 	compact := h < 30
+	if m.drawer != nil {
+		logo := fg(th.Accent2).Render("✦ ") + theme.Gradient("Quorum", th.Accent2, th.Accent)
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Width(cw).Render(logo+"\n\n"+m.drawer.view(th, cw, h)))
+	}
 	var b strings.Builder
 	logo := fg(th.Accent2).Render("✦ ") + theme.Gradient("Quorum", th.Accent2, th.Accent)
 	b.WriteString(logo + "\n")
@@ -174,6 +204,13 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		if sel {
 			bar = fg(th.Accent2).Render("▌")
 			name = fg(th.Accent2).Bold(true).Render(p.Name)
+		}
+		edited := m.drafts[p.Name] != nil && m.drafts[p.Name].dirty()
+		if edited {
+			name += fg(th.Warn).Render(" ✎")
+			p = m.drafts[p.Name].draft
+		} else if p.Custom {
+			name += fg(th.Muted).Render(" ★")
 		}
 		var chips []string
 		for j, a := range p.Agents {
@@ -199,17 +236,12 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 	}
 	b.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).Render(m.topic.View()) + "\n")
 
-	if m.advanced {
-		pm := pauseModes[m.pause]
-		rounds := "preset default"
-		if m.rounds > 0 {
-			rounds = fmt.Sprint(m.rounds)
-		}
-		b.WriteString(fg(th.Muted).Render(fmt.Sprintf("rounds %s (←/→)  ·  pause after each %s (p)  ·  mock agents %s (ctrl+t)", rounds, pm, onOff(m.mock))) + "\n")
-	}
 	b.WriteString(fg(th.Subtle).Render("repo "+repo) + "\n")
 	if m.err != "" {
 		b.WriteString(fg(th.Err).Render("✗ "+m.err) + "\n")
+	}
+	if m.notice != "" {
+		b.WriteString(fg(th.OK).Render("✓ "+m.notice) + "\n")
 	}
 	if m.mock {
 		b.WriteString(fg(th.Warn).Render("mock agents: no tokens will be spent") + "\n")
@@ -218,7 +250,7 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		b.WriteString("\n")
 	}
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
-	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("ctrl+a", "advanced"), k("ctrl+c", "quit")}
+	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("ctrl+a", "customize"), k("ctrl+c", "quit")}
 	sep := fg(th.Subtle).Render(" · ")
 	for len(hints) > 1 && lipgloss.Width(strings.Join(hints, sep)) > cw {
 		hints = hints[:len(hints)-1]

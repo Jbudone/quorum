@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jbud/quorum/tui/internal/rpc"
@@ -86,10 +87,11 @@ type session struct {
 	converged bool
 	quota     *float64
 	notes     []string
+	pause     string
 }
 
 func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
-	s := &session{preset: p, repo: repo, topic: topic, phase: phaseStarting, total: p.Rounds}
+	s := &session{preset: p, repo: repo, topic: topic, phase: phaseStarting, total: p.Rounds, pause: p.Pause}
 	if rounds > 0 {
 		s.total = rounds
 	}
@@ -176,6 +178,9 @@ func (s *session) applyStart(r rpc.StartResult) {
 	s.id, s.dir = r.SessionID, r.Dir
 	if r.Rounds > 0 {
 		s.total = r.Rounds
+	}
+	if r.Pause != "" {
+		s.pause = r.Pause
 	}
 	if r.Protocol != "" {
 		s.preset.Protocol = r.Protocol
@@ -266,6 +271,10 @@ func (s *session) apply(ev rpc.Event) {
 		}
 		s.add(&entry{kind: kindError, text: msg})
 
+	case rpc.ConfigChanged:
+		s.total, s.pause = d.Rounds, d.Pause
+		s.system(fmt.Sprintf("Pacing updated: %d rounds, pause after each %s.", d.Rounds, d.Pause))
+
 	case rpc.Idle:
 		s.endJob()
 
@@ -277,10 +286,11 @@ func (s *session) apply(ev rpc.Event) {
 
 // Command is what the human's input line means.
 type command struct {
-	kind  string // continue | stop | steer | ask | plan | help | error
-	to    string
-	text  string
-	error string
+	kind   string // continue | stop | steer | ask | plan | help | error
+	to     string
+	text   string
+	error  string
+	params map[string]any // for configure
 }
 
 // parseInput interprets the input line at a pause.
@@ -295,6 +305,19 @@ func (s *session) parseInput(in string) command {
 		return command{kind: "plan"}
 	case in == "/help" || in == "?":
 		return command{kind: "help"}
+	case strings.HasPrefix(in, "/pause"):
+		mode := strings.TrimSpace(strings.TrimPrefix(in, "/pause"))
+		switch mode {
+		case "round", "message", "auto":
+			return command{kind: "configure", params: map[string]any{"pause": mode}}
+		}
+		return command{kind: "error", error: "/pause takes round, message or auto"}
+	case strings.HasPrefix(in, "/rounds"):
+		n, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(in, "/rounds")))
+		if err != nil || n < 1 || n > 12 {
+			return command{kind: "error", error: "/rounds takes a number from 1 to 12, e.g. /rounds 5"}
+		}
+		return command{kind: "configure", params: map[string]any{"rounds": n}}
 	case strings.HasPrefix(in, "/steer"):
 		t := strings.TrimSpace(strings.TrimPrefix(in, "/steer"))
 		if t == "" {
