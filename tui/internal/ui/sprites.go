@@ -254,6 +254,11 @@ const artPad = 3 // blank rows above the picture for falling pieces and steam
 // renderSprite draws the topic picture at tick t: pieces fall into it as it builds, then steam,
 // sparkles or bits drift around it.
 func renderSprite(sp *sprite, topic string, width int, th theme.Theme, t int, anim bool) string {
+	return renderSpriteLoop(sp, topic, width, th, t, anim, false)
+}
+
+// renderSpriteLoop is renderSprite that can repeat its ambient motion indefinitely (the splash).
+func renderSpriteLoop(sp *sprite, topic string, width int, th theme.Theme, t int, anim, loop bool) string {
 	w := sp.width()
 	head := fg(th.Accent2).Bold(true).Render("◆ TOPIC") + fg(th.Text).Bold(true).Render("  "+sp.label) +
 		fg(th.Muted).Render("  "+ansi.Truncate(topic, max(width-len(sp.label)-14, 8), "…"))
@@ -262,6 +267,9 @@ func renderSprite(sp *sprite, topic string, width int, th theme.Theme, t int, an
 	}
 	if !anim {
 		t = 1 << 20
+	}
+	if anim && loop && t >= artTicks { // keep the ambient motion going while we wait
+		t = 24 + (t-24)%(artTicks-24)
 	}
 	h := artPad + len(sp.art)
 	cv := newCanvas(w+8, h)

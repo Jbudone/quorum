@@ -94,6 +94,15 @@ func animFPS() int {
 	return 24
 }
 
+// animStep is how many animation ticks pass per clock tick (QUORUM_SPEED, default 2): the clock
+// keeps its smooth redraw rate while every effect plays that many times faster.
+func animStep() int {
+	if v, err := strconv.Atoi(os.Getenv("QUORUM_SPEED")); err == nil && v >= 1 && v <= 8 {
+		return v
+	}
+	return 2
+}
+
 // animSpinner is the dot spinner stretched so its glyph still turns at a calm ~8 steps a second
 // while the clock ticks faster.
 func animSpinner() spinner.Spinner {
@@ -198,7 +207,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		a.ticking = false
-		a.frame++
+		a.frame += animStep()
 		if a.sess != nil {
 			a.sess.frame = a.frame
 		}
@@ -489,6 +498,7 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 	a.sess.calm = a.opts.Calm
 	delete(a.start.drafts, "auto") // a designed council is for this topic only
 	a.sess.add(&entry{kind: kindHuman, to: "the council", text: a.sess.topic})
+	a.sess.splashAt = a.frame
 	a.sess.add(&entry{kind: kindArt, diagramAt: a.sess.frame})
 	a.screen = screenSession
 	a.follow = true
@@ -741,7 +751,14 @@ func (a *App) sessionView() string {
 	header := renderHeader(s, a.th, a.w, spin)
 
 	var body string
-	if a.wide() {
+	if s.showSplash() {
+		pic := renderSpriteLoop(s.sprite, s.topic, a.w-4, a.th, s.frame-s.splashAt, !s.calm, true)
+		wait := fg(a.th.Muted).Italic(true).Render(spin + " convening the council…")
+		if s.firstTurn {
+			wait = fg(a.th.OK).Render("✓ the council is talking")
+		}
+		body = lipgloss.Place(a.w, a.bodyH(), lipgloss.Center, lipgloss.Center, pic+"\n\n"+wait)
+	} else if a.wide() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(a.mainW()).Height(a.bodyH()).Render(a.transcript.View()),
 			lipgloss.NewStyle().Foreground(a.th.Subtle).Render(strings.TrimRight(strings.Repeat("│\n", a.bodyH()), "\n")),

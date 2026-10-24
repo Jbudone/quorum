@@ -105,6 +105,8 @@ type session struct {
 	pause       string
 	frame       int  // animation frame, advanced by the app on every tick
 	full        bool // show full replies under their digests
+	firstTurn   bool // an agent has started speaking
+	splashAt    int  // animation clock when the session opened
 	calm        bool // no animation: show final frames
 	qa          qaState
 	qaRound     int // the round whose questions were last offered
@@ -121,6 +123,15 @@ func newSession(p rpc.Preset, repo, topic string, rounds int) *session {
 	}
 	s.chair = member{id: "chair", cli: "", role: "chair", color: -1}
 	return s
+}
+
+// showSplash reports whether the topic picture still fills the screen: from the start until an
+// agent speaks and the picture has had a chance to finish building.
+func (s *session) showSplash() bool {
+	if s.sprite == nil || s.firstTurn && (s.calm || s.frame-s.splashAt >= artTicks/2) {
+		return false
+	}
+	return s.phase == phaseStarting || s.phase == phaseRunning
 }
 
 func (s *session) find(id string) *member {
@@ -234,6 +245,7 @@ func (s *session) apply(ev rpc.Event) {
 		s.add(&entry{kind: kindRound, round: d.Round, total: s.total})
 
 	case rpc.TurnStart:
+		s.firstTurn = true
 		if m := s.find(d.Agent); m != nil {
 			m.status, m.tool = statusThinking, ""
 		}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/jbud/quorum/tui/internal/rpc"
 	"strings"
 	"testing"
 
@@ -85,4 +86,45 @@ func TestSessionOpensWithTheTopicPicture(t *testing.T) {
 	h.app.sess.frame = 500
 	h.send(tea.WindowSizeMsg{Width: 150, Height: 60})
 	contains(t, h.screen(), "TOPIC  burrito")
+}
+
+func TestSplashShowsThePictureUntilAnAgentSpeaksAndItHadTimeToPlay(t *testing.T) {
+	h := newHarness(t, 150, 50)
+	h.press("tab")
+	h.typ("What is the best burrito?")
+	h.press("enter")
+	s := h.app.sess
+	if !s.showSplash() {
+		t.Fatal("the picture should fill the screen while the council boots")
+	}
+	contains(t, h.screen(), "convening the council")
+	contains(t, h.screen(), "TOPIC  burrito")
+
+	h.reply(h.fc.last().id)
+	s.apply(rpc.Event{Name: "turn.start", Data: rpc.TurnStart{Round: 1, Agent: "architect"}})
+	if !s.showSplash() {
+		t.Fatal("even once an agent speaks, the picture finishes its first build")
+	}
+	s.frame = s.splashAt + artTicks/2
+	if s.showSplash() {
+		t.Fatal("after it has played, the transcript takes over")
+	}
+	s.firstTurn, s.frame, s.calm = true, s.splashAt, true
+	if s.showSplash() {
+		t.Fatal("calm mode never holds the screen")
+	}
+}
+
+func TestAnimationRunsTwiceAsFastByDefault(t *testing.T) {
+	if animStep() != 2 {
+		t.Fatalf("default step = %d", animStep())
+	}
+	t.Setenv("QUORUM_SPEED", "3")
+	if animStep() != 3 {
+		t.Fatalf("QUORUM_SPEED=3 gave %d", animStep())
+	}
+	t.Setenv("QUORUM_SPEED", "99")
+	if animStep() != 2 {
+		t.Fatal("an out-of-range speed falls back to the default")
+	}
 }
