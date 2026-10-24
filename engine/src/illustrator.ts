@@ -16,7 +16,7 @@ export type Illustrate = (input: IllustrateInput) => Promise<Diagram | undefined
 export function illustratePrompt(input: IllustrateInput, errors: string[] = [], kindHint = ""): string {
   return [
     "You decide whether a short diagram would help a reader grasp this message from a design discussion, and if so describe it.",
-    'Use kind "sequence" for flows: who sends what to whom, in order. Use kind "attack" for security threats: each step is one move of how the exploit happens, and "danger": true marks the one step where the attacker gets what they were after (not the victim's later reaction).',
+    'Use kind "sequence" for flows: who sends what to whom, in order. Use kind "attack" for security threats: each step is one move of how the exploit happens, and "danger": true marks the one step where the attacker gets what they were after (not the later reaction of the victim).',
     'If the message is an opinion, a process note or too vague to draw faithfully, answer {"useful": false}. Use ONLY actors and steps the message explicitly states or directly implies. Do not add databases, checks, validations or components it never mentions, even if they would be typical. Prefer 3-4 short steps over a complete-looking one.',
     ...(kindHint ? [`A classifier already judged that a diagram of kind "${kindHint}" fits; use it unless the message clearly cannot support one.`] : []),
     "",

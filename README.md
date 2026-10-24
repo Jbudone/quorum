@@ -44,9 +44,9 @@ Replies can gain a small animated diagram a moment after they land: a message **
 The drawing model is the first usable of opencode, agy, codex (Claude is never used silently). Pick your own in `~/.config/quorum/settings.toml`:
 
 ```toml
-[illustrator]        # any cheap model reachable through a CLI, e.g. Qwen/Kimi/DeepSeek via opencode
-cli = "opencode"
-model = "..."
+[illustrator]        # cli = an agent CLI, or "openrouter" for a fast direct call (uses OPENROUTER_API_KEY)
+cli = "openrouter"
+model = "qwen/qwen3-30b-a3b-instruct-2507"
 
 [jev]                # optional, opt-in: TypeSafe's Jev classifier gates and verifies diagrams
 enabled = true       # needs OPENROUTER_API_KEY in your environment; reply text is sent to OpenRouter
