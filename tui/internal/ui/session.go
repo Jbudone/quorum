@@ -39,6 +39,8 @@ type entry struct {
 	tools     []string
 	diagram   *rpc.Diagram // arrives after the reply, in the background
 	diagramAt int          // animation clock value when it arrived or was replayed
+	reveal    bool         // the card's text decodes into view
+	revealAt  int          // animation clock value the reveal began
 	tldr      *rpc.Tldr    // digest shown first; nil for Chair reports and human lines
 	streaming bool
 	converged bool
@@ -245,6 +247,7 @@ func (s *session) apply(ev rpc.Event) {
 		}
 		if e := s.streamingEntry(d.Agent); e != nil {
 			e.text, e.streaming, e.cacheW, e.tldr = d.Text, false, 0, d.Tldr
+			e.reveal, e.revealAt = true, s.frame
 		}
 		if m := s.find(d.Agent); m != nil && d.Tldr != nil && d.Agent != "chair" {
 			m.stance, m.conf = d.Tldr.Stance, -1
@@ -273,7 +276,7 @@ func (s *session) apply(ev rpc.Event) {
 
 	case rpc.ChairSummary:
 		s.dissent, s.questions, s.converged = d.Dissent, d.Questions, d.Converged
-		s.add(&entry{kind: kindSummary, speaker: "chair", round: d.Round, text: d.Summary, converged: d.Converged})
+		s.add(&entry{kind: kindSummary, speaker: "chair", round: d.Round, text: d.Summary, converged: d.Converged, reveal: true, revealAt: s.frame})
 
 	case rpc.AwaitingHuman:
 		s.phase = phasePaused
@@ -383,7 +386,25 @@ func (s *session) animating() bool {
 }
 
 func (e *entry) playing(s *session) bool {
-	return e.diagram != nil && !s.calm && s.frame-e.diagramAt < diagramTicks(e.diagram)
+	if s.calm {
+		return false
+	}
+	if e.reveal && s.frame-e.revealAt < solveTicks(e.revealChars()) {
+		return true
+	}
+	return e.diagram != nil && s.frame-e.diagramAt < diagramTicks(e.diagram)
+}
+
+// revealChars is how much text decodes into view on this card.
+func (e *entry) revealChars() int {
+	if e.tldr != nil {
+		n := len([]rune(e.tldr.Headline))
+		for _, b := range e.tldr.Bullets {
+			n += len([]rune(b))
+		}
+		return n
+	}
+	return len([]rune(e.text))
 }
 
 // replay restarts the newest diagram's animation.

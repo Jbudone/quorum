@@ -47,6 +47,31 @@ describe("checkDiagram", () => {
   });
 });
 
+describe("verdict", () => {
+  const body = "Dairy Dream is waxy and cloying, so skip it. Nocturne Dark is smooth and balanced, the clear best.";
+  const v = (o: any = {}) => ({
+    kind: "verdict", title: "Best bar", winner: 1,
+    options: [
+      { name: "Dairy Dream", rating: "bad", note: "waxy", evidence: "Dairy Dream is waxy and cloying" },
+      { name: "Nocturne Dark", rating: "good", note: "smooth", evidence: "Nocturne Dark is smooth and balanced" },
+    ],
+    ...o,
+  });
+  it("accepts a quoted verdict with a winner", () => {
+    const r = checkDiagram(v(), body);
+    expect(r.ok && r.diagram).toMatchObject({ kind: "verdict", winner: 1, steps: [], actors: [] });
+  });
+  it("resolves the winner by name and refuses a bad winner", () => {
+    expect(checkDiagram(v({ winner: "nocturne dark" }), body).ok && (checkDiagram(v({ winner: "nocturne dark" }), body) as any).diagram.winner).toBe(1);
+    const r = checkDiagram(v({ winner: 0 }), body);
+    expect(r.ok && r.diagram.winner).toBeNull();
+  });
+  it("drops invented options and needs two left", () => {
+    const r = checkDiagram(v({ options: [v().options[0], { name: "Mystery", rating: "good", evidence: "truffle with sea salt flakes" }] }), body);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("evidence check", () => {
   const body = "An attacker steals the refresh token and exchanges it at the token API for new tokens.";
   const mk = (steps: any[]) => ({ ...base, kind: "attack", actors: [{ id: "x", label: "Attacker", icon: "skull" }, { id: "api", label: "API", icon: "server" }, { id: "db", label: "DB", icon: "db" }], steps });

@@ -25,7 +25,12 @@ var iconGlyphs = map[string]string{
 }
 
 // diagramTicks is how long a diagram plays before settling on its final frame.
-func diagramTicks(d *rpc.Diagram) int { return len(d.Steps)*stepFrames + settleTicks }
+func diagramTicks(d *rpc.Diagram) int {
+	if d.Kind == "verdict" {
+		return len(d.Options)*verdictFrames + boxFrames + settleTicks
+	}
+	return len(d.Steps)*stepFrames + settleTicks
+}
 
 type cell struct {
 	r rune
@@ -89,6 +94,9 @@ func diagramFits(d *rpc.Diagram, width int) bool { return width >= len(d.Actors)
 
 // renderDiagram draws the diagram at tick t of its playback; anim=false draws the finished frame.
 func renderDiagram(d *rpc.Diagram, width int, th theme.Theme, t int, anim bool) string {
+	if d != nil && d.Kind == "verdict" {
+		return renderVerdict(d, width, th, t, anim)
+	}
 	if d == nil || len(d.Actors) < 2 || len(d.Steps) == 0 {
 		return ""
 	}

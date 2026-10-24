@@ -59,6 +59,12 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 		box := lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForegroundBlend(th.Accent, th.Accent2, th.Chair).Padding(0, 1).Width(width)
 		title := theme.GradientShift(fmt.Sprintf("◆ CHAIR // round %d briefing", e.round), s.frame, th.Accent2, th.Chair, th.Accent)
 		body := wrapPlain(e.text, width-4, th)
+		if e.reveal && !s.calm {
+			if since := s.frame - e.revealAt; since < solveTicks(len([]rune(e.text))) {
+				n := len([]rune(e.text))
+				body = ansi.Wrap(solve(e.text, 0, resolvedAt(n, solveTicks(n), since), s.frame, fg(th.Text), fg(th.Accent2)), width-4, "")
+			}
+		}
 		if e.converged {
 			body += "\n\n" + fg(th.OK).Bold(true).Render("✓ The council has converged")
 		}
@@ -108,11 +114,20 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 			right, gap = "", 1
 		}
 		rows = append(rows, left+strings.Repeat(" ", gap)+right)
+		// While a reply is fresh its text decodes into view, headline first, then bullets.
+		resolved, total := 1<<30, e.revealChars()
+		if e.reveal && !s.calm {
+			resolved = resolvedAt(total, solveTicks(total), s.frame-e.revealAt)
+		}
+		final, flick := fg(th.Text), fg(th.Accent2)
+		off := 0
 		if t.Headline != "" {
-			rows = append(rows, ansi.Wrap(fg(th.Text).Bold(true).Render("▸ "+t.Headline), width-2, ""))
+			rows = append(rows, ansi.Wrap(fg(th.Text).Bold(true).Render("▸ ")+solve(t.Headline, off, resolved, s.frame, final.Bold(true), flick), width-2, ""))
+			off += len([]rune(t.Headline))
 		}
 		for _, b := range t.Bullets {
-			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+fg(th.Text).Render(b), width-2, ""))
+			rows = append(rows, ansi.Wrap(fg(col).Render("  ◆ ")+solve(b, off, resolved, s.frame, final, flick), width-2, ""))
+			off += len([]rune(b))
 		}
 	}
 	if e.diagram != nil {

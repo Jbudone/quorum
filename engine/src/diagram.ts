@@ -18,14 +18,25 @@ export interface DiagramStep {
   /** The threat succeeds or the dangerous thing happens at this step. */
   danger: boolean;
 }
+export interface DiagramOption {
+  name: string;
+  rating: "bad" | "mixed" | "good";
+  /** Why, in a few words. */
+  note: string;
+}
 export interface Diagram {
-  kind: "sequence" | "attack";
+  kind: "sequence" | "attack" | "verdict";
   title: string;
+  /** Sequence and attack diagrams; empty for a verdict. */
   actors: DiagramActor[];
   steps: DiagramStep[];
+  /** Verdict diagrams: 2-3 options, each tried and rated. Empty otherwise. */
+  options: DiagramOption[];
+  /** Index into options of the agreed best one, or null when there is no clear winner. */
+  winner: number | null;
 }
 
-export const LIMITS = { actors: 4, steps: 6, label: 12, text: 24, title: 40 };
+export const LIMITS = { actors: 4, steps: 6, label: 12, text: 24, title: 40, options: 3, name: 16 };
 
 export type Checked = { ok: true; diagram: Diagram; repairs: string[] } | { ok: false; errors: string[] };
 
@@ -45,11 +56,44 @@ export function quoted(evidence: unknown, body: string): boolean {
   return q.filter((w) => have.has(w)).length / q.length >= 0.8;
 }
 
+function checkVerdict(raw: any, body?: string): Checked {
+  const repairs: string[] = [];
+  const kept: { o: DiagramOption; src: number }[] = [];
+  const rawOpts: any[] = Array.isArray(raw?.options) ? raw.options : [];
+  rawOpts.slice(0, LIMITS.options).forEach((o, i) => {
+    const name = clip(o?.name, LIMITS.name);
+    const rating = o?.rating;
+    if (!name) return;
+    if (rating !== "bad" && rating !== "mixed" && rating !== "good") {
+      repairs.push(`dropped option ${i + 1}: rating must be bad, mixed or good`);
+      return;
+    }
+    if (body !== undefined && !quoted(o?.evidence, body)) {
+      repairs.push(`dropped option ${i + 1}: its evidence is not in the message`);
+      return;
+    }
+    kept.push({ o: { name, rating, note: clip(o?.note, LIMITS.text) }, src: i });
+  });
+  if (kept.length < 2) return { ok: false, errors: ["a verdict needs at least 2 options, each backed by a phrase quoted from the message"] };
+  // The winner may be given as an index into the original list or by name; it must have survived.
+  let winner: number | null = null;
+  const w = raw?.winner;
+  const idx = typeof w === "number" ? kept.findIndex((k) => k.src === w) : kept.findIndex((k) => k.o.name.toLowerCase() === String(w ?? "").trim().toLowerCase());
+  if (idx >= 0) winner = idx;
+  else if (w !== null && w !== undefined) repairs.push("the named winner was not among the options, so no winner is shown");
+  if (winner !== null && kept[winner].o.rating === "bad") {
+    winner = null;
+    repairs.push("a bad option cannot be the winner");
+  }
+  return { ok: true, repairs, diagram: { kind: "verdict", title: clip(raw?.title, LIMITS.title), actors: [], steps: [], options: kept.map((k) => k.o), winner } };
+}
+
 export function checkDiagram(raw: any, body?: string): Checked {
+  if (raw?.kind === "verdict") return checkVerdict(raw, body);
   const errors: string[] = [];
   const repairs: string[] = [];
   const kind = raw?.kind;
-  if (kind !== "sequence" && kind !== "attack") errors.push(`kind must be "sequence" or "attack"`);
+  if (kind !== "sequence" && kind !== "attack") errors.push(`kind must be "sequence", "attack" or "verdict"`);
 
   const rawActors: any[] = Array.isArray(raw?.actors) ? raw.actors : [];
   if (rawActors.length < 2) errors.push("a diagram needs at least 2 actors");
@@ -107,5 +151,5 @@ export function checkDiagram(raw: any, body?: string): Checked {
     steps[steps.length - 1].danger = true;
     repairs.push("marked the last step as the breach");
   }
-  return { ok: true, repairs, diagram: { kind, title: clip(raw?.title, LIMITS.title), actors, steps } };
+  return { ok: true, repairs, diagram: { kind, title: clip(raw?.title, LIMITS.title), actors, steps, options: [], winner: null } };
 }

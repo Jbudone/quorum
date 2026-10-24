@@ -66,12 +66,19 @@ type (
 		Text   string `json:"text"`
 		Danger bool   `json:"danger"`
 	}
-	// Diagram is a validated sequence or attack chain the TUI animates.
+	DiagramOption struct {
+		Name   string `json:"name"`
+		Rating string `json:"rating"` // bad | mixed | good
+		Note   string `json:"note"`
+	}
+	// Diagram is a validated sequence, attack chain or verdict the TUI animates.
 	Diagram struct {
-		Kind   string         `json:"kind"` // sequence | attack
-		Title  string         `json:"title"`
-		Actors []DiagramActor `json:"actors"`
-		Steps  []DiagramStep  `json:"steps"`
+		Kind    string          `json:"kind"` // sequence | attack | verdict
+		Title   string          `json:"title"`
+		Actors  []DiagramActor  `json:"actors"`
+		Steps   []DiagramStep   `json:"steps"`
+		Options []DiagramOption `json:"options"`
+		Winner  *int            `json:"winner"` // index into Options, or nil
 	}
 	// TurnDiagram arrives some time after the turn it illustrates; the card gains it then.
 	TurnDiagram struct {
