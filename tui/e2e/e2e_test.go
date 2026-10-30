@@ -256,3 +256,27 @@ func TestRealBinaryLiveClaude(t *testing.T) {
 	tm.waitFor("new session", 30*time.Second)
 	tm.snapshot("live-done")
 }
+
+// A mock room end to end: the real binary and engine, the scripted cast calling the real room tools
+// through the MCP bridge's HTTP endpoint, the assistant answering, and pause.
+func TestRealBinaryMockRoom(t *testing.T) {
+	tm := start(t, 150, 46, "--mock")
+	tm.waitFor("trio", 30*time.Second)
+	tm.send("\x12") // ctrl+r: room mode
+	tm.waitFor("WHO'S IN THE ROOM", 5*time.Second)
+	tm.send("\t")
+	tm.typ("Should we add a cache to the product API?")
+	tm.send("\r")
+	tm.waitFor("Starting point: an in-process LRU", 30*time.Second)
+	tm.waitFor("wrote plan v1", 30*time.Second)
+	tm.snapshot("room-1-running")
+	tm.send("\t") // the assistant's box
+	tm.typ("where are we?")
+	tm.send("\r")
+	tm.waitFor("In short", 30*time.Second)
+	tm.snapshot("room-2-assistant")
+	tm.send("\x10") // ctrl+p: pause
+	tm.waitFor("PAUSED", 10*time.Second)
+	tm.snapshot("room-3-paused")
+	tm.send("\x03")
+}

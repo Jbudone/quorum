@@ -4,7 +4,14 @@ A long-running discussion where agents work in parallel on a problem, with the h
 personal assistant beside them. It runs until the human or the assistant pauses it, and can be resumed
 days later.
 
-Status: design agreed, not yet built.
+Status: built (engine, RPC and TUI). See the README's "Rooms" section for how to use it.
+
+Implementation notes that differ from or add to the decisions below:
+- Support roles (assistant, Chair) act through `>> verb: args | why` lines at the end of their replies rather than
+  tools, so they work on every CLI. The scribe answers with whole files (`=== decisions.md ===`).
+- Notes on a parked topic, and a member's own messages, wake nobody; human and Chair messages wake everyone.
+- Accepting a document (the Chair's call) pauses the room as a milestone; the assistant then explains why.
+- The TUI lists saved rooms only in room mode (`ctrl+r` on the start screen).
 
 ## Decisions
 

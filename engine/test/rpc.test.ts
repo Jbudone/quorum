@@ -211,4 +211,58 @@ describe("rpc server: customizing a council", () => {
     h.input.end();
     await h.done;
   });
+
+  it("runs a room: start, resume, ask the assistant, approve a suggestion, reopen", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const lines: any[] = [];
+    let buf = "";
+    output.on("data", (d) => {
+      buf += d;
+      const parts = buf.split("\n");
+      buf = parts.pop()!;
+      for (const p of parts) lines.push(JSON.parse(p));
+    });
+    const done = serve(input, output, { mockDelayMs: 0 });
+    const send = (msg: unknown) => input.write(JSON.stringify(msg) + "\n");
+    const waitFor = async (pred: (m: any) => boolean) => {
+      for (let i = 0; i < 400; i++) {
+        const m = lines.find(pred);
+        if (m) return m;
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      throw new Error("timed out; saw " + JSON.stringify(lines.map((l) => l.event ?? l.id)));
+    };
+    const repo = mkdtempSync(join(tmpdir(), "q-room-"));
+
+    send({ id: 1, method: "room.resume" });
+    expect((await waitFor((m) => m.id === 1)).error.message).toMatch(/no room/);
+
+    send({ id: 2, method: "room.start", params: { preset: "trio", topic: "cache?", repo, mock: true, turnCap: 4 } });
+    const started = (await waitFor((m) => m.id === 2)).result;
+    expect(started.agents.map((a: any) => a.id)).toEqual(["architect", "skeptic", "pragmatist"]);
+    expect(started).toMatchObject({ state: "paused", focus: "cache", events: [{ type: "topic.raised" }, { type: "topic.focus" }, { type: "message" }] });
+
+    send({ id: 3, method: "room.resume" });
+    await waitFor((m) => m.event === "room.state" && m.data.state === "paused");
+    expect(lines.some((m) => m.event === "room.turn.start")).toBe(true);
+    expect(lines.some((m) => m.event === "room.event" && m.data.type === "doc.revised")).toBe(true);
+
+    send({ id: 4, method: "room.ask", params: { text: "where are we?" } });
+    await waitFor((m) => m.event === "room.event" && m.data.type === "aside" && m.data.from === "assistant");
+    expect(lines.some((m) => m.event === "room.assistant.delta")).toBe(true);
+    const sug = await waitFor((m) => m.event === "room.event" && m.data.type === "suggestion");
+    send({ id: 5, method: "room.resolve", params: { id: sug.data.id, accept: true } });
+    await waitFor((m) => m.event === "room.event" && m.data.type === "suggestion.resolved");
+
+    send({ id: 6, method: "room.doc", params: { name: "plan" } });
+    expect((await waitFor((m) => m.id === 6)).result.text).toContain("# Plan");
+    send({ id: 7, method: "rooms.list", params: { repo } });
+    const list = (await waitFor((m) => m.id === 7)).result;
+    expect(list).toHaveLength(1);
+    send({ id: 8, method: "room.open", params: { repo, id: list[0].id } });
+    expect((await waitFor((m) => m.id === 8)).result.id).toBe(list[0].id);
+    input.end();
+    await done;
+  });
 });

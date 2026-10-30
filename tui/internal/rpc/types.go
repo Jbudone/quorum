@@ -276,6 +276,20 @@ func Decode(line []byte) (Message, error) {
 		data = new(Idle)
 	case "session.done":
 		data = new(SessionDone)
+	case "room.event":
+		data = new(RoomEvent)
+	case "room.state":
+		data = new(RoomStateEvent)
+	case "room.turn.start", "room.turn.end":
+		data = new(RoomTurn)
+	case "room.turn.delta":
+		data = new(RoomTurnDelta)
+	case "room.turn.tool":
+		data = new(RoomTurnTool)
+	case "room.usage":
+		data = new(RoomUsage)
+	case "room.assistant.delta":
+		data = new(AssistantDelta)
 	default:
 		return nil, fmt.Errorf("unknown engine event %q", env.Event)
 	}
@@ -317,6 +331,20 @@ func derefs(p any) any {
 	case *Idle:
 		return *v
 	case *SessionDone:
+		return *v
+	case *RoomEvent:
+		return *v
+	case *RoomStateEvent:
+		return *v
+	case *RoomTurn:
+		return *v
+	case *RoomTurnDelta:
+		return *v
+	case *RoomTurnTool:
+		return *v
+	case *RoomUsage:
+		return *v
+	case *AssistantDelta:
 		return *v
 	}
 	return p

@@ -39,6 +39,7 @@ type screen int
 const (
 	screenStart screen = iota
 	screenSession
+	screenRoom
 )
 
 type focusPane int
@@ -70,6 +71,7 @@ type App struct {
 	selectAfterLoad string // preset to highlight once presets.list is re-read (after a save)
 
 	sess       *session
+	rm         *roomUI // the room screen, when one is open
 	reqs       map[int]string
 	input      textarea.Model
 	transcript viewport.Model
@@ -184,6 +186,9 @@ func (a *App) needsTick() bool {
 	if a.screen == screenStart {
 		return true // the banner animates
 	}
+	if a.screen == screenRoom {
+		return a.rm != nil && (a.rm.room == nil || a.rm.room.animating())
+	}
 	s := a.sess
 	return s != nil && (s.animating() || s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
 }
@@ -211,6 +216,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.sess != nil {
 			a.sess.frame = a.frame
 		}
+		if a.rm != nil && a.rm.room != nil {
+			a.rm.room.frame = a.frame
+		}
 		var c tea.Cmd
 		a.spin, c = a.spin.Update(m)
 		a.refresh()
@@ -226,6 +234,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.listen(), c, a.tick())
 
 	case tea.MouseWheelMsg:
+		if a.screen == screenRoom {
+			a.roomWheel(m)
+			a.refresh()
+			return a, nil
+		}
 		a.scroll(m)
 		return a, nil
 
@@ -241,6 +254,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.screen == screenStart && a.start.focus == 1 {
 		var c tea.Cmd
 		a.start.topic, c = a.start.topic.Update(msg)
+		return a, c
+	}
+	if a.screen == screenRoom && a.rm != nil && a.rm.room != nil {
+		var c tea.Cmd
+		if a.rm.room.pane == paneAssistant {
+			a.rm.assistIn, c = a.rm.assistIn.Update(msg)
+		} else {
+			a.rm.roomIn, c = a.rm.roomIn.Update(msg)
+		}
 		return a, c
 	}
 	if a.screen == screenSession && a.sess.canType() {
@@ -261,6 +283,12 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 	case rpc.Response:
 		a.handleResponse(v)
 	case rpc.Event:
+		if a.screen == screenRoom && a.rm != nil {
+			if a.rm.room != nil {
+				a.rm.room.apply(v)
+			}
+			return nil
+		}
 		if a.sess != nil {
 			a.sess.apply(v)
 			if v.Name == "awaiting_human" || v.Name == "idle" {
@@ -278,6 +306,9 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
+	if a.handleRoomResponse(method, r) {
+		return
+	}
 	if r.Err != "" {
 		switch {
 		case method == "session.start":
@@ -372,6 +403,9 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if a.screen == screenStart {
 		return a.handleStartKey(k)
+	}
+	if a.screen == screenRoom {
+		return a.handleRoomKey(k)
 	}
 	s := a.sess
 	switch key {
@@ -488,11 +522,25 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 		a.call("council.design", params)
 		return c
 	}
+	if a.start.listReq {
+		a.start.listReq = false
+		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
+	}
+	if id := a.start.openReq; id != "" {
+		a.start.openReq = ""
+		a.openRoom(id)
+		return nil
+	}
 	if !start {
 		return c
 	}
 	p, _ := a.start.selected()
 	params := a.start.startParams(a.opts.Repo)
+	if a.start.roomMode {
+		delete(a.start.drafts, "auto") // a designed council is for this topic only
+		a.startRoom(params)
+		return nil
+	}
 	p = a.start.effective()
 	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), 0)
 	a.sess.calm = a.opts.Calm
@@ -650,6 +698,10 @@ func (a *App) scrollKey(dir int, page bool) {
 
 // refresh recomputes sizes and content after any state change.
 func (a *App) refresh() {
+	if a.screen == screenRoom {
+		a.refreshRoom()
+		return
+	}
 	if a.screen != screenSession || a.sess == nil {
 		return
 	}
@@ -735,6 +787,8 @@ func (a *App) View() tea.View {
 		if a.engineErr != "" {
 			content = lipgloss.JoinVertical(lipgloss.Left, content, fg(a.th.Err).Render("✗ "+a.engineErr))
 		}
+	} else if a.screen == screenRoom && a.rm != nil {
+		content = a.roomView()
 	} else {
 		content = a.sessionView()
 	}

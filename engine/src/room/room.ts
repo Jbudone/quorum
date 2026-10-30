@@ -422,7 +422,7 @@ export class Room {
     const title = heading?.[1].trim() ?? slug;
     const body = heading ? text.replace(heading[0], "").trim() : text;
     const url = await (this.o.fileIssue ?? ghIssue(this.o.repo))(title, body);
-    this.log({ type: "aside", from: "assistant", text: `Filed ${slug} as ${url}` });
+    this.log({ type: "aside", from: "assistant", text: `Filed ${slug} as ${url}`, kind: "note" });
     return url;
   }
 
@@ -897,7 +897,7 @@ export class Room {
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
       answer = prose;
-      this.log({ type: "aside", from: "assistant", text: prose || "(no answer)" });
+      this.log({ type: "aside", from: "assistant", text: prose || "(no answer)", kind: "answer" });
       this.assistantActions(directives);
     });
     return answer;
@@ -910,7 +910,7 @@ export class Room {
       const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason), ASSISTANT_SYSTEM);
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
-      if (prose && prose !== "NOTHING") this.log({ type: "aside", from: "assistant", text: prose });
+      if (prose && prose !== "NOTHING") this.log({ type: "aside", from: "assistant", text: prose, kind: "note" });
       this.assistantActions(directives);
     });
   }

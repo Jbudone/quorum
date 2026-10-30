@@ -165,3 +165,60 @@ func TestRecordedSettingsDecodesStrictly(t *testing.T) {
 		t.Fatalf("expected a mix of successes and errors, got %d ok / %d errors", oks, errs)
 	}
 }
+
+// The room recording covers every room event and result shape the TUI reads.
+func TestRecordedRoomDecodesStrictly(t *testing.T) {
+	f, err := os.Open("testdata/room.ndjson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 16<<20)
+	types := map[string]int{}
+	n := 0
+	for sc.Scan() {
+		n++
+		m, err := Decode(sc.Bytes())
+		if err != nil {
+			t.Fatalf("line %d: %v\n%.200s", n, err, sc.Text())
+		}
+		switch v := m.(type) {
+		case Event:
+			types[v.Name]++
+			if e, ok := v.Data.(RoomEvent); ok {
+				types[e.Type]++
+			}
+		case Response:
+			switch v.ID {
+			case 4, 11:
+				var s RoomSnapshot
+				if err := DecodeResult(v.Result, &s); err != nil {
+					t.Fatalf("snapshot %d: %v", v.ID, err)
+				}
+				if s.ID == "" || len(s.Agents) != 3 || s.Focus == "" || len(s.Events) < 3 {
+					t.Fatalf("unexpected snapshot: %+v", s)
+				}
+			case 8:
+				var d RoomDocText
+				if err := DecodeResult(v.Result, &d); err != nil || !strings.Contains(d.Text, "# Plan") {
+					t.Fatalf("doc: %v %+v", err, d)
+				}
+			case 10:
+				var l []RoomListItem
+				if err := DecodeResult(v.Result, &l); err != nil || len(l) != 1 {
+					t.Fatalf("rooms.list: %v %+v", err, l)
+				}
+			case 12:
+				if v.Err == "" {
+					t.Fatal("focusing an unknown topic should fail")
+				}
+			}
+		}
+	}
+	for _, want := range []string{"room.state", "room.turn.start", "room.turn.delta", "room.turn.tool", "room.turn.end", "room.assistant.delta", "message", "aside", "suggestion", "suggestion.resolved", "doc.revised", "paused", "resumed"} {
+		if types[want] == 0 {
+			t.Errorf("recording has no %s", want)
+		}
+	}
+}

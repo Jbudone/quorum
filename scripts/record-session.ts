@@ -1,5 +1,6 @@
 // Records mock council sessions as raw wire traffic, used as golden files by the Go client tests.
-// Usage: pnpm -C engine exec tsx ../scripts/record-session.ts <session.ndjson> <settings.ndjson>
+// Usage: pnpm -C engine exec tsx ../scripts/record-session.ts <session.ndjson> <settings.ndjson> [room.ndjson]
+// Pass "-" for any path to skip that recording.
 //
 // Request ids must match the order the TUI makes its calls in, because the Go replay tests answer
 // each request with the recorded response of the same id: presets.list, personas.list, clis.list
@@ -14,6 +15,7 @@ process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "rec-config-"));
 const { serve } = await import("../engine/src/rpc/server.js");
 
 async function record(out: string, script: (c: Client) => Promise<void>) {
+  if (out === "-") return; // "-" skips a recording, to re-record only the others
   const input = new PassThrough();
   const output = new PassThrough();
   const lines: string[] = [];
@@ -109,3 +111,34 @@ await record(process.argv[3], async (c) => {
   c.send(9, "council.design", { topic: "  ", mock: true });
   await c.until((m) => m.id === 9);
 });
+
+// 3. A room: start one with the scripted cast, let it run to its cap, ask the assistant, approve a
+// suggestion, read a document, pause, and reopen it from the list.
+if (process.argv[4]) {
+  await record(process.argv[4], async (c) => {
+    const dir = repo();
+    c.send(1, "presets.list");
+    c.send(2, "personas.list");
+    c.send(3, "clis.list");
+    await c.until((m) => m.id === 3);
+    c.send(4, "room.start", { preset: "trio", topic: "Should we add a cache to the product API?", repo: dir, mock: true, turnCap: 5 });
+    await c.until((m) => m.id === 4);
+    c.send(5, "room.resume");
+    await c.until((m) => m.event === "room.state" && m.data.state === "paused");
+    c.send(6, "room.ask", { text: "where are we?" });
+    await c.until((m) => m.event === "room.event" && m.data.type === "aside" && m.data.from === "assistant");
+    c.send(7, "room.resolve", { id: 1, accept: true });
+    await c.until((m) => m.event === "room.event" && m.data.type === "suggestion.resolved");
+    c.send(8, "room.doc", { name: "plan" });
+    await c.until((m) => m.id === 8);
+    c.send(9, "room.post", { text: "Keep the TTL under a minute.", to: "room" });
+    await c.until((m) => m.id === 9);
+    c.send(10, "rooms.list", { repo: dir });
+    await c.until((m) => m.id === 10);
+    const id = (await import("node:fs")).readdirSync(join(dir, ".quorum", "rooms"))[0];
+    c.send(11, "room.open", { repo: dir, id });
+    await c.until((m) => m.id === 11);
+    c.send(12, "room.focus", { slug: "nope" });
+    await c.until((m) => m.id === 12);
+  });
+}

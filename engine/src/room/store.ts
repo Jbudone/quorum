@@ -18,7 +18,7 @@ export type RoomEventBody =
   | { type: "paused"; reason: string }
   | { type: "resumed" }
   /** The human's private conversation with the assistant, and the assistant's own notes. Members never see these. */
-  | { type: "aside"; from: "human" | "assistant"; text: string }
+  | { type: "aside"; from: "human" | "assistant"; text: string; kind?: "answer" | "note" }
   | { type: "suggestion"; id: number; from: "assistant" | "chair"; action: SuggestionAction; args: string[]; why: string }
   | { type: "suggestion.resolved"; id: number; accepted: boolean }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }

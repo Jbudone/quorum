@@ -67,3 +67,27 @@ With Jev on, a classifier first decides whether a diagram helps (skipping the ge
 - The debate map opens with a **split**: twelve nodes fly out of the centre box to an *agree* branch (left) and a *differ* branch (right, red for disagree, yellow for mixed), so the proportions are visible before you read a word.
 - Open questions are a **form** when the Chair offers answers: `↑↓` move, `space` picks (ticks, when several apply), `1-9` jump to an option, and you can still type your own answer or a note in the chat box. The Chair now gives each question 2-4 suggested answers (`Question? :: A | B | C`, `[multi]` for tick-several); plain yes/no questions get Yes / No / Decide later automatically.
 - Every session opens with a full-screen **topic picture** (it holds the screen, looping, until an agent speaks) and keeps a copy at the top of the transcript: a small animated ASCII sprite chosen from the topic (burrito, pizza, coffee, chocolate, lock, database, server, cloud, bug, rocket and more; a lightbulb when nothing matches). Pieces fall in as it builds, then steam, sparkles or bits drift around it. In verdict scenes the taster holds the topic's own item.
+
+## Rooms: an open-ended discussion
+
+Press `ctrl+r` on the start screen to switch from **Council** (rounds, then a plan) to **Room**: the members talk continuously, in parallel, until you or your assistant pause them. Pick who's in the room the same way (a preset, the settings drawer, or auto), say what to work out, and press Enter. Saved rooms are listed under the topic box and reopen where they left off.
+
+- **Two boxes.** The left one talks to the room (`@name` for a private message, `/help` for commands); the right one talks to your **assistant**, who reads everything (private messages included), answers with message numbers you can check, suggests next steps, and notices when the room is going in circles. `tab` switches boxes.
+- **Suggestions** (add a member, change focus, steer, …) appear under the assistant. With its box empty, `↑↓` picks one, `y` approves, `n` declines. The assistant can pause the room on its own when it's stuck, needs your call, hits a budget limit, or reaches a milestone; everything else waits for you.
+- **The Chair** keeps the discussion on the topic in focus, nudges quiet members, raises recurring side questions as parked topics, and accepts a document once members agree (the room then pauses for you to review it). **The scribe** keeps short shared notes (decisions, facts, open questions, code notes, a page per topic) that members read when they start fresh.
+- **Members** speak through Quorum's tools (Claude, Codex and opencode; Gemini and agy use their reply text instead): post, private messages, pass, raise a topic, draft or revise a document, and a private notebook that survives restarts.
+- `ctrl+p` pauses or resumes, `ctrl+o` browses documents and notes, `/focus`, `/raise`, `/add security claude`, `/remove skeptic` (it writes an exit memo first), `/parallel 3`, `/export issue-…` (files an issue document with `gh`), `/leave`. Quitting pauses the room.
+- **Budgets.** A CLI that reports its quota warns at 75% and pauses the room at 90%; others are held to a turn cap per resume (`/turns N`, default 40).
+- Rooms are plain files in `<repo>/.quorum/rooms/<id>/`: `events.jsonl` (the whole history), `docs/`, `outputs/<doc>/vN.md`, `notebooks/`. Headless: `pnpm -C engine exec tsx src/cli.ts room --repo "$PWD" --topic "..." [--mock] [--turns N]`.
+
+Choose who runs the support roles in `~/.config/quorum/settings.toml` (by default the assistant and Chair use the council's Chair model, and the scribe the first of opencode, agy, codex):
+
+```toml
+[assistant]
+cli = "claude"
+model = "opus"
+
+[scribe]
+cli = "opencode"
+```
+
