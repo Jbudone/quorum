@@ -1,5 +1,7 @@
 import { loadPersona, type AgentSpec, type Persona } from "../config.js";
 import type { TransportFor } from "../engine.js";
+import type { McpServerSpec } from "../transports/index.js";
+import { newToken, ToolServer, type ToolHandler } from "./tools.js";
 import { RoomStore, visibleTo, type AgentState, type Recipient, type RoomEvent } from "./store.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
@@ -33,6 +35,16 @@ export interface NewRoom extends RoomOptions {
 const RECENT = 40;
 /** A reply that is exactly this means "nothing new to add" and wakes nobody. */
 const PASS = "PASS";
+/** Messages one turn may send through the tools, so a member can't flood the room. */
+const MAX_SPOKEN = 4;
+
+/** A turn in progress that may call the room tools. */
+interface LiveTurn {
+  agent: string;
+  ctrl: AbortController;
+  spoke: number;
+  passed: boolean;
+}
 
 /**
  * A long-running discussion. Agents are not processes: each is an identity with persisted state,
@@ -43,6 +55,9 @@ const PASS = "PASS";
 export class Room {
   private readonly personas = new Map<string, Persona>();
   private readonly running = new Map<string, AbortController>();
+  /** Turns that can call the room tools, keyed by their token. */
+  private readonly live = new Map<string, LiveTurn>();
+  private tools?: Promise<ToolServer>;
   private listeners: ((e: RoomEmit) => void)[] = [];
   private waiters: (() => void)[] = [];
   private turnsThisResume = 0;
@@ -136,6 +151,11 @@ export class Room {
     return e;
   }
 
+  /** Stops the tool server; call when done with the room. */
+  async close(): Promise<void> {
+    if (this.tools) await (await this.tools).close();
+  }
+
   /** Resolves once no turn is running and the room is paused or idle. */
   settled(): Promise<void> {
     return new Promise((resolve) => {
@@ -182,17 +202,32 @@ export class Room {
   private async turn(agent: string, ctrl: AbortController): Promise<void> {
     const st = this.store.agentState(agent);
     const upTo = this.store.lastSeq;
+    const transport = this.o.transportFor(agent);
+    const token = newToken();
+    const turn: LiveTurn = { agent, ctrl, spoke: 0, passed: false };
+    let mcp: McpServerSpec | undefined;
+    if (transport.supportsMcp) {
+      this.tools ??= ToolServer.start(this.callTool);
+      try {
+        mcp = (await this.tools).spec(token);
+        this.live.set(token, turn);
+      } catch {
+        // Without the tool server the agent still speaks through its reply text.
+        this.tools = undefined;
+      }
+    }
     this.emit({ event: "room.turn.start", data: { agent } });
     let text = "";
     let failed: string | undefined;
     let sessionId = st.sessionId;
     try {
-      for await (const e of this.o.transportFor(agent).send(this.prompt(agent, st, upTo), {
+      for await (const e of transport.send(this.prompt(agent, st, upTo, Boolean(mcp)), {
         cwd: this.o.repo,
         systemPrompt: this.personas.get(agent)!.body,
         readOnly: this.o.readOnly ?? true,
         sessionId: st.sessionId,
         signal: ctrl.signal,
+        mcp,
       })) {
         if (e.type === "text") {
           text += e.delta;
@@ -207,10 +242,15 @@ export class Room {
       failed = err instanceof Error ? err.message : String(err);
     }
     this.running.delete(agent);
+    this.live.delete(token);
     // An aborted turn leaves lastRead alone, so the agent is woken for the same messages on resume.
     if (ctrl.signal.aborted) return this.settle();
     const reply = text.trim();
-    if (failed && !reply) {
+    const usedTools = turn.spoke > 0 || turn.passed;
+    // A member who spoke through the tools used its final reply as scratch; nobody sees it.
+    if (usedTools) {
+      if (failed) sessionId = undefined;
+    } else if (failed && !reply) {
       this.log({ type: "turn.failed", agent, message: failed });
       // A vendor session that broke the turn is dropped; the next wake rebuilds context from the log.
       sessionId = undefined;
@@ -221,19 +261,68 @@ export class Room {
     this.kick();
   }
 
+  /** Runs a room tool for the turn holding `token`; a thrown error goes back to the agent as the tool result. */
+  private readonly callTool: ToolHandler = (token, name, args) => {
+    const turn = this.live.get(token);
+    if (!turn) throw new Error("this turn is over; nothing was sent");
+    if (turn.ctrl.signal.aborted) throw new Error("the room is paused; nothing was sent");
+    const { agent } = turn;
+    const text = typeof args.text === "string" ? args.text.trim() : "";
+    switch (name) {
+      case "post":
+      case "dm": {
+        if (turn.spoke >= MAX_SPOKEN) throw new Error(`at most ${MAX_SPOKEN} messages per turn; wait for replies`);
+        if (!text) throw new Error("text is required");
+        const to = name === "dm" ? String(args.to ?? "") : "room";
+        if (name === "dm" && (to === agent || (to !== "human" && !this.personas.has(to))))
+          throw new Error(`no member "${to}"; members are ${["human", ...this.personas.keys()].filter((a) => a !== agent).join(", ")}`);
+        let replyTo: number | undefined;
+        if (name === "post" && args.reply_to !== undefined) {
+          replyTo = Number(args.reply_to);
+          const target = this.store.events().find((e) => e.seq === replyTo);
+          if (target?.type !== "message" || !visibleTo(agent, target)) throw new Error(`no message #${args.reply_to}`);
+        }
+        turn.spoke++;
+        const e = this.log({ type: "message", from: agent, to, text, ...(replyTo ? { replyTo } : {}) });
+        this.kick();
+        return `Sent as #${e.seq}.`;
+      }
+      case "pass":
+        if (!turn.spoke && !turn.passed) this.log({ type: "pass", from: agent });
+        turn.passed = true;
+        return "Passed. You will be woken when there is something new.";
+      case "read_room": {
+        const limit = Math.min(50, Math.max(1, Math.trunc(Number(args.limit ?? 20)) || 20));
+        const before = args.before === undefined ? Infinity : Number(args.before);
+        const msgs = this.store
+          .events()
+          .filter((e) => e.seq < before && e.type === "message" && visibleTo(agent, e))
+          .slice(-limit);
+        return msgs.length ? msgs.map((e) => (e.type === "message" ? renderMessage(e) : "")).join("\n\n") : "No messages.";
+      }
+      default:
+        throw new Error(`unknown tool "${name}"`);
+    }
+  };
+
   /**
    * With a live vendor session the agent already remembers the room, so it gets only what's new.
    * Without one (first turn, or after a failure) it is rebuilt from the log.
    */
-  private prompt(agent: string, st: AgentState, upTo: number): string {
+  private prompt(agent: string, st: AgentState, upTo: number, tools: boolean): string {
     const { topic } = this.store.config();
     const seen = this.store.events().filter((e) => e.seq <= upTo && e.type === "message" && visibleTo(agent, e));
     const render = (es: RoomEvent[]) => es.map((e) => (e.type === "message" ? renderMessage(e) : "")).join("\n\n");
     const rules = [
+      tools
+        ? `Speak only through the quorum tools: post to the room (reply_to a #number when answering one), dm one member privately, pass when you have nothing new, read_room for older messages. Your final reply is private scratch that nobody sees.`
+        : "",
       `Each time you speak, add something: a claim, evidence (cite files and lines), a question, or a disagreement.`,
       `Keep it short, a few paragraphs at most. Name the member you are answering.`,
-      `If you have nothing new to add, reply with exactly ${PASS}.`,
-    ].join(" ");
+      tools ? `Send at most ${MAX_SPOKEN} messages per turn.` : `If you have nothing new to add, reply with exactly ${PASS}.`,
+    ]
+      .filter(Boolean)
+      .join(" ");
     if (st.sessionId) {
       return [`New in the room since your last turn:`, render(seen.filter((e) => e.seq > st.lastRead)), rules].join("\n\n");
     }
@@ -251,5 +340,6 @@ export class Room {
 
 function renderMessage(e: Extract<RoomEvent, { type: "message" }>): string {
   const to = e.to === "room" ? "" : ` → ${e.to} (private)`;
-  return `[#${e.seq}] ${e.from}${to}:\n${e.text}`;
+  const re = e.replyTo ? ` (re #${e.replyTo})` : "";
+  return `[#${e.seq}] ${e.from}${to}${re}:\n${e.text}`;
 }

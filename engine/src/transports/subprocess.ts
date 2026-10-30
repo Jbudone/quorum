@@ -15,6 +15,8 @@ export interface Invocation {
   args: string[];
   stdin?: string;
   env?: NodeJS.ProcessEnv;
+  /** Working directory for the CLI; defaults to NEUTRAL_CWD. */
+  cwd?: string;
 }
 
 /** Shared plumbing for CLIs driven as one subprocess per turn. */
@@ -30,7 +32,7 @@ export abstract class SubprocessTransport implements AgentTransport {
     try {
       mkdirSync(NEUTRAL_CWD, { recursive: true });
       for await (const line of spawnLines(inv.cmd, inv.args, {
-        cwd: NEUTRAL_CWD,
+        cwd: inv.cwd ?? NEUTRAL_CWD,
         stdin: inv.stdin,
         signal: opts.signal,
         env: inv.env ? { ...process.env, ...inv.env } : undefined,

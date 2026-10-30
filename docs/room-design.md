@@ -45,6 +45,16 @@ Status: design agreed, not yet built.
   outputs/<slug>/      room-produced documents, one file per version + accepted marker
 ```
 
+## Tool server (built)
+
+Each turn gets a fresh token. The engine serves the room tools on a localhost port, and the CLI launches
+`engine/bin/quorum-room-mcp.mjs`, a dependency-free stdio MCP bridge that forwards calls with the token, so
+a member can only speak as itself and only during its own turn. Tools: `post` (with `reply_to`), `dm`,
+`pass`, `read_room`; at most 4 messages per turn. A member who used the tools has its final reply treated
+as private scratch. Injection, verified live: Claude `--mcp-config` + `--allowedTools mcp__quorum`; Codex
+`-c mcp_servers.quorum.*` with `default_tools_approval_mode="approve"`; opencode's inline config, run with
+`--standalone` in the repo directory.
+
 ## Build order
 
 Each step ends with something runnable, mostly against the mock transport.
@@ -63,4 +73,4 @@ Each step ends with something runnable, mostly against the mock transport.
 
 - Exact wake rules (how much topic activity wakes a non-addressed agent) and per-agent cooldowns.
 - Thresholds for the hybrid context switch and the staleness metric; tune on real runs.
-- How each CLI's MCP config is injected per agent (Claude `--mcp-config`, Codex `-c mcp_servers…`, opencode / agy configs).
+- Gemini and agy have no per-run way to add an MCP server, so they still speak through their final reply text (exactly `PASS` to pass). Revisit if either gains a flag.

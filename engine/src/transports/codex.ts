@@ -1,5 +1,5 @@
 import { parseJson, repoNote, SubprocessTransport, withPersona, type Invocation, type LineMapper } from "./subprocess.js";
-import type { AgentEvent, SendOptions } from "./types.js";
+import type { AgentEvent, McpServerSpec, SendOptions } from "./types.js";
 
 /**
  * Codex emits whole messages, including narration before tool calls ("I'll read the file...").
@@ -58,6 +58,8 @@ export interface CodexOptions {
 
 /** Drives `codex exec --json` on the user's ChatGPT subscription, read-only sandboxed. */
 export class CodexTransport extends SubprocessTransport {
+  readonly supportsMcp = true;
+
   constructor(
     id = "codex",
     private readonly o: CodexOptions = {},
@@ -76,6 +78,7 @@ export class CodexTransport extends SubprocessTransport {
     if (opts.sessionId) args.push("resume");
     args.push("--json", "--skip-git-repo-check", "-c", `sandbox_mode="${sandbox}"`);
     if (this.o.model) args.push("-m", this.o.model);
+    if (opts.mcp) args.push(...codexMcpArgs(opts.mcp));
     if (opts.sessionId) args.push(opts.sessionId);
     args.push("-"); // prompt on stdin
     return {
@@ -84,4 +87,17 @@ export class CodexTransport extends SubprocessTransport {
       stdin: repoNote(opts) + withPersona(prompt, opts),
     };
   }
+}
+
+/** `-c` overrides that register an MCP server; values are TOML, and JSON strings are valid TOML strings. */
+export function codexMcpArgs(m: McpServerSpec): string[] {
+  const env = Object.entries(m.env).map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+  const key = `mcp_servers.${m.name}`;
+  return [
+    "-c", `${key}.command=${JSON.stringify(m.command)}`,
+    "-c", `${key}.args=${JSON.stringify(m.args)}`,
+    "-c", `${key}.env={${env.join(", ")}}`,
+    // exec can't answer approval prompts, so the server's tools are pre-approved.
+    "-c", `${key}.default_tools_approval_mode="approve"`,
+  ];
 }

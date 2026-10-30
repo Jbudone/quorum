@@ -7,7 +7,7 @@ export type Recipient = "room" | string;
 
 /** What the log records. Everything else in a room (inboxes, digests, docs) is derived from these. */
 export type RoomEventBody =
-  | { type: "message"; from: string; to: Recipient; text: string }
+  | { type: "message"; from: string; to: Recipient; text: string; replyTo?: number }
   | { type: "pass"; from: string }
   | { type: "turn.failed"; agent: string; message: string }
   | { type: "paused"; reason: string }

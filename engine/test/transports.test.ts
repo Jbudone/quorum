@@ -77,7 +77,8 @@ describe("OpencodeTransport invocation", () => {
     expect(cfg.permission).toMatchObject({ edit: "deny", bash: "deny" });
     expect(cfg.prompt).toBe("be a skeptic");
     expect(i.env.OPENCODE_DISABLE_CLAUDE_CODE).toBe("1");
-    expect(i.args.slice(i.args.indexOf("--dir"), i.args.indexOf("--dir") + 2)).toEqual(["--dir", "/repo"]);
+    expect(i.cwd).toBe("/repo");
+    expect(i.args).toContain("--standalone");
   });
   it("resumes with -s", () => {
     expect(inv({ sessionId: "ses_1" }).args).toEqual(expect.arrayContaining(["-s", "ses_1"]));

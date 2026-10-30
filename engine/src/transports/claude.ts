@@ -64,6 +64,8 @@ export interface ClaudeOptions {
  * Isolated from the user's global memory/MCP/skills so every council member sees only its persona.
  */
 export class ClaudeTransport implements AgentTransport {
+  readonly supportsMcp = true;
+
   constructor(
     readonly id = "claude",
     private readonly o: ClaudeOptions = {},
@@ -90,6 +92,12 @@ export class ClaudeTransport implements AgentTransport {
     if (opts.cwd) args.push("--add-dir", opts.cwd);
     if (system) args.push("--append-system-prompt", system);
     if (opts.sessionId) args.push("--resume", opts.sessionId);
+    if (opts.mcp) {
+      const { name, command, args: a, env } = opts.mcp;
+      args.push("--mcp-config", JSON.stringify({ mcpServers: { [name]: { command, args: a, env } } }));
+      // Headless turns can't answer permission prompts, so the server's tools are pre-approved.
+      args.push("--allowedTools", `mcp__${name}`);
+    }
     return args;
   }
 

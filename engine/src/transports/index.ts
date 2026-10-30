@@ -7,7 +7,7 @@ import { OpencodeTransport } from "./opencode.js";
 import { MockTransport, type MockOptions } from "./mock.js";
 import type { AgentTransport } from "./types.js";
 
-export type { AgentEvent, AgentTransport, SendOptions } from "./types.js";
+export type { AgentEvent, AgentTransport, McpServerSpec, SendOptions } from "./types.js";
 
 export interface TransportRequest {
   id: string;

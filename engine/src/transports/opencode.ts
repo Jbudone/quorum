@@ -56,6 +56,8 @@ export interface OpencodeOptions {
 
 /** Drives `opencode run --format json`. The persona becomes a real system prompt via a read-only agent. */
 export class OpencodeTransport extends SubprocessTransport {
+  readonly supportsMcp = true;
+
   constructor(
     id = "opencode",
     private readonly o: OpencodeOptions = {},
@@ -74,16 +76,31 @@ export class OpencodeTransport extends SubprocessTransport {
       ...(opts.systemPrompt ? { prompt: opts.systemPrompt } : {}),
       permission: readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {},
     };
-    const args = ["run", "--format", "json", "--agent", "quorum"];
-    if (opts.cwd) args.push("--dir", opts.cwd);
+    // --standalone runs a private server, so the inline config below applies to this turn only
+    // (the shared background service would ignore it). Opencode 2 has no --dir; the project is the cwd.
+    const args = ["run", "--standalone", "--format", "json", "--agent", "quorum"];
     if (this.o.model) args.push("-m", this.o.model);
     if (opts.sessionId) args.push("-s", opts.sessionId);
     args.push(prompt);
     return {
       cmd: this.o.bin ?? "opencode",
       args,
+      cwd: opts.cwd,
       env: {
-        OPENCODE_CONFIG_CONTENT: JSON.stringify({ agent: { quorum: agentConfig } }),
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          agent: { quorum: agentConfig },
+          ...(opts.mcp
+            ? {
+                mcp: {
+                  [opts.mcp.name]: {
+                    type: "local",
+                    command: [opts.mcp.command, ...opts.mcp.args],
+                    environment: opts.mcp.env,
+                  },
+                },
+              }
+            : {}),
+        }),
         // Opencode reads ~/.claude/CLAUDE.md by default, which would leak the user's own instructions.
         OPENCODE_DISABLE_CLAUDE_CODE: "1",
         OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: "1",
