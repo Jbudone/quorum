@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentSpec, CliName } from "../config.js";
 
@@ -6,13 +6,14 @@ import type { AgentSpec, CliName } from "../config.js";
 export type Recipient = "room" | string;
 
 /** What a proposed change does; the human approves or declines each one. */
-export type SuggestionAction = "steer" | "add" | "remove" | "focus" | "close" | "parallel";
+export type SuggestionAction = "steer" | "add" | "hire" | "remove" | "focus" | "close" | "parallel";
 
 export type DocKind = "plan" | "issue" | "decision" | "other";
 
 /** What the log records. Everything else in a room (inboxes, digests, docs) is derived from these. */
 export type RoomEventBody =
-  | { type: "message"; from: string; to: Recipient; text: string; replyTo?: number; topic?: string }
+  /** `thread` is the seq of the message a side conversation hangs off; a message whose thread is its own seq starts one. */
+  | { type: "message"; from: string; to: Recipient; text: string; replyTo?: number; topic?: string; thread?: number }
   | { type: "pass"; from: string }
   | { type: "turn.failed"; agent: string; message: string }
   | { type: "paused"; reason: string }
@@ -20,7 +21,11 @@ export type RoomEventBody =
   /** The human's private conversation with the assistant, and the assistant's own notes. Members never see these. */
   | { type: "aside"; from: "human" | "assistant"; text: string; kind?: "answer" | "note" | "digest" }
   /** Who the floor gave the next turn to, and why. Members never see it. */
-  | { type: "floor"; picks: { agent: string; why: string; replyTo?: number }[] }
+  | { type: "floor"; picks: { agent: string; why: string; replyTo?: number; thread?: number }[] }
+  /** What each message did to the discussion, as the floor read it; feeds the stats panel. Members never see it. */
+  | { type: "tags"; items: MessageTag[] }
+  /** The outcome of a side conversation, posted back to the channel when it settles. */
+  | { type: "thread.summary"; thread: number; text: string }
   | { type: "suggestion"; id: number; from: "assistant" | "chair"; action: SuggestionAction; args: string[]; why: string }
   | { type: "suggestion.resolved"; id: number; accepted: boolean }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }
@@ -33,6 +38,21 @@ export type RoomEventBody =
   | { type: "agent.left"; agent: string; memo?: string }
   | { type: "budget"; level: "warn" | "stop"; cli: string; detail: string };
 
+export type TagKind = "idea" | "critique" | "agreement" | "concession" | "question" | "evidence" | "decision";
+export const TAG_KINDS: TagKind[] = ["idea", "critique", "agreement", "concession", "question", "evidence", "decision"];
+
+export interface MessageTag {
+  seq: number;
+  from: string;
+  kind: TagKind;
+  /** A few words, for the recent-events list. */
+  headline: string;
+  /** Whom a critique challenges, or whose point a concession accepts. */
+  against?: string;
+  topic?: string;
+  thread?: number;
+}
+
 export type RoomEvent = RoomEventBody & { seq: number; ts: string };
 export type MessageEvent = Extract<RoomEvent, { type: "message" }>;
 
@@ -44,7 +64,13 @@ export interface SupportSpec {
 
 export interface RoomConfig {
   id: string;
+  /** Short channel name, e.g. "terrain-semantics". Rooms saved before channels had none. */
+  name?: string;
   topic: string;
+  /** Files and folders (relative to the repo) every member reads before speaking. */
+  reading?: string[];
+  /** Members picked together think without seeing each other's answers, then revise. */
+  independent?: boolean;
   /** Current members. Members who left are kept in `left` so they can be brought back. */
   agents: AgentSpec[];
   left?: AgentSpec[];
@@ -59,7 +85,7 @@ export interface RoomConfig {
   quotaStop: number;
 }
 
-export type RoomTuning = Pick<RoomConfig, "parallel" | "turnCap" | "quotaWarn" | "quotaStop">;
+export type RoomTuning = Pick<RoomConfig, "parallel" | "turnCap" | "quotaWarn" | "quotaStop"> & Pick<RoomConfig, "independent">;
 
 /** Per-agent state that must survive a restart. */
 export interface AgentState {
@@ -67,6 +93,10 @@ export interface AgentState {
   sessionId?: string;
   /** Turns taken on the current vendor session; past a limit the session is dropped and rebuilt. */
   sessionTurns?: number;
+  /** When this member last went through the channel's reading list (ms since epoch). */
+  readAt?: number;
+  /** The reading list as it stood then, so newly added entries count as unread. */
+  readList?: string[];
   /** Highest event seq this agent has been shown. */
   lastRead: number;
   turns: number;
@@ -95,7 +125,7 @@ export class RoomStore {
   private log: RoomEvent[];
 
   private constructor(
-    root: string,
+    readonly root: string,
     readonly id: string,
   ) {
     this.dir = join(root, ".quorum", "rooms", id);
@@ -114,7 +144,7 @@ export class RoomStore {
     let id = stamp;
     for (let n = 2; existsSync(join(root, ".quorum", "rooms", id)); n++) id = `${stamp}-${n}`;
     const dir = join(root, ".quorum", "rooms", id);
-    for (const sub of ["agents", "docs/topics", "outputs", "notebooks/archive"]) mkdirSync(join(dir, sub), { recursive: true });
+    for (const sub of ["agents", "docs/topics", "outputs"]) mkdirSync(join(dir, sub), { recursive: true });
     writeFileSync(join(dir, "room.json"), JSON.stringify({ id, ...config }, null, 2));
     return new RoomStore(root, id);
   }
@@ -125,7 +155,7 @@ export class RoomStore {
   }
 
   /** Saved rooms under `root`, newest first. */
-  static list(root: string): { id: string; topic: string; events: number; updated: string }[] {
+  static list(root: string): { id: string; name: string; topic: string; events: number; updated: string; digest: string }[] {
     let ids: string[];
     try {
       ids = readdirSync(join(root, ".quorum", "rooms")).sort().reverse();
@@ -135,7 +165,9 @@ export class RoomStore {
     return ids.flatMap((id) => {
       try {
         const s = RoomStore.open(root, id);
-        return [{ id, topic: s.config().topic, events: s.lastSeq, updated: s.log.at(-1)?.ts ?? "" }];
+        const c = s.config();
+        const digest = [...s.log].reverse().find((e) => e.type === "aside" && e.kind === "digest");
+        return [{ id, name: c.name ?? "", topic: c.topic, events: s.lastSeq, updated: s.log.at(-1)?.ts ?? "", digest: digest?.type === "aside" ? digest.text : "" }];
       } catch {
         return [];
       }
@@ -158,6 +190,10 @@ export class RoomStore {
 
   setTopic(topic: string): RoomConfig {
     return this.saveConfig({ ...this.config(), topic });
+  }
+
+  setReading(reading: string[]): RoomConfig {
+    return this.saveConfig({ ...this.config(), reading });
   }
 
   setRoster(agents: AgentSpec[], left: AgentSpec[]): RoomConfig {
@@ -271,29 +307,28 @@ export class RoomStore {
     writeFileSync(join(this.dir, "outputs", slug, "accepted"), `${version}\n`);
   }
 
-  // ---- notebooks (private per member) ----
+  // ---- notebooks (private per member, shared across the workspace's channels) ----
+
+  private notebookPath(agent: string): string {
+    return join(this.root, ".quorum", "members", `${agent}.md`);
+  }
 
   notebook(agent: string): string {
     try {
-      return readFileSync(join(this.dir, "notebooks", `${agent}.md`), "utf8");
+      return readFileSync(this.notebookPath(agent), "utf8");
     } catch {
-      return "";
+      // Rooms from before the workspace kept notebooks per room.
+      try {
+        return readFileSync(join(this.dir, "notebooks", `${agent}.md`), "utf8");
+      } catch {
+        return "";
+      }
     }
   }
 
   writeNotebook(agent: string, text: string): void {
-    mkdirSync(join(this.dir, "notebooks"), { recursive: true });
-    writeFileSync(join(this.dir, "notebooks", `${agent}.md`), text.trimEnd() + "\n");
-  }
-
-  /** Moves a member's notebook aside when it leaves, and back when it rejoins. */
-  archiveNotebook(agent: string, archive: boolean): void {
-    const live = join(this.dir, "notebooks", `${agent}.md`);
-    const kept = join(this.dir, "notebooks", "archive", `${agent}.md`);
-    const [from, to] = archive ? [live, kept] : [kept, live];
-    if (!existsSync(from)) return;
-    mkdirSync(dirname(to), { recursive: true });
-    renameSync(from, to);
+    mkdirSync(dirname(this.notebookPath(agent)), { recursive: true });
+    writeFileSync(this.notebookPath(agent), text.trimEnd() + "\n");
   }
 }
 
@@ -307,6 +342,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "suggestion.resolved":
     case "budget":
     case "floor":
+    case "tags":
       return false;
     default:
       return true;

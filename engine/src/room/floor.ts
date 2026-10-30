@@ -1,5 +1,5 @@
 import { describeRoom, renderEvents, type RoomView } from "./prompts.js";
-import type { RoomEvent } from "./store.js";
+import { TAG_KINDS, type MessageTag, type RoomEvent, type TagKind } from "./store.js";
 
 /** A member who should speak next, and why (shown to the member, so it knows what it was brought in for). */
 export interface FloorPick {
@@ -9,6 +9,14 @@ export interface FloorPick {
   why: string;
   /** Answer privately to this sender (a DM gets a DM back). */
   to?: string;
+  /** The side conversation this turn belongs to. */
+  thread?: number;
+}
+
+/** What the floor decided: who speaks, and what each new message did to the discussion. */
+export interface FloorDecision {
+  picks: FloorPick[];
+  tags: MessageTag[];
 }
 
 export interface FloorContext {
@@ -23,6 +31,8 @@ export interface FloorContext {
   recent: readonly RoomEvent[];
   /** Most members to pick. */
   max: number;
+  /** Set when deciding inside a side conversation: the seq of the message it hangs off. */
+  thread?: number;
 }
 
 /**
@@ -31,7 +41,7 @@ export interface FloorContext {
  * Chair-moderated policy later.
  */
 export interface FloorPolicy {
-  decide(c: FloorContext, signal?: AbortSignal): Promise<FloorPick[]>;
+  decide(c: FloorContext, signal?: AbortSignal): Promise<FloorDecision>;
 }
 
 /**
@@ -54,46 +64,69 @@ export function floorPrompt(c: FloorContext): string {
   return [
     describeRoom(c.view),
     `Members:\n${roster}`,
-    c.recent.length ? `Earlier in the room:\n\n${renderEvents(c.recent, c.view.focus)}` : "",
+    c.thread ? `This is a side thread hanging off message #${c.thread}; decide only for the thread.` : "",
+    c.recent.length ? `Earlier${c.thread ? " in the thread" : " in the room"}:\n\n${renderEvents(c.recent, c.view.focus)}` : "",
     `New since you last decided:\n\n${renderEvents(c.fresh, c.view.focus)}`,
     `Who should speak next? Pick a member only when they have something genuinely new to add: their expertise is needed, a claim they can check or challenge, a question aimed at them, or a flaw they would catch. Several members may speak at once when each has something different to say (at most ${c.max}). A member named with @ by another member is a strong hint, not an obligation: skip them when the room already agrees or the question was answered. Do not pick someone just to agree or restate. Do not pick the author of the latest message unless someone asked them something. Silence is fine: when the point is settled, the room is circling, or it is waiting on the human, pick nobody.`,
+    `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something.`,
     `Answer with JSON only, in this shape:
-{"speak": [{"member": "<id>", "reply_to": <message number they answer>, "why": "<what they should bring, in a few words>"}]}
-An empty list means nobody speaks.`,
+{"speak": [{"member": "<id>", "reply_to": <message number they answer>, "why": "<what they should bring, in a few words>"}],
+ "tags": [{"msg": <message number>, "kind": "<kind>", "headline": "<at most eight words>", "against": "<member, optional>", "topic": "<topic slug, optional>"}]}
+An empty speak list means nobody speaks.`,
   ]
     .filter(Boolean)
     .join("\n\n");
 }
 
-/** Reads a floor model's answer leniently: the first JSON object in it, filtered to real members. */
-export function parseFloor(text: string, members: string[], max: number): FloorPick[] {
+/** Reads a floor model's answer leniently: the first JSON object in it, filtered to real members and messages. */
+export function parseFloor(text: string, members: string[], max: number, fresh: readonly RoomEvent[] = []): FloorDecision {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return [];
+  if (start < 0 || end <= start) return { picks: [], tags: [] };
   let raw: any;
   try {
     raw = JSON.parse(text.slice(start, end + 1));
   } catch {
-    return [];
+    return { picks: [], tags: [] };
   }
   const list: any[] = Array.isArray(raw?.speak) ? raw.speak : [];
-  const out: FloorPick[] = [];
+  const picks: FloorPick[] = [];
   for (const p of list) {
     const agent = String(p?.member ?? "").trim();
-    if (!members.includes(agent) || out.some((o) => o.agent === agent)) continue;
+    if (!members.includes(agent) || picks.some((o) => o.agent === agent)) continue;
     const replyTo = Number(p?.reply_to);
-    out.push({ agent, why: String(p?.why ?? "").trim().slice(0, 200), ...(Number.isInteger(replyTo) && replyTo > 0 ? { replyTo } : {}) });
+    picks.push({ agent, why: String(p?.why ?? "").trim().slice(0, 200), ...(Number.isInteger(replyTo) && replyTo > 0 ? { replyTo } : {}) });
   }
-  return out.slice(0, max);
+  const bySeq = new Map(fresh.flatMap((e) => (e.type === "message" ? [[e.seq, e] as const] : [])));
+  const tags: MessageTag[] = [];
+  for (const t of Array.isArray(raw?.tags) ? raw.tags : []) {
+    const msg = bySeq.get(Number(t?.msg));
+    const kind = String(t?.kind ?? "") as TagKind;
+    if (!msg || !TAG_KINDS.includes(kind) || tags.some((x) => x.seq === msg.seq)) continue;
+    const against = String(t?.against ?? "").trim().replace(/^@/, "");
+    const topic = String(t?.topic ?? "").trim();
+    tags.push({
+      seq: msg.seq,
+      from: msg.from,
+      kind,
+      headline: String(t?.headline ?? "").trim().split(/\s+/).slice(0, 10).join(" ").slice(0, 80),
+      ...(against && against !== msg.from && (members.includes(against) || against === "human") ? { against } : {}),
+      ...(topic ? { topic } : {}),
+      ...(msg.thread ? { thread: msg.thread } : {}),
+    });
+  }
+  return { picks: picks.slice(0, max), tags };
 }
 
-/** Relevance bidding: one cheap model call reads what's new and names who should answer. */
+/** Relevance bidding: one cheap model call reads what's new, names who should answer, and tags each message. */
 export class BidFloor implements FloorPolicy {
   constructor(private readonly ask: (prompt: string, system: string, signal?: AbortSignal) => Promise<string | undefined>) {}
 
-  async decide(c: FloorContext, signal?: AbortSignal): Promise<FloorPick[]> {
-    if (!c.members.length || !c.fresh.length) return [];
+  async decide(c: FloorContext, signal?: AbortSignal): Promise<FloorDecision> {
+    if (!c.fresh.length) return { picks: [], tags: [] };
     const reply = await this.ask(floorPrompt(c), FLOOR_SYSTEM, signal);
-    return reply === undefined ? [] : parseFloor(reply, c.members.map((m) => m.id), c.max);
+    if (reply === undefined) return { picks: [], tags: [] };
+    const d = parseFloor(reply, c.members.map((m) => m.id), c.max, c.fresh);
+    return c.members.length ? d : { picks: [], tags: d.tags };
   }
 }

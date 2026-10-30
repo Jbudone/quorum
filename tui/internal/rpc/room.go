@@ -13,6 +13,8 @@ type (
 		Text    string `json:"text"`
 		ReplyTo int    `json:"replyTo"`
 		Topic   string `json:"topic"`
+		// Thread is the seq of the message a side thread hangs off (its own seq when it starts one).
+		Thread int `json:"thread"`
 
 		Agent   string `json:"agent"`
 		Message string `json:"message"`
@@ -43,27 +45,68 @@ type (
 
 		// Floor decisions: who was given the next turn, and why.
 		Picks []RoomPick `json:"picks"`
+		// Floor tags: what each message did to the discussion.
+		Items []MessageTag `json:"items"`
 	}
 	RoomPick struct {
-		Agent   string `json:"agent"`
-		Why     string `json:"why"`
-		ReplyTo int    `json:"replyTo"`
-		To      string `json:"to"`
+		Agent    string `json:"agent"`
+		Why      string `json:"why"`
+		ReplyTo  int    `json:"replyTo"`
+		To       string `json:"to"`
+		Thread   int    `json:"thread"`
+		Snapshot int    `json:"snapshot"`
+	}
+	MessageTag struct {
+		Seq      int    `json:"seq"`
+		From     string `json:"from"`
+		Kind     string `json:"kind"` // idea | critique | agreement | concession | question | evidence | decision
+		Headline string `json:"headline"`
+		Against  string `json:"against"`
+		Topic    string `json:"topic"`
+		Thread   int    `json:"thread"`
+	}
+	// RoomSupportEvent says a support role (assistant, watch, chair, scribe, floor) started or stopped working.
+	RoomSupportEvent struct {
+		Role string `json:"role"`
+		Busy bool   `json:"busy"`
+	}
+	SetupDelta struct {
+		Delta string `json:"delta"`
+	}
+	SetupReply struct {
+		Text     string         `json:"text"`
+		Proposal *SetupProposal `json:"proposal"`
+	}
+	SetupProposal struct {
+		Name    string        `json:"name,omitempty"`
+		Topic   string        `json:"topic,omitempty"`
+		Reading []string      `json:"reading"`
+		Members []SetupMember `json:"members"`
+	}
+	SetupMember struct {
+		ID      string `json:"id"`
+		CLI     string `json:"cli,omitempty"`
+		Model   string `json:"model,omitempty"`
+		Role    string `json:"role,omitempty"`
+		Persona string `json:"persona,omitempty"`
 	}
 	RoomStateEvent struct {
 		State  string `json:"state"` // paused | running | idle
 		Reason string `json:"reason"`
 	}
 	RoomTurn struct {
-		Agent string `json:"agent"`
+		Agent  string `json:"agent"`
+		Thread int    `json:"thread"`
 	}
 	RoomTurnDelta struct {
-		Agent string `json:"agent"`
-		Delta string `json:"delta"`
+		Agent  string `json:"agent"`
+		Delta  string `json:"delta"`
+		Thread int    `json:"thread"`
 	}
 	RoomTurnTool struct {
-		Agent string `json:"agent"`
-		Name  string `json:"name"`
+		Agent  string `json:"agent"`
+		Name   string `json:"name"`
+		Thread int    `json:"thread"`
 	}
 	RoomUsage struct {
 		Agent            string   `json:"agent"`
@@ -90,10 +133,11 @@ type (
 		Accepted int    `json:"accepted"`
 	}
 	RoomTuning struct {
-		Parallel  int     `json:"parallel"`
-		TurnCap   int     `json:"turnCap"`
-		QuotaWarn float64 `json:"quotaWarn"`
-		QuotaStop float64 `json:"quotaStop"`
+		Parallel    int     `json:"parallel"`
+		TurnCap     int     `json:"turnCap"`
+		QuotaWarn   float64 `json:"quotaWarn"`
+		QuotaStop   float64 `json:"quotaStop"`
+		Independent bool    `json:"independent"`
 	}
 	RoomSupport struct {
 		Assistant ChairSpec `json:"assistant"`
@@ -105,7 +149,10 @@ type (
 	RoomSnapshot struct {
 		ID            string         `json:"id"`
 		Dir           string         `json:"dir"`
+		Name          string         `json:"name"`
 		Topic         string         `json:"topic"`
+		Reading       []string       `json:"reading"`
+		Skipped       []string       `json:"skipped"`
 		State         string         `json:"state"`
 		Agents        []PresetAgent  `json:"agents"`
 		Left          []PresetAgent  `json:"left"`
@@ -121,9 +168,22 @@ type (
 	}
 	RoomListItem struct {
 		ID      string `json:"id"`
+		Name    string `json:"name"`
 		Topic   string `json:"topic"`
 		Events  int    `json:"events"`
 		Updated string `json:"updated"`
+		Digest  string `json:"digest"`
+	}
+	WorkspaceMember struct {
+		ID      string `json:"id"`
+		CLI     string `json:"cli"`
+		Model   string `json:"model"`
+		Persona string `json:"persona"`
+		Role    string `json:"role"`
+	}
+	Workspace struct {
+		Channels []RoomListItem    `json:"channels"`
+		Members  []WorkspaceMember `json:"members"`
 	}
 	RoomDocText struct {
 		Name string `json:"name"`

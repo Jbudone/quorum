@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { RoomEmit } from "../src/room/room.js";
-import { RoomStore } from "../src/room/store.js";
+import { RoomStore, type RoomEvent } from "../src/room/store.js";
 import type { AgentEvent, AgentTransport } from "../src/transports/index.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { MOCK_SUPPORT } from "../src/room/setup.js";
+import { SetupChat } from "../src/room/setupchat.js";
+import { personaFor, Workspace } from "../src/room/workspace.js";
 import { AGENTS, messages, rig, types } from "./roomRig.js";
+
+/** Who wrote the newest message the floor is deciding on. */
+const lastFrom = (c: { fresh: readonly RoomEvent[] }) => {
+  const e = c.fresh.at(-1);
+  return e?.type === "message" ? e.from : undefined;
+};
 
 let cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -37,24 +48,27 @@ describe("Room floor", () => {
     expect(room.store.events().find((e) => e.type === "floor")).toMatchObject({ picks: [{ agent: "arch" }, { agent: "skeptic" }] });
   });
 
-  it("stays quiet when the floor picks nobody; an @mention still gets an answer", async () => {
-    const r = setup({ floor: () => [] });
+  it("stays quiet when the floor picks nobody after members talk; an @mention still gets an answer", async () => {
+    const r = setup({ floor: () => [], member: () => "PASS" });
     const room = r.create();
     room.resume();
     await room.settled();
+    // The human's opening never goes unanswered: with no pick, the least recent speaker takes it.
+    expect(r.memberCalls().map((c) => c.agent)).toEqual(["arch"]);
+    expect(r.memberCalls()[0].prompt).toContain("the human asked and nobody else picked it up");
     expect(room.state).toBe("idle");
-    expect(r.memberCalls()).toHaveLength(0);
     expect(r.decisions).toHaveLength(1);
+    r.calls.length = 0;
 
     room.post("@skeptic what would break?");
     await room.settled();
     expect(r.memberCalls().map((c) => c.agent)).toEqual(["skeptic"]);
-    expect(r.memberCalls()[0].prompt).toContain("You have the floor to answer #5: human asked you directly.");
+    expect(r.memberCalls()[0].prompt).toMatch(/You have the floor to answer #\d+: human asked you directly\./);
   });
 
   it("lets only the human and the Chair summon a member with @; between members it's a hint", async () => {
     const r = setup({ floor: () => [], member: (a, n) => (a === "skeptic" && n === 1 ? "@arch you're wrong" : "PASS") });
-    const room = r.create();
+    const room = r.create({ topic: undefined });
     room.resume();
     room.post("@skeptic thoughts?");
     await room.settled();
@@ -136,17 +150,18 @@ describe("Room floor", () => {
   });
 
   it("delivers a DM only to its recipient, without asking the floor", async () => {
-    const r = setup({ floor: () => [] });
+    const r = setup({ floor: () => [], member: (_a, _n, prompt) => (/wrote to you privately/.test(prompt) ? "noted" : "PASS") });
     const room = r.create();
     room.resume();
     await room.settled();
+    r.calls.length = 0;
     room.post("just between us", "skeptic");
     await room.settled();
     expect(r.memberCalls().map((c) => c.agent)).toEqual(["skeptic"]);
     expect(r.memberCalls()[0].prompt).toContain("human → skeptic (private)");
     expect(r.memberCalls()[0].prompt).toContain("Your reply goes privately to human");
     // The answer goes back privately, so the floor isn't asked about it either.
-    expect(messages(room).at(-1)).toMatchObject({ from: "skeptic", to: "human", replyTo: 5 });
+    expect(messages(room).at(-1)).toMatchObject({ from: "skeptic", to: "human", replyTo: messages(room).at(-2)!.seq });
     expect(r.decisions).toHaveLength(1);
     expect(() => room.post("hi", "nobody")).toThrow(/unknown member/);
   });
@@ -181,31 +196,144 @@ describe("Room floor", () => {
   });
 });
 
-describe("Empty rooms", () => {
-  it("starts with just the human; the first message sets the topic and the assistant proposes members", async () => {
+describe("Threads", () => {
+  it("keeps a side question out of the channel, answers it in the thread, and posts the outcome back", async () => {
     const r = setup({
-      assistant: ["For this I'd bring in two people.\n>> add: architect mock | designs it\n>> add: skeptic mock | attacks it"],
-      member: (a) => `${a} here`,
+      floor: (c) => (c.thread ? (lastFrom(c) === "human" ? [{ agent: "skeptic", why: "knows" }] : []) : []),
+      member: (a, _n, prompt) => (/side thread/.test(prompt) ? "Thirty seconds." : /the human asked/.test(prompt) ? "PASS" : `${a} on the main topic`),
+      scribe: ["They settled on a 30 s TTL."],
     });
-    const room = r.create({ topic: undefined, agents: [] });
-    expect(room.store.events()).toEqual([]);
+    const room = r.create();
     room.resume();
-    room.post("How should we cache product reads?");
     await room.settled();
-    expect(room.store.config().topic).toBe("How should we cache product reads?");
-    expect(room.focus()).toBe("how-should-we-cache-product");
-    expect(r.calls.find((c) => c.agent === "assistant")!.prompt).toContain("The room has no members yet");
-    expect(room.pending().map((p) => p.args)).toEqual([
-      ["architect", "mock"],
-      ["skeptic", "mock"],
-    ]);
+    r.calls.length = 0;
+    const q = room.post("How long can a price be stale?", "room", "new");
+    expect(q).toMatchObject({ thread: q.seq });
+    await room.settled();
 
-    // Approving a member brings it in, and it speaks to the question right away.
-    await room.resolve(room.pending()[0].id, true);
+    expect(r.memberCalls().map((c) => c.agent)).toEqual(["skeptic"]);
+    const prompt = r.memberCalls()[0].prompt;
+    expect(prompt).toContain("You're in a side thread");
+    expect(prompt).toContain("How long can a price be stale?");
+    expect(room.thread(q.seq).messages).toMatchObject([{ from: "skeptic", text: "Thirty seconds.", thread: q.seq }]);
+    expect(room.store.events().find((e) => e.type === "thread.summary")).toMatchObject({ thread: q.seq, text: "They settled on a 30 s TTL." });
+
+    // Back in the channel, members see the thread's outcome but not the thread itself.
+    room.post("@arch anything else?");
     await room.settled();
-    expect(r.memberCalls()[0]).toMatchObject({ agent: "architect" });
-    expect(r.memberCalls()[0].prompt).toContain("you just joined");
-    expect(messages(room).at(-1)).toMatchObject({ from: "architect", text: "architect here" });
+    const main = r.memberCalls().at(-1)!.prompt;
+    expect(main).toContain(`side thread #${q.seq} settled: They settled on a 30 s TTL.`);
+    expect(main).not.toContain("Thirty seconds.");
+    // Each thread keeps its own vendor session.
+    expect(room.store.agentState(`skeptic@t${q.seq}`)).toMatchObject({ sessionId: "skeptic-session" });
+    expect(() => room.post("x", "room", 2)).toThrow(/no message #2/);
+  });
+});
+
+describe("Floor tags", () => {
+  it("logs what each message did, for the stats panel, without showing it to members", async () => {
+    const r = setup({ member: (a) => (a === "arch" ? "Use an LRU." : "PASS") });
+    const floor = {
+      decide: async (c: any) => ({
+        picks: c.fresh.at(-1).from === "human" ? [{ agent: "arch", why: "" }] : [],
+        tags: c.fresh.map((e: any) => ({ seq: e.seq, from: e.from, kind: e.from === "arch" ? "idea" : "question", headline: "x" })),
+      }),
+    };
+    const room = r.create({ floor });
+    room.resume();
+    await room.settled();
+    const tags = room.store.events().flatMap((e) => (e.type === "tags" ? e.items : []));
+    expect(tags.map((t) => [t.from, t.kind])).toEqual([
+      ["human", "question"],
+      ["arch", "idea"],
+    ]);
+    expect(r.memberCalls().every((c) => !c.prompt.includes('"tags"'))).toBe(true);
+  });
+});
+
+describe("Reading list", () => {
+  it("has members read it first, then only what changed", async () => {
+    const r = setup({ floor: (c) => (lastFrom(c) === "human" ? [{ agent: "arch", why: "" }] : []), member: () => "PASS" });
+    mkdirSync(join(r.repo, "docs"));
+    writeFileSync(join(r.repo, "docs", "past.md"), "# earlier");
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
+    expect(room.setReading(["docs"])).toEqual(["docs"]);
+    expect(() => room.setReading(["../etc"])).toThrow(/outside the project/);
+    room.resume();
+    await room.settled();
+    expect(r.memberCalls()[0].prompt).toContain("This channel's reading list: docs. You haven't read it yet");
+
+    await new Promise((res) => setTimeout(res, 20));
+    writeFileSync(join(r.repo, "docs", "new.md"), "# later");
+    room.post("next");
+    await room.settled();
+    expect(r.memberCalls()[1].prompt).toContain("Changed in the reading list since you last read it: docs/new.md.");
+  });
+});
+
+describe("Independent takes", () => {
+  it("lets members draft without seeing each other, then revise once they have", async () => {
+    const r = setup({ member: (a, n, prompt) => (/While you were thinking/.test(prompt) ? `${a} revised` : `${a} draft ${n}`), delayMs: 5 });
+    const floor = { decide: async (c: any) => ({ picks: c.fresh.at(-1).from === "human" ? [{ agent: "arch", why: "" }, { agent: "skeptic", why: "" }] : [], tags: [] }) };
+    const room = r.create({ floor, independent: true, parallel: 1 });
+    room.resume();
+    await room.settled();
+    // skeptic ran second: it drafted from the snapshot without arch's answer, then revised after reading it.
+    const sk = r.memberCalls().filter((c) => c.agent === "skeptic");
+    expect(sk[0].prompt).not.toContain("arch draft");
+    expect(sk[1].prompt).toContain("While you were thinking");
+    expect(messages(room).map((e) => e.type === "message" && e.text)).toEqual(["pick a cache", "arch draft 1", "skeptic revised"]);
+  });
+});
+
+describe("Workspace members", () => {
+  it("hires an invented member into the workspace; members carry their notebook and see their other channels", async () => {
+    const r = setup({ assistant: ["Nobody covers tenants.\n>> hire: tenant-expert | mock | multi-tenancy researcher | Studies isolation between tenants. | nobody covers tenants", "DIGEST:\nLRU agreed."], member: () => "PASS" });
+    const first = r.create({ name: "cache" });
+    await first.ask("who's missing?");
+    expect(first.pending()).toMatchObject([{ action: "hire", args: ["tenant-expert", "mock", "", "multi-tenancy researcher", "Studies isolation between tenants."] }]);
+    await first.resolve(first.pending()[0].id, true);
+    expect(new Workspace(r.repo).members().map((m) => m.id)).toContain("tenant-expert");
+    expect(personaFor(r.repo, "tenant-expert").role).toBe("multi-tenancy researcher");
+    await first.watch("check-in");
+    first.store.writeNotebook("tenant-expert", "remember: keys need tenant ids");
+
+    // In another channel the same member brings its notebook and sees where the first channel stands.
+    const second = r.create({ name: "imports", topic: "bulk imports", agents: [{ id: "tenant-expert", cli: "mock", persona: "tenant-expert" }] });
+    second.resume();
+    await second.settled();
+    const prompt = r.memberCalls().filter((c) => c.agent === "tenant-expert").at(-1)!.prompt;
+    expect(prompt).toContain("remember: keys need tenant ids");
+    expect(prompt).toContain("You're also in #cache, where things stand like this:\nLRU agreed.");
+  });
+});
+
+describe("Setup chat", () => {
+  it("has no channel until the human approves a lineup, then every member gives a first take", async () => {
+    const r = setup({ member: (a) => `${a}: first take`, floor: () => [] });
+    mkdirSync(join(r.repo, "notes"));
+    writeFileSync(join(r.repo, "notes", "a.md"), "x");
+    const replies = [
+      "Got it. Any docs they should read?",
+      ">> channel: Level Gen! | AI-generated 2D levels\n>> read: notes\n>> read: missing\n>> member: pcg-researcher | mock | PCG researcher | Knows generative methods.\n>> member: ux-researcher | mock | UX researcher | Studies players.\nHere's who I'd bring in.",
+    ];
+    const transports = (spec: any) => (spec.id === "assistant" ? { id: "assistant", async *send() { yield { type: "text" as const, delta: replies.shift()! }; } } : r.transports(spec));
+    const chat = new SetupChat({ repo: r.repo, transports, clis: ["mock"], support: MOCK_SUPPORT, floor: r.floor, head: () => "abc" });
+    expect(() => chat.create()).toThrow(/no lineup yet/);
+    expect(await chat.say("I want help with level generation")).toEqual({ text: "Got it. Any docs they should read?" });
+    const second = await chat.say("docs are in notes/");
+    expect(second.text).toBe("Here's who I'd bring in.");
+    expect(second.proposal).toMatchObject({ name: "level-gen", topic: "AI-generated 2D levels", reading: ["notes", "missing"], members: [{ id: "pcg-researcher", role: "PCG researcher" }, { id: "ux-researcher" }] });
+    expect(RoomStore.list(r.repo)).toEqual([]);
+
+    const { room, skipped } = chat.create();
+    expect(skipped).toEqual(["missing"]);
+    expect(room.store.config()).toMatchObject({ name: "level-gen", reading: ["notes"], topic: "AI-generated 2D levels" });
+    room.resume();
+    await room.settled();
+    expect(r.memberCalls().map((c) => c.agent).sort()).toEqual(["pcg-researcher", "ux-researcher"]);
+    expect(r.memberCalls()[0].prompt).toContain("the channel just opened: read the reading list");
+    await room.close();
   });
 });
 

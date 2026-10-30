@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { listPersonas, loadPersona, type AgentSpec, type CliName, type Persona } from "../config.js";
+import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
@@ -14,8 +14,13 @@ import {
   EXIT_MEMO,
   memberFresh,
   memberIncremental,
+  memberThread,
   parseWatch,
+  renderEvent,
   renderEvents,
+  reviseIndependent,
+  THREAD_SUMMARY,
+  threadSummaryPrompt,
   SCRIBE_SYSTEM,
   scribePrompt,
   type FloorReason,
@@ -29,6 +34,7 @@ import {
   type AgentState,
   type DocKind,
   type MessageEvent,
+  type MessageTag,
   type Recipient,
   type RoomConfig,
   type RoomEvent,
@@ -38,15 +44,18 @@ import {
   type SupportSpec,
 } from "./store.js";
 import { newToken, ToolServer, type ToolHandler } from "./tools.js";
+import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
 export type RoomEmit =
   | { event: "room.event"; data: RoomEvent }
   | { event: "room.state"; data: { state: RoomState; reason?: string } }
-  | { event: "room.turn.start"; data: { agent: string } }
-  | { event: "room.turn.delta"; data: { agent: string; delta: string } }
-  | { event: "room.turn.tool"; data: { agent: string; name: string } }
-  | { event: "room.turn.end"; data: { agent: string } }
+  | { event: "room.turn.start"; data: { agent: string; thread?: number } }
+  | { event: "room.turn.delta"; data: { agent: string; delta: string; thread?: number } }
+  | { event: "room.turn.tool"; data: { agent: string; name: string; thread?: number } }
+  | { event: "room.turn.end"; data: { agent: string; thread?: number } }
+  /** A support role started or stopped working, so the human can see it isn't stuck. */
+  | { event: "room.support"; data: { role: SupportRole | "watch"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } };
 
 /** paused: nobody is woken. running: turns underway. idle: running, but nobody has anything new to answer. */
@@ -80,6 +89,10 @@ export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
   agents?: AgentSpec[];
   /** Defaults to each role running on the first member's CLI. */
   support?: Partial<RoomConfig["support"]>;
+  name?: string;
+  reading?: string[];
+  /** Every member speaks once when the channel opens (its first take), instead of waiting for the floor. */
+  kickoff?: boolean;
 }
 
 /** How many recent events a member without a live vendor session is shown. */
@@ -97,7 +110,20 @@ const EVERY = { scribe: 8, chair: 10, watch: 8 };
 interface LiveTurn {
   agent: string;
   ctrl: AbortController;
+  thread?: number;
 }
+
+/** A member the floor gave a turn to. */
+interface Want extends FloorReason {
+  agent: string;
+}
+
+/** Turns are per member and per conversation: a member can be wanted in the channel and in a thread at once. */
+const turnKey = (agent: string, thread?: number) => (thread ? `${agent}#${thread}` : agent);
+/** Each thread keeps its own vendor session and read position, so it doesn't fill the channel's context. */
+const stateKey = (agent: string, thread?: number) => (thread ? `${agent}@t${thread}` : agent);
+/** Messages in a side thread (including one that starts a thread) stay out of the main conversation. */
+const inMain = (e: RoomEvent) => e.type !== "message" || e.thread === undefined;
 
 /** Log events members aren't shown: bookkeeping that would only distract them. */
 const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.failed", "paused", "resumed"]);
@@ -105,7 +131,7 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "remove", "focus", "close", "parallel", "pause"] as const;
+const ASSISTANT_VERBS = ["steer", "add", "hire", "remove", "focus", "close", "parallel", "pause"] as const;
 
 /**
  * A long-running discussion. Members are not processes: each is an identity with persisted state.
@@ -118,9 +144,9 @@ const ASSISTANT_VERBS = ["steer", "add", "remove", "focus", "close", "parallel",
  */
 export class Room {
   private readonly personas = new Map<string, Persona>();
-  private readonly running = new Map<string, { ctrl: AbortController; why: FloorReason }>();
-  /** Members the floor gave a turn to that haven't started it yet. Saved, so a restart keeps them. */
-  private readonly wants = new Map<string, FloorReason>();
+  private readonly running = new Map<string, { agent: string; ctrl: AbortController; why: FloorReason }>();
+  /** Turns the floor gave out that haven't started yet, by turn key. Saved, so a restart keeps them. */
+  private readonly wants = new Map<string, Want>();
   private deciding = false;
   private floorDirty = false;
   private readonly floorPolicy: FloorPolicy;
@@ -143,9 +169,9 @@ export class Room {
     readonly store: RoomStore,
     private readonly o: RoomOptions,
   ) {
-    for (const a of store.config().agents) this.personas.set(a.id, loadPersona(a.persona, o.assetsDir));
+    for (const a of store.config().agents) this.personas.set(a.id, personaFor(o.repo, a.persona, o.assetsDir));
     try {
-      for (const [agent, why] of JSON.parse(String(store.meta().wants ?? "[]")) as [string, FloorReason][]) this.wants.set(agent, why);
+      for (const [key, w] of JSON.parse(String(store.meta().wants ?? "[]")) as [string, Want][]) this.wants.set(key, { ...w, agent: w.agent ?? key });
     } catch {}
     this.floorPolicy = o.floor ?? new BidFloor((prompt, system, signal) => this.oneShot("floor", prompt, system, undefined, undefined, signal));
   }
@@ -156,6 +182,9 @@ export class Room {
     const topic = o.topic?.trim() ?? "";
     const first: SupportSpec = { cli: agents[0]?.cli ?? "mock" };
     const store = RoomStore.create(o.repo, {
+      ...(o.name ? { name: o.name } : {}),
+      ...(o.reading?.length ? { reading: o.reading } : {}),
+      ...(o.independent ? { independent: true } : {}),
       topic,
       agents,
       left: [],
@@ -167,7 +196,11 @@ export class Room {
     });
     if (topic) {
       openingTopic(store, topic);
-      store.append({ type: "message", from: "human", to: "room", text: topic });
+      const first = store.append({ type: "message", from: "human", to: "room", text: topic });
+      if (o.kickoff && agents.length) {
+        const why = o.reading?.length ? "the channel just opened: read the reading list, then give your first take from your angle" : "the channel just opened: give your first take from your angle";
+        store.setMeta({ floorSeq: first.seq, wants: JSON.stringify(agents.map((a) => [a.id, { agent: a.id, why, replyTo: first.seq }])) });
+      }
     }
     return new Room(store, o);
   }
@@ -185,9 +218,9 @@ export class Room {
     return this._state;
   }
 
-  /** Members currently mid-turn. */
+  /** Members currently mid-turn (in the channel or a thread). */
   get speaking(): string[] {
-    return [...this.running.keys()];
+    return [...new Set([...this.running.values()].map((t) => t.agent))];
   }
 
   on(listener: (e: RoomEmit) => void): () => void {
@@ -300,24 +333,48 @@ export class Room {
       const v = patch[k];
       if (v !== undefined && !(v > 0 && v <= 1)) throw new Error(`${k} must be a fraction between 0 and 1`);
     }
-    const { parallel, turnCap, quotaWarn, quotaStop } = this.store.updateConfig(patch);
+    const { parallel, turnCap, quotaWarn, quotaStop, independent } = this.store.updateConfig(patch);
     this.kick();
-    return { parallel, turnCap, quotaWarn, quotaStop };
+    return { parallel, turnCap, quotaWarn, quotaStop, independent: Boolean(independent) };
   }
 
-  /** The human speaks: to the whole room, or privately to one member. The first room message sets the topic. */
-  post(text: string, to: Recipient = "room"): RoomEvent {
+  /** Sets the channel's reading list; members are told about entries they haven't read on their next turn. */
+  setReading(paths: string[]): string[] {
+    const clean = [...new Set(paths.map((p) => readingPath(this.o.repo, p)))];
+    this.store.setReading(clean);
+    return clean;
+  }
+
+  /**
+   * The human speaks: to the whole channel, or privately to one member. `thread` posts into a side
+   * thread (the seq it hangs off), or "new" starts one with this message, so a quick question doesn't
+   * spend the main discussion's context. The first channel message sets the topic.
+   */
+  post(text: string, to: Recipient = "room", thread?: number | "new"): RoomEvent {
     if (!text.trim()) throw new Error("say something first");
     if (to !== "room" && !this.personas.has(to)) throw new Error(`unknown member "${to}"`);
-    if (to === "room" && !this.store.config().topic) {
+    if (to !== "room" && thread) throw new Error("private messages can't go in a thread");
+    let th: number | undefined;
+    if (thread === "new") th = this.store.lastSeq + 1;
+    else if (thread) {
+      const root = this.store.events()[thread - 1];
+      if (root?.type !== "message" || root.to !== "room" || (root.thread && root.thread !== root.seq)) throw new Error(`no message #${thread} to start a thread from`);
+      th = thread;
+    }
+    if (to === "room" && !th && !this.store.config().topic) {
       this.store.setTopic(text.trim());
       for (const b of openingTopic(this.store, text.trim())) this.emit({ event: "room.event", data: b });
+      if (thread === "new") th = this.store.lastSeq + 1;
     }
-    const e = this.log({ type: "message", from: "human", to, text: text.trim() });
-    // Nobody to hear it yet: the assistant proposes who to bring in.
-    if (!this.members().length && to === "room") void this.watch("the human described the problem in an empty room; propose who should join");
+    const e = this.log({ type: "message", from: "human", to, text: text.trim(), ...(th ? { thread: th } : {}) });
     this.floorCheck();
     return e;
+  }
+
+  /** The messages of a side thread, oldest first, and the message it hangs off. */
+  thread(seq: number): { root?: RoomEvent; messages: RoomEvent[] } {
+    const root = this.store.events()[seq - 1];
+    return { root, messages: this.store.events().filter((e) => e.type === "message" && e.thread === seq && e.seq !== seq) };
   }
 
   setFocus(slug: string, by = "human"): void {
@@ -349,68 +406,87 @@ export class Room {
     if (this.focus() === slug) void this.runChair("the topic in focus was just closed; propose what the room should focus on next");
   }
 
-  /** Brings in a new member, or brings back one who left. It wakes at once to catch up. */
+  /**
+   * Brings a member into this channel: a workspace member (by id, with its memory), a new one built
+   * on a persona, or one who left. It gets the floor at once to catch up.
+   */
   addMember(o: { persona: string; cli: CliName; model?: string; id?: string }): string {
     const c = this.store.config();
     const back = (c.left ?? []).find((a) => a.id === (o.id ?? o.persona));
     if (back && !o.id && back.cli === o.cli && back.model === o.model) return this.rejoin(back.id);
-    const persona = loadPersona(o.persona, this.o.assetsDir);
+    const ws = new Workspace(this.o.repo);
+    const known = ws.members().find((m) => m.id === (o.id ?? o.persona));
+    const personaKey = known?.persona ?? o.persona;
+    const persona = personaFor(this.o.repo, personaKey, this.o.assetsDir);
     const taken = new Set([...c.agents, ...(c.left ?? [])].map((a) => a.id).concat(SUPPORT_ROLES, ["human", "room"]));
     let id = o.id ?? o.persona;
-    if (o.id && taken.has(id)) throw new Error(`"${id}" is already taken`);
+    if (o.id && taken.has(id)) throw new Error(`"${id}" is already in this channel`);
     for (let n = 2; taken.has(id); n++) id = `${o.persona}-${n}`;
-    const spec: AgentSpec = { id, cli: o.cli, persona: o.persona, ...(o.model ? { model: o.model } : {}) };
+    const spec: AgentSpec = { id, cli: o.cli, persona: personaKey, ...(o.model ? { model: o.model } : {}) };
     this.store.setRoster([...c.agents, spec], c.left ?? []);
+    if (!ws.members().some((m) => m.id === id)) ws.saveMember({ ...spec, role: persona.role });
     this.personas.set(id, persona);
-    this.log({ type: "agent.joined", agent: id, persona: o.persona, cli: o.cli, ...(o.model ? { model: o.model } : {}) });
+    this.log({ type: "agent.joined", agent: id, persona: personaKey, cli: o.cli, ...(o.model ? { model: o.model } : {}) });
     this.welcome(id);
     return id;
   }
 
+  /** Brings in a member the assistant invented for this problem: its persona joins the workspace too. */
+  hire(o: { id: string; cli: CliName; model?: string; role: string; persona: string }): string {
+    const ws = new Workspace(this.o.repo);
+    if (!ws.members().some((m) => m.id === o.id)) {
+      ws.writePersona(o.id, { name: o.id, role: o.role, body: o.persona });
+      ws.saveMember({ id: o.id, cli: o.cli, persona: o.id, role: o.role, ...(o.model ? { model: o.model } : {}) });
+    }
+    return this.addMember({ persona: o.id, id: o.id, cli: o.cli, model: o.model });
+  }
+
   /** A member who joins a conversation already under way gets the floor to bring its view. */
   private welcome(id: string): void {
-    if (this.store.events().some((e) => e.type === "message" && e.to === "room")) {
+    if (this.store.events().some((e) => e.type === "message" && e.to === "room" && inMain(e))) {
       this.want({ agent: id, why: "you just joined; catch up on where things stand and bring your angle" });
     }
     this.kick();
   }
 
-  /** Brings back a member who left, with its notebook; it rebuilds its context on its next turn. */
+  /** Brings back a member who left; its notebook went with it, and it rebuilds its context on its next turn. */
   rejoin(id: string): string {
     const c = this.store.config();
     const spec = (c.left ?? []).find((a) => a.id === id);
-    if (!spec) throw new Error(`"${id}" hasn't left the room`);
+    if (!spec) throw new Error(`"${id}" hasn't left the channel`);
     this.store.setRoster([...c.agents, spec], (c.left ?? []).filter((a) => a.id !== id));
-    this.store.archiveNotebook(id, false);
     const st = this.store.agentState(id);
     this.store.saveAgentState(id, { ...st, sessionId: undefined, sessionTurns: 0 });
-    this.personas.set(id, loadPersona(spec.persona, this.o.assetsDir));
+    this.personas.set(id, personaFor(this.o.repo, spec.persona, this.o.assetsDir));
     this.log({ type: "agent.joined", agent: id, persona: spec.persona, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}) });
     this.welcome(id);
     return id;
   }
 
-  /** A member leaves after writing an exit memo (skipped with memo = false). Its notebook is archived. */
+  /** A member leaves after writing an exit memo into its notebook (skipped with memo = false); it stays in the workspace. */
   async removeMember(id: string, memo = true): Promise<void> {
     if (!this.personas.has(id)) throw new Error(`no member "${id}"`);
     this.leaving.add(id);
-    this.running.get(id)?.ctrl.abort();
-    this.wants.delete(id);
+    for (const t of this.running.values()) if (t.agent === id) t.ctrl.abort();
+    for (const [k, w] of this.wants) if (w.agent === id) this.wants.delete(k);
     let text: string | undefined;
     if (memo) {
       const st = this.store.agentState(id);
-      const prompt = st.sessionId ? EXIT_MEMO : `${renderEvents(this.store.events().filter((e) => visibleTo(id, e)).slice(-RECENT))}\n\n${EXIT_MEMO}`;
+      const prompt = st.sessionId ? EXIT_MEMO : `${renderEvents(this.store.events().filter((e) => visibleTo(id, e) && inMain(e)).slice(-RECENT))}\n\n${EXIT_MEMO}`;
       text = (await this.oneShot(id, prompt, this.personas.get(id)!.body, undefined, st.sessionId))?.trim();
-      if (text) this.store.writeNotebook(id, `${this.store.notebook(id)}\n\n## Exit memo\n\n${text}`);
+      if (text) this.store.writeNotebook(id, `${this.store.notebook(id).trimEnd()}\n\n## Left #${this.channelName()}\n\n${text}`);
     }
     const c = this.store.config();
     const spec = c.agents.find((a) => a.id === id)!;
     this.store.setRoster(c.agents.filter((a) => a.id !== id), [...(c.left ?? []).filter((a) => a.id !== id), spec]);
-    this.store.archiveNotebook(id, true);
     this.personas.delete(id);
     this.leaving.delete(id);
     this.log({ type: "agent.left", agent: id, ...(text ? { memo: text } : {}) });
     this.kick();
+  }
+
+  channelName(): string {
+    return this.store.config().name || this.focus() || this.id;
   }
 
   /** The human answers a suggestion; an approved one is carried out at once. */
@@ -427,7 +503,10 @@ export class Room {
         this.post(args[0]);
         return;
       case "add":
-        this.addMember({ persona: args[0], cli: args[1] as CliName, model: args[2] });
+        this.addMember({ persona: args[0], cli: args[1] as CliName, model: args[2] || undefined });
+        return;
+      case "hire":
+        this.hire({ id: args[0], cli: args[1] as CliName, model: args[2] || undefined, role: args[3] ?? "", persona: args[4] ?? "" });
         return;
       case "remove":
         await this.removeMember(args[0]);
@@ -486,9 +565,17 @@ export class Room {
 
   // ---- scheduling ----
 
-  private want(p: FloorPick | (FloorReason & { agent: string })): void {
+  private want(p: FloorPick | Want): void {
     if (!this.personas.has(p.agent) || this.leaving.has(p.agent)) return;
-    this.wants.set(p.agent, { why: p.why, ...(p.replyTo ? { replyTo: p.replyTo } : {}), ...(p.to ? { to: p.to } : {}) });
+    const { agent, why, replyTo, to, thread, snapshot } = p as Want;
+    this.wants.set(turnKey(agent, thread), {
+      agent,
+      why,
+      ...(replyTo ? { replyTo } : {}),
+      ...(to ? { to } : {}),
+      ...(thread ? { thread } : {}),
+      ...(snapshot ? { snapshot } : {}),
+    });
   }
 
   private saveWants(): void {
@@ -496,8 +583,10 @@ export class Room {
   }
 
   /**
-   * After new messages: members addressed directly (a DM or an @mention) get the floor at once, and
-   * the floor policy decides who else, if anyone, has something to add to the public conversation.
+   * After new messages: members addressed directly (a DM, or an @mention from the human or the
+   * Chair) get the floor at once, and the floor policy decides who else, if anyone, has something to
+   * add. The channel and each side thread are decided separately, in order. The floor also tags each
+   * message for the human's dashboard.
    */
   private floorCheck(): void {
     if (this._state === "paused") return;
@@ -515,49 +604,93 @@ export class Room {
         direct.push(
           e.to === m
             ? { agent: m, replyTo: e.seq, why: `${e.from} wrote to you privately`, to: e.from }
-            : { agent: m, replyTo: e.seq, why: `${e.from} asked you directly` },
+            : { agent: m, replyTo: e.seq, why: `${e.from} asked you directly`, ...(e.thread ? { thread: e.thread } : {}) },
         );
       }
     }
     for (const p of direct) this.want(p);
-    const pub = fresh.filter((e) => e.to === "room");
-    if (!pub.length || !members.length) return this.kick();
-    const last = pub.at(-1)!;
-    const firstFresh = pub[0].seq;
+    // Public messages, grouped by conversation: the channel (0) and each thread.
+    const groups = new Map<number, MessageEvent[]>();
+    for (const e of fresh) if (e.to === "room") groups.set(e.thread ?? 0, [...(groups.get(e.thread ?? 0) ?? []), e]);
+    if (!groups.size) return this.kick();
     this.deciding = true;
     this.kick();
-    const recent = this.store
-      .events()
-      .slice(0, firstFresh - 1)
-      .filter((e) => e.type === "message" && e.to === "room")
-      .slice(-20);
-    void this.floorPolicy
-      .decide(
-        {
-          view: this.view(),
-          members: members.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
-          speaking: this.speaking,
-          fresh: pub,
-          recent,
-          max: this.store.config().parallel,
-        },
-        this.supportAbort.signal,
-      )
-      .catch((): FloorPick[] => [])
-      .then((picks) => {
-        if (this._state === "paused") return;
+    void (async () => {
+      this.emit({ event: "room.support", data: { role: "floor", busy: true } });
+      const picked: FloorPick[] = [...direct];
+      const tags: MessageTag[] = [];
+      for (const [thread, pub] of groups) {
+        if (this.state === "paused") break;
+        const d = await this.floorPolicy
+          .decide(
+            {
+              view: this.view(),
+              members: members.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
+              speaking: this.speaking,
+              fresh: pub,
+              recent: this.floorRecent(thread, pub[0].seq),
+              max: this.store.config().parallel,
+              ...(thread ? { thread } : {}),
+            },
+            this.supportAbort.signal,
+          )
+          .catch(() => ({ picks: [] as FloorPick[], tags: [] as MessageTag[] }));
+        tags.push(...d.tags);
         // Whoever spoke last doesn't get to answer itself unless someone asked it something.
-        const chosen = picks.filter((p) => p.agent !== last.from && !direct.some((d) => d.agent === p.agent));
-        for (const p of chosen) this.want(p);
-        if (chosen.length || direct.length) this.log({ type: "floor", picks: [...direct, ...chosen] });
-      })
-      .finally(() => {
-        this.deciding = false;
-        if (this.floorDirty) {
-          this.floorDirty = false;
-          this.floorCheck();
-        } else this.kick();
-      });
+        const last = pub.at(-1)!;
+        const snapshot = this.store.config().independent ? this.store.lastSeq : undefined;
+        const chosen = d.picks
+          .filter((p) => p.agent !== last.from && !direct.some((x) => x.agent === p.agent && (x.thread ?? 0) === thread))
+          .map((p) => ({ ...p, ...(thread ? { thread } : {}), ...(snapshot ? { snapshot } : {}) }));
+        // The human is never left unanswered: if nobody was picked or summoned, whoever has spoken
+        // least recently in this conversation takes it.
+        if (!chosen.length && last.from === "human" && !direct.some((x) => (x.thread ?? 0) === thread)) {
+          const quiet = this.leastRecent(members, thread);
+          if (quiet) chosen.push({ agent: quiet, replyTo: last.seq, why: "the human asked and nobody else picked it up", ...(thread ? { thread } : {}) });
+        }
+        if (this._state !== "paused") for (const p of chosen) this.want(p);
+        picked.push(...chosen);
+        if (thread && !chosen.length) this.settleThread(thread);
+      }
+      this.emit({ event: "room.support", data: { role: "floor", busy: false } });
+      if (tags.length) this.log({ type: "tags", items: tags });
+      if (this._state !== "paused" && picked.length) this.log({ type: "floor", picks: picked });
+    })().finally(() => {
+      this.deciding = false;
+      if (this.floorDirty) {
+        this.floorDirty = false;
+        this.floorCheck();
+      } else this.kick();
+    });
+  }
+
+  /** The member who has spoken least recently in a conversation (never counts as longest ago); ties go by name. */
+  private leastRecent(members: string[], thread: number): string | undefined {
+    const last = new Map<string, number>();
+    for (const e of this.store.events()) {
+      if (e.type === "message" && (e.thread ?? 0) === thread) last.set(e.from, e.seq);
+    }
+    return [...members].sort((a, b) => (last.get(a) ?? 0) - (last.get(b) ?? 0) || a.localeCompare(b))[0];
+  }
+
+  /** Earlier public messages the floor sees for a conversation: the channel's, or a thread's with its root. */
+  private floorRecent(thread: number, before: number): RoomEvent[] {
+    const msgs = this.store.events().slice(0, before - 1).filter((e) => e.type === "message" && e.to === "room");
+    if (!thread) return msgs.filter(inMain).slice(-20);
+    return msgs.filter((e) => e.seq === thread || (e.type === "message" && e.thread === thread)).slice(-20);
+  }
+
+  /** Once a thread goes quiet, posts its outcome back to the channel (once per burst of activity). */
+  private settleThread(thread: number): void {
+    const busy = [...this.running.keys(), ...this.wants.keys()].some((k) => k.endsWith(`#${thread}`));
+    const { root, messages } = this.thread(thread);
+    const lastSeq = messages.at(-1)?.seq ?? thread;
+    if (busy || Number(this.store.meta()[`thread${thread}`] ?? 0) >= lastSeq || !messages.some((m) => m.type === "message" && m.from !== "human")) return;
+    this.store.setMeta({ [`thread${thread}`]: lastSeq });
+    void this.job("scribe", async () => {
+      const text = (await this.oneShot("scribe", threadSummaryPrompt(root, root?.seq === thread && root.type === "message" && root.thread ? [root, ...messages] : messages), THREAD_SUMMARY, undefined, undefined, this.supportAbort.signal))?.trim();
+      if (text && text !== "NOTHING") this.log({ type: "thread.summary", thread, text: text.split("\n")[0].slice(0, 300) });
+    });
   }
 
   /** CLIs without a quota report are held to the turn cap per resume. */
@@ -570,23 +703,23 @@ export class Room {
     if (this._state === "paused") return;
     const { parallel, turnCap } = this.store.config();
     const blocked: string[] = [];
-    for (const [agent, why] of [...this.wants]) {
+    for (const [key, w] of [...this.wants]) {
       if (this.running.size >= parallel) break;
-      if (!this.personas.has(agent) || this.leaving.has(agent)) {
-        this.wants.delete(agent);
+      if (!this.personas.has(w.agent) || this.leaving.has(w.agent)) {
+        this.wants.delete(key);
         continue;
       }
-      if (this.running.has(agent)) continue;
-      const { cli } = this.spec(agent);
+      if (this.running.has(key)) continue;
+      const { cli } = this.spec(w.agent);
       if (this.capped(cli)) {
-        blocked.push(agent);
+        blocked.push(w.agent);
         continue;
       }
-      this.wants.delete(agent);
+      this.wants.delete(key);
       this.turnsByCli.set(cli, (this.turnsByCli.get(cli) ?? 0) + 1);
       const ctrl = new AbortController();
-      this.running.set(agent, { ctrl, why });
-      void this.turn(agent, ctrl, why);
+      this.running.set(key, { agent: w.agent, ctrl, why: w });
+      void this.turn(w.agent, ctrl, w);
     }
     this.saveWants();
     if (this.running.size || this.deciding) return this.setState("running");
@@ -614,8 +747,12 @@ export class Room {
   }
 
   private async turn(agent: string, ctrl: AbortController, why: FloorReason): Promise<void> {
-    let st = this.store.agentState(agent);
-    const upTo = this.store.lastSeq;
+    const thread = why.thread;
+    const key = turnKey(agent, thread);
+    const sk = stateKey(agent, thread);
+    let st = this.store.agentState(sk);
+    // With independent takes, a member drafts from what was there when the floor picked it.
+    const upTo = why.snapshot ?? this.store.lastSeq;
     // Long vendor sessions get compacted unpredictably, and a member that missed a lot reads better
     // from a fresh summary; either way, rebuild its context from files.
     const unread = this.store.events().slice(st.lastRead, upTo).filter((e) => visibleTo(agent, e)).length;
@@ -628,50 +765,64 @@ export class Room {
       this.tools ??= ToolServer.start(this.callTool);
       try {
         mcp = (await this.tools).spec(token);
-        this.live.set(token, { agent, ctrl });
+        this.live.set(token, { agent, ctrl, ...(thread ? { thread } : {}) });
       } catch {
         // Without the tool server the member can still speak; it just can't take side actions.
         this.tools = undefined;
       }
     }
-    this.emit({ event: "room.turn.start", data: { agent } });
-    let text = "";
-    let failed: string | undefined;
+    const tag = thread ? { thread } : {};
+    this.emit({ event: "room.turn.start", data: { agent, ...tag } });
+    const reading = this.readingFor(agent, st);
     let sessionId = st.sessionId;
-    try {
-      for await (const e of transport.send(this.memberPrompt(agent, st, upTo, Boolean(mcp), why), {
-        cwd: this.o.repo,
-        systemPrompt: this.personas.get(agent)?.body,
-        readOnly: this.o.readOnly ?? true,
-        sessionId: st.sessionId,
-        signal: ctrl.signal,
-        mcp,
-      })) {
-        if (e.type === "text") {
-          text += e.delta;
-          this.emit({ event: "room.turn.delta", data: { agent, delta: e.delta } });
-        } else if (e.type === "tool") {
-          // What a member writes before a tool call is thinking aloud; its message is what comes after the last one.
-          text = "";
-          this.emit({ event: "room.turn.tool", data: { agent, name: e.name } });
-        } else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
-        else if (e.type === "done" && e.sessionId) sessionId = e.sessionId;
-        else if (e.type === "error") failed = e.message;
+    const run = async (prompt: string, session: string | undefined): Promise<{ text: string; failed?: string }> => {
+      let text = "";
+      let failed: string | undefined;
+      try {
+        for await (const e of transport.send(prompt, {
+          cwd: this.o.repo,
+          systemPrompt: this.personas.get(agent)?.body,
+          readOnly: this.o.readOnly ?? true,
+          sessionId: session,
+          signal: ctrl.signal,
+          mcp,
+        })) {
+          if (e.type === "text") {
+            text += e.delta;
+            this.emit({ event: "room.turn.delta", data: { agent, delta: e.delta, ...tag } });
+          } else if (e.type === "tool") {
+            // What a member writes before a tool call is thinking aloud; its message is what comes after the last one.
+            text = "";
+            this.emit({ event: "room.turn.tool", data: { agent, name: e.name, ...tag } });
+          } else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
+          else if (e.type === "done" && e.sessionId) sessionId = e.sessionId;
+          else if (e.type === "error") failed = e.message;
+        }
+      } catch (err) {
+        failed = err instanceof Error ? err.message : String(err);
       }
-    } catch (err) {
-      failed = err instanceof Error ? err.message : String(err);
+      return { text: text.trim(), failed };
+    };
+    let { text: reply, failed } = await run(this.memberPrompt(agent, st, upTo, Boolean(mcp), why, reading), st.sessionId);
+    // Independent takes: if others answered while this member was drafting, it reads them and revises.
+    if (why.snapshot && !ctrl.signal.aborted && reply && reply !== PASS) {
+      const others = this.store.events().slice(why.snapshot).filter((e) => e.type === "message" && e.from !== agent && e.to === "room" && (e.thread ?? 0) === (thread ?? 0));
+      if (others.length) {
+        this.emit({ event: "room.turn.tool", data: { agent, name: "revise", ...tag } });
+        const second = await run(sessionId ? reviseIndependent(reply, others) : `${this.memberPrompt(agent, st, upTo, Boolean(mcp), why, reading)}\n\n${reviseIndependent(reply, others)}`, sessionId);
+        if (!second.failed && second.text) reply = second.text;
+      }
     }
-    this.running.delete(agent);
+    this.running.delete(key);
     this.live.delete(token);
-    this.emit({ event: "room.turn.end", data: { agent } });
+    this.emit({ event: "room.turn.end", data: { agent, ...tag } });
     // An aborted turn is owed: the member gets the floor back on resume.
     if (ctrl.signal.aborted) {
-      if (!this.leaving.has(agent) && this.personas.has(agent)) this.wants.set(agent, why);
+      if (!this.leaving.has(agent) && this.personas.has(agent)) this.wants.set(key, { ...why, agent });
       this.saveWants();
       this.settle();
       return;
     }
-    const reply = text.trim();
     if (failed && !reply) {
       this.log({ type: "turn.failed", agent, message: failed });
       // A vendor session that broke the turn is dropped; the next turn rebuilds context from the log.
@@ -679,17 +830,33 @@ export class Room {
     } else if (reply && reply !== PASS) {
       // A DM from a member who has since left goes to the room instead of nowhere.
       const to = why.to && (why.to === "human" || this.personas.has(why.to)) ? why.to : "room";
-      this.log({ type: "message", from: agent, to, text: reply, ...(why.replyTo ? { replyTo: why.replyTo } : {}) });
-      if (to === "room") this.afterMessage();
+      this.log({ type: "message", from: agent, to, text: reply, ...(why.replyTo ? { replyTo: why.replyTo } : {}), ...(to === "room" && thread ? { thread } : {}) });
+      if (to === "room" && !thread) this.afterMessage();
     }
     const fresh = sessionId !== st.sessionId;
-    this.store.saveAgentState(agent, {
+    this.store.saveAgentState(sk, {
       sessionId,
       sessionTurns: sessionId ? (fresh ? 1 : (st.sessionTurns ?? 0) + 1) : 0,
       lastRead: upTo,
       turns: st.turns + 1,
+      ...(reading.paths.length ? { readAt: Date.now(), readList: reading.paths } : { readAt: st.readAt, readList: st.readList }),
     });
     this.floorCheck();
+  }
+
+  /** The channel's reading list for a member: everything if it never read it, otherwise what changed. */
+  private readingFor(agent: string, st: AgentState): { paths: string[]; changed?: string[] } {
+    const paths = this.store.config().reading ?? [];
+    if (!paths.length) return { paths };
+    // The channel-level state holds the reading position, whichever conversation the turn is in.
+    const main = this.store.agentState(agent);
+    const readAt = main.readAt ?? st.readAt;
+    if (!readAt) return { paths };
+    const known = new Set(main.readList ?? st.readList ?? []);
+    const changed = readingFiles(this.o.repo, paths)
+      .filter((f) => f.mtime > readAt || ![...known].some((k) => f.path === k || f.path.startsWith(`${k}/`) || k === "."))
+      .map((f) => f.path);
+    return { paths, changed };
   }
 
   /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
@@ -713,12 +880,19 @@ export class Room {
     }
   }
 
-  private memberPrompt(agent: string, st: AgentState, upTo: number, tools: boolean, floor: FloorReason): string {
+  private memberPrompt(agent: string, st: AgentState, upTo: number, tools: boolean, floor: FloorReason, reading: { paths: string[]; changed?: string[] }): string {
     const events = this.store.events().slice(0, upTo);
-    const seen = events.filter((e) => visibleTo(agent, e) && !MEMBER_NOISE.has(e.type));
     const view = this.view();
+    if (floor.thread) {
+      const { root } = this.thread(floor.thread);
+      const thread = events.filter((e) => e.type === "message" && e.thread === floor.thread && e.seq !== floor.thread && (!st.sessionId || e.seq > st.lastRead));
+      return memberThread({ agent, view, digest: this.digest(), root, thread, tools, floor, fresh: !st.sessionId });
+    }
+    const seen = events.filter((e) => visibleTo(agent, e) && !MEMBER_NOISE.has(e.type) && inMain(e));
+    // The reading list is mentioned on a fresh start, or when something on it changed.
+    const read = !reading.paths.length ? undefined : reading.changed === undefined || reading.changed.length ? reading : undefined;
     if (st.sessionId) {
-      return memberIncremental({ view, recent: seen.filter((e) => e.seq > st.lastRead), tools, floor });
+      return memberIncremental({ view, recent: seen.filter((e) => e.seq > st.lastRead), tools, floor, ...(read ? { reading: read } : {}) });
     }
     const notes: [string, string][] = [];
     for (const p of ["decisions.md", "open-questions.md", view.focus && `topics/${view.focus}.md`, "code-notes.md"]) {
@@ -735,7 +909,25 @@ export class Room {
       joined: st.turns === 0 && events.some((e) => e.type === "agent.joined" && e.agent === agent),
       tools,
       floor,
+      reading: read ?? (reading.paths.length ? { paths: reading.paths, changed: [] } : undefined),
+      elsewhere: this.elsewhere(agent),
     });
+  }
+
+  /** Where things stand in the member's other channels, from each one's assistant digest. */
+  private elsewhere(agent: string): [string, string][] {
+    return new Workspace(this.o.repo)
+      .channels()
+      .filter((c) => c.id !== this.id && c.digest)
+      .flatMap((c): [string, string][] => {
+        try {
+          const cfg = RoomStore.open(this.o.repo, c.id).config();
+          return cfg.agents.some((a) => a.id === agent) ? [[cfg.name || c.id, c.digest]] : [];
+        } catch {
+          return [];
+        }
+      })
+      .slice(0, 4);
   }
 
   /** A warning when the code notes describe a different commit than the repo is at now. */
@@ -849,10 +1041,12 @@ export class Room {
   private async job(name: SupportRole | "watch", fn: () => Promise<void>): Promise<void> {
     if (this.busy.has(name)) return;
     this.busy.add(name);
+    this.emit({ event: "room.support", data: { role: name, busy: true } });
     try {
       await fn();
     } finally {
       this.busy.delete(name);
+      this.emit({ event: "room.support", data: { role: name, busy: false } });
       this.settle();
     }
   }
@@ -970,15 +1164,25 @@ export class Room {
   }
 
   private actions(): string {
-    const personas = listPersonas(this.o.assetsDir).map((p) => p.key);
-    return assistantActions(this.o.clis ?? DEFAULT_CLIS, personas);
+    const here = new Set(this.members());
+    const others = new Workspace(this.o.repo)
+      .members()
+      .filter((m) => !here.has(m.id))
+      .map((m) => `${m.id} (${m.role ?? m.persona})`);
+    return assistantActions(this.o.clis ?? DEFAULT_CLIS, others);
   }
 
   /** Applies the assistant's action lines: a pause at once, everything else as a suggestion. */
   private assistantActions(directives: Directive[]): void {
     for (const d of directives) {
       if (d.verb === "pause") this.pause(`assistant: ${d.args[0] || "pausing for you"}`);
-      else if (d.args.length && d.args[0]) this.suggest("assistant", d.verb as SuggestionAction, d.args, d.why);
+      else if (d.verb === "hire") {
+        // >> hire: id | cli [model] | role | persona | why
+        const [cliModel = "", role = "", persona = "", ...why] = d.why.split("|").map((x) => x.trim());
+        const [cli, model] = cliModel.split(/\s+/);
+        const id = (d.args[0] ?? "").toLowerCase();
+        if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) && cli && role && persona) this.suggest("assistant", "hire", [id, cli, model ?? "", role, persona], why.join(" | "));
+      } else if (d.args.length && d.args[0]) this.suggest("assistant", d.verb as SuggestionAction, d.args, d.why);
     }
   }
 
@@ -989,7 +1193,7 @@ export class Room {
     const context = this.assistantContext();
     let answer = "";
     await this.job("assistant", async () => {
-      const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions(), !this.members().length), ASSISTANT_SYSTEM, onDelta);
+      const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions()), ASSISTANT_SYSTEM, onDelta);
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
       answer = prose;
@@ -1003,11 +1207,10 @@ export class Room {
   watch(reason: string): Promise<void> {
     return this.job("watch", async () => {
       this.store.setMeta({ watchSeq: this.store.lastSeq });
-      const empty = !this.members().length;
-      const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason, this.actions(), empty), ASSISTANT_SYSTEM);
+      const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason, this.actions()), ASSISTANT_SYSTEM);
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
-      const { digest, note } = empty ? { digest: undefined, note: prose.trim() && prose.trim() !== "NOTHING" ? prose.trim() : undefined } : parseWatch(prose);
+      const { digest, note } = parseWatch(prose);
       if (digest && digest !== this.digest()) this.log({ type: "aside", from: "assistant", text: digest, kind: "digest" });
       if (note) this.log({ type: "aside", from: "assistant", text: note, kind: "note" });
       this.assistantActions(directives);

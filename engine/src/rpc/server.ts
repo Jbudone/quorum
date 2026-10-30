@@ -13,6 +13,8 @@ import { councilWorkflow } from "../workflows/council.js";
 import { Room, type TransportFactory } from "../room/room.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
+import { SetupChat } from "../room/setupchat.js";
+import { Workspace } from "../room/workspace.js";
 
 /**
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
@@ -26,8 +28,12 @@ import { RoomStore } from "../room/store.js";
  * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept},
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
- * room.export {slug}. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end, room.usage,
- * room.assistant.delta. Closing stdin pauses the room.
+ * room.export {slug}, room.read {paths}. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
+ * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
+ *
+ * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
+ * setup.say {text} talks in it (setup.delta, then setup.reply {text, proposal?}), and setup.create {proposal?} opens the
+ * channel and returns its snapshot.
  */
 export interface RpcOptions {
   /** Override transport creation (tests, playground). */
@@ -42,20 +48,22 @@ export interface RpcOptions {
 }
 
 /** Most log entries sent when a room is opened; older history stays on disk. */
-const SNAPSHOT_EVENTS = 400;
+const SNAPSHOT_EVENTS = 1500;
 
 function snapshot(r: Room) {
   const c = r.store.config();
   return {
     id: r.id,
     dir: r.store.dir,
+    name: c.name ?? "",
     topic: c.topic,
+    reading: c.reading ?? [],
     state: r.state,
     agents: c.agents,
     left: c.left ?? [],
     support: c.support,
     digest: r.digest() ?? "",
-    tuning: { parallel: c.parallel, turnCap: c.turnCap, quotaWarn: c.quotaWarn, quotaStop: c.quotaStop },
+    tuning: { parallel: c.parallel, turnCap: c.turnCap, quotaWarn: c.quotaWarn, quotaStop: c.quotaStop, independent: Boolean(c.independent) },
     focus: r.focus() ?? "",
     topics: r.topics(),
     docs: r.docs(),
@@ -88,6 +96,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
   let started = false;
   let running: Promise<unknown> = Promise.resolve();
   let room: Room | undefined;
+  let setup: SetupChat | undefined;
 
   const needRoom = (): Room => {
     if (!room) throw new Error("no room: call room.start or room.open first");
@@ -213,7 +222,43 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return {};
 
       case "rooms.list":
-        return RoomStore.list(String(p.repo));
+        return new Workspace(String(p.repo)).channels();
+      case "workspace.open": {
+        const ws = new Workspace(String(p.repo));
+        return { channels: ws.channels(), members: ws.members() };
+      }
+      case "setup.start": {
+        const fake = Boolean(p.mock) || Boolean(opts.roomTransports);
+        const usable: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
+        const repo = String(p.repo);
+        setup = new SetupChat({
+          repo,
+          // Resolved lazily: during setup there's no channel yet, and afterwards it's the one setup created.
+          transports: transportsFor((id) => (room ? personaIn(() => room!.store.config())(id) : id)),
+          assetsDir: opts.assetsDir,
+          clis: usable,
+          support: fake ? MOCK_SUPPORT : supportFor(usable),
+        });
+        return {};
+      }
+      case "setup.say": {
+        const s = setup;
+        if (!s) throw new Error("no setup: call setup.start first");
+        const text = String(p.text ?? "");
+        if (!text.trim()) throw new Error("say something first");
+        side(async () => {
+          const reply = await s.say(text, (delta) => write({ event: "setup.delta", data: { delta } }));
+          write({ event: "setup.reply", data: reply });
+        });
+        return {};
+      }
+      case "setup.create": {
+        if (!setup) throw new Error("no setup: call setup.start first");
+        const { room: r, skipped } = setup.create(p.proposal ?? undefined, { parallel: p.parallel ? Number(p.parallel) : undefined, turnCap: p.turnCap ? Number(p.turnCap) : undefined });
+        setup = undefined;
+        await adopt(r);
+        return { ...snapshot(r), skipped };
+      }
       case "room.start": {
         // With no preset or config the room starts empty: just the human and the assistant, who proposes members.
         let config = p.config ? councilFromWire(p.config, opts.assetsDir) : p.preset ? loadPreset(String(p.preset), opts.assetsDir) : undefined;
@@ -252,7 +297,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         needRoom().pause(p.reason ? String(p.reason) : undefined);
         return {};
       case "room.post":
-        return { seq: needRoom().post(String(p.text ?? ""), p.to ? String(p.to) : "room").seq };
+        return { seq: needRoom().post(String(p.text ?? ""), p.to ? String(p.to) : "room", p.thread === "new" ? "new" : p.thread ? Number(p.thread) : undefined).seq };
+      case "room.read":
+        return { reading: needRoom().setReading(Array.isArray(p.paths) ? p.paths.map(String) : []) };
       case "room.ask": {
         const r = needRoom();
         const text = String(p.text ?? "");
@@ -266,7 +313,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return {};
       }
       case "room.configure":
-        return needRoom().configure({ parallel: p.parallel, turnCap: p.turnCap, quotaWarn: p.quotaWarn, quotaStop: p.quotaStop });
+        return needRoom().configure({ parallel: p.parallel, turnCap: p.turnCap, quotaWarn: p.quotaWarn, quotaStop: p.quotaStop, independent: p.independent });
       case "room.focus":
         needRoom().setFocus(String(p.slug));
         return {};

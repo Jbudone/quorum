@@ -212,7 +212,7 @@ describe("rpc server: customizing a council", () => {
     await h.done;
   });
 
-  it("runs a room: start, resume, ask the assistant, approve a suggestion, reopen", async () => {
+  it("runs a room: setup chat, channel, ask the assistant, approve a suggestion, reopen", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const lines: any[] = [];
@@ -238,30 +238,44 @@ describe("rpc server: customizing a council", () => {
     send({ id: 1, method: "room.resume" });
     expect((await waitFor((m) => m.id === 1)).error.message).toMatch(/no room/);
 
-    send({ id: 2, method: "room.start", params: { preset: "trio", topic: "cache?", repo, mock: true, turnCap: 4 } });
-    const started = (await waitFor((m) => m.id === 2)).result;
-    expect(started.agents.map((a: any) => a.id)).toEqual(["architect", "skeptic", "pragmatist"]);
-    expect(started).toMatchObject({ state: "paused", focus: "cache", events: [{ type: "topic.raised" }, { type: "topic.focus" }, { type: "message" }] });
+    // First launch: no channels, so the TUI runs the setup chat.
+    send({ id: 2, method: "workspace.open", params: { repo } });
+    expect((await waitFor((m) => m.id === 2)).result).toEqual({ channels: [], members: [] });
+    send({ id: 3, method: "setup.start", params: { repo, mock: true } });
+    await waitFor((m) => m.id === 3);
+    send({ id: 4, method: "setup.say", params: { text: "Should we add a cache?" } });
+    expect((await waitFor((m) => m.event === "setup.reply")).data.proposal).toBeUndefined();
+    expect(lines.some((m) => m.event === "setup.delta")).toBe(true);
+    send({ id: 5, method: "setup.say", params: { text: "no docs yet" } });
+    const proposal = (await waitFor((m) => m.event === "setup.reply" && m.data.proposal)).data.proposal;
+    expect(proposal.members.map((x: any) => x.id)).toEqual(["perf-researcher", "reliability-scientist", "product-engineer"]);
+    send({ id: 6, method: "setup.create", params: { proposal, turnCap: 20 } });
+    const started = (await waitFor((m) => m.id === 6)).result;
+    expect(started).toMatchObject({ name: "product-cache", state: "paused", skipped: ["docs"], tuning: { independent: false } });
 
-    send({ id: 3, method: "room.resume" });
+    send({ id: 7, method: "room.resume" });
     await waitFor((m) => m.event === "room.state" && m.data.state === "paused");
     expect(lines.some((m) => m.event === "room.turn.start")).toBe(true);
+    expect(lines.some((m) => m.event === "room.support" && m.data.role === "floor")).toBe(true);
+    expect(lines.some((m) => m.event === "room.event" && m.data.type === "tags")).toBe(true);
     expect(lines.some((m) => m.event === "room.event" && m.data.type === "doc.revised")).toBe(true);
 
-    send({ id: 4, method: "room.ask", params: { text: "where are we?" } });
-    await waitFor((m) => m.event === "room.event" && m.data.type === "aside" && m.data.from === "assistant");
+    send({ id: 8, method: "room.ask", params: { text: "where are we?" } });
+    await waitFor((m) => m.event === "room.event" && m.data.type === "aside" && m.data.kind === "answer");
     expect(lines.some((m) => m.event === "room.assistant.delta")).toBe(true);
     const sug = await waitFor((m) => m.event === "room.event" && m.data.type === "suggestion");
-    send({ id: 5, method: "room.resolve", params: { id: sug.data.id, accept: true } });
+    send({ id: 9, method: "room.resolve", params: { id: sug.data.id, accept: true } });
     await waitFor((m) => m.event === "room.event" && m.data.type === "suggestion.resolved");
 
-    send({ id: 6, method: "room.doc", params: { name: "plan" } });
-    expect((await waitFor((m) => m.id === 6)).result.text).toContain("# Plan");
-    send({ id: 7, method: "rooms.list", params: { repo } });
-    const list = (await waitFor((m) => m.id === 7)).result;
-    expect(list).toHaveLength(1);
-    send({ id: 8, method: "room.open", params: { repo, id: list[0].id } });
-    expect((await waitFor((m) => m.id === 8)).result.id).toBe(list[0].id);
+    send({ id: 10, method: "room.doc", params: { name: "plan" } });
+    expect((await waitFor((m) => m.id === 10)).result.text).toContain("# Plan");
+    send({ id: 11, method: "workspace.open", params: { repo } });
+    const ws = (await waitFor((m) => m.id === 11)).result;
+    expect(ws.channels).toHaveLength(1);
+    // Members belong to the workspace (plus anyone the approved suggestion hired).
+    expect(ws.members.map((x: any) => x.id)).toEqual(expect.arrayContaining(["perf-researcher", "reliability-scientist", "product-engineer"]));
+    send({ id: 12, method: "room.open", params: { repo, id: ws.channels[0].id } });
+    expect((await waitFor((m) => m.id === 12)).result.id).toBe(ws.channels[0].id);
     input.end();
     await done;
   });

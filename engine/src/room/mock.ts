@@ -21,18 +21,18 @@ An in-process LRU per instance (64 MB), with a 30 s TTL on product reads and exp
 ${v > 1 ? "4. Load-test with production-shaped traffic before turning it on per tenant.\n\n## Risks\n- Stale reads during bulk import: invalidate per batch, not at the end." : ""}`;
 
 const LINES: Record<string, Line[]> = {
-  architect: [
+  "perf-researcher": [
     { say: "Starting point: an in-process LRU per instance. About 90% of our reads are product lookups by id, so a read-through cache in front of the repository gets most of the win without new infrastructure." },
     {
-      say: "I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @skeptic, does a 30 second bound answer your staleness question?",
+      say: "I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @reliability-scientist, does a 30 second bound answer your staleness question?",
       draft: { name: "plan", kind: "plan", text: PLAN(1), note: "first draft" },
     },
     {
-      say: "@skeptic is right about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.",
+      say: "Fair point about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.",
       draft: { name: "plan", kind: "plan", text: PLAN(2), note: "per-batch invalidation, load test" },
     },
   ],
-  skeptic: [
+  "reliability-scientist": [
     { say: "Before we pick a cache: what's the consistency requirement? If a price changes, how long may a stale price be shown? Nobody has said." },
     {
       say: "For single writes, yes. But bulk import writes thousands of rows; if we only invalidate at the end, readers see a half-updated catalog for the whole import.",
@@ -40,23 +40,29 @@ const LINES: Record<string, Line[]> = {
     },
     { say: "If we invalidate per batch instead of at the end, I can live with it, as long as the TTL stays short." },
   ],
-  pragmatist: [
+  "product-engineer": [
     { say: "Agree with an in-process LRU for now. Redis is one more thing to run, and we don't have the traffic to justify it yet." },
     { say: "30 seconds of staleness is fine for product pages; checkout re-reads prices anyway." },
   ],
-  security: [{ say: "One angle nobody has covered: a cache keyed only by product id will happily serve one tenant's draft prices to another if ids ever collide across tenants. Key by tenant and id." }],
+  "edge-case-hunter": [{ say: "One angle nobody has covered: a cache keyed only by product id will happily serve one tenant's draft prices to another if ids ever collide across tenants. Key by tenant and id." }],
 };
 const GENERIC: Line[] = [{ say: "Whatever we pick, we need a metric that tells us when it's wrong; hit rate alone won't." }];
 
-const STAFF = `For a caching decision I'd start with three people who will disagree usefully: someone to propose the design, someone to attack its consistency story, and someone to keep it simple.
->> add: architect mock | proposes the design and writes the plan
->> add: skeptic mock | will press on consistency and failure modes
->> add: pragmatist mock | keeps scope and operational cost honest`;
+const SETUP = [
+  "Got it. Is there a folder of earlier notes they should read first, or are they starting fresh?",
+  `Here's who I'd bring in. Tell me if you want anyone else.
+>> channel: product-cache | Should we add a cache to the product API, and how?
+>> read: docs
+>> member: perf-researcher | mock | performance researcher | Studies read paths and latency; proposes designs and backs them with numbers.
+>> member: reliability-scientist | mock | reliability scientist | Hunts for consistency and failure modes; won't accept a design without a staleness bound.
+>> member: product-engineer | mock | product engineer | Has to build and run it; keeps scope and operational cost honest.`,
+];
 
 /** Shared script state, so the floor knows who still has something to say. */
 class Cast {
   readonly used = new Map<string, number>();
   watches = 0;
+  setups = 0;
   answers = 0;
   scribes = 0;
   chairs = 0;
@@ -99,7 +105,10 @@ class ScriptedRoomMock implements AgentTransport {
 
   async *send(prompt: string, opts: SendOptions = {}): AsyncIterable<AgentEvent> {
     const c = this.cast;
-    if (this.role === "floor") yield* this.stream(this.floor(prompt), opts.signal);
+    if (this.role === "assistant" && /setting up a new channel|propose the channel/.test(prompt)) {
+      yield* this.stream(SETUP[Math.min(c.setups++, SETUP.length - 1)], opts.signal);
+    } else if (this.role === "floor") yield* this.stream(this.floor(prompt), opts.signal);
+    else if (this.role === "scribe" && /side threads/.test(opts.systemPrompt ?? "")) yield* this.stream("They agreed 30 s is fine for product pages since checkout re-reads prices.", opts.signal);
     else if (this.role === "chair") yield* this.stream(this.chair(prompt), opts.signal);
     else if (this.role === "scribe") yield* this.stream(c.scribes++ < 2 ? SCRIBE[c.scribes - 1] : "NOTHING", opts.signal);
     else if (this.role === "assistant") yield* this.stream(this.assistant(prompt), opts.signal);
@@ -109,44 +118,54 @@ class ScriptedRoomMock implements AgentTransport {
     yield { type: "done", sessionId: `${this.id}-mock` };
   }
 
-  /** Picks whoever has the most left to say, never the latest speaker; nobody once the script is spent. */
+  /** Picks whoever has the most left to say, never the latest speaker; nobody once the script is spent. Tags every new message. */
   private floor(prompt: string): string {
     const roster = prompt.slice(prompt.indexOf("Members:\n"), prompt.indexOf("\n\n", prompt.indexOf("Members:\n")));
     const members = [...roster.matchAll(/^- ([\w-]+):/gm)].map((m) => m[1]);
     const fresh = prompt.slice(prompt.indexOf("New since you last decided:"));
-    const said = [...fresh.matchAll(/\[#(\d+)\] ([\w-]+)/g)];
+    const said = [...fresh.matchAll(/\[#(\d+)\] ([\w-]+)[^:\n]*:\n([^\n]*)/g)];
     const last = said.at(-1);
+    const tags = said.map(([, seq, from, text]) => ({ msg: Number(seq), kind: kindOf(text), headline: text.split(/\s+/).slice(0, 6).join(" ").replace(/[.,:;]$/, "") }));
     const busy = new Set([...roster.matchAll(/^- ([\w-]+):.*\(speaking right now\)$/gm)].map((m) => m[1]));
+    if (/This is a side thread/.test(prompt)) {
+      // In a thread, one member answers the human's question, then it settles.
+      const pick = last?.[2] === "human" ? members.find((m) => !busy.has(m)) : undefined;
+      return JSON.stringify({ speak: pick ? [{ member: pick, reply_to: Number(last?.[1]), why: "can answer this" }] : [], tags });
+    }
     const pick = members
       .filter((m) => m !== last?.[2] && !busy.has(m) && this.cast.left(this.personaOf(m)) > 0)
       .sort((a, b) => this.cast.left(this.personaOf(b)) - this.cast.left(this.personaOf(a)))[0];
-    return JSON.stringify({ speak: pick ? [{ member: pick, reply_to: Number(last?.[1]) || undefined, why: "has something to add on this" }] : [] });
+    return JSON.stringify({ speak: pick ? [{ member: pick, reply_to: Number(last?.[1]) || undefined, why: "has something to add on this" }] : [], tags });
   }
 
   private chair(prompt: string): string {
     if (/plan \(plan\) v2/.test(prompt) && !/v2 accepted/.test(prompt)) return "Plan v2 answers every objection raised so far.\n>> accept: plan";
-    if (this.cast.chairs++ === 0) return "Quick summary: everyone backs an in-process LRU; the open question is how stale a read may be during bulk import. @pragmatist, what will product accept?";
+    if (this.cast.chairs++ === 0) return "Quick summary: everyone backs an in-process LRU; the open question is how stale a read may be during bulk import. @product-engineer, what will product accept?";
     return "PASS";
   }
 
   private assistant(prompt: string): string {
     const c = this.cast;
-    if (/The room has no members yet/.test(prompt)) return STAFF;
     const plan = /plan \(plan\) v(\d+)/.exec(prompt)?.[1];
     if (/The human asks you:/.test(prompt)) {
       return c.answers++ === 0
-        ? `In short: they agree on a simple in-process cache and are now arguing about how stale data may get. The skeptic's bulk-import concern is the open thread${plan ? `; the plan is at v${plan}` : ""}.\n>> steer: Settle the staleness limit first, then the bulk-import strategy.`
-        : `The plan document is at v${plan ?? "0"}. The main risk they've named is stale reads during imports; nobody has argued for Redis.`;
+        ? `They agree on an in-process cache; the open question is how stale reads may get during bulk imports${plan ? `, and the plan is at v${plan}` : ""}.\n>> steer: Settle the staleness limit first, then the bulk-import strategy.`
+        : `Plan's at v${plan ?? "0"}. Nobody has argued for Redis.`;
     }
-    const digest = `DIGEST:\n- Agreed: an in-process LRU per instance, no Redis yet.\n- Contested: staleness during bulk import (skeptic).\n- ${plan ? `Plan is at v${plan}.` : "No plan drafted yet."}`;
+    const digest = `DIGEST:\nAgreed on an in-process LRU; bulk-import staleness still open.${plan ? ` Plan v${plan}.` : ""}`;
     const n = c.watches++;
-    if (n === 0) return `${digest}\nNOTE: They converged on the LRU quickly; the only real disagreement is bulk-import staleness. Nothing needs you yet.`;
-    if (n === 1) return `${digest}\nNOTE: Nobody is looking at tenant isolation in the cache keys.\n>> add: security mock | nobody covers cache poisoning or tenant isolation`;
+    if (n === 0) return `${digest}\nNOTE: They converged on the LRU fast; nothing needs you yet.`;
+    if (n === 1)
+      return `${digest}\nNOTE: Nobody is looking at tenant isolation in the cache keys.\n>> hire: edge-case-hunter | mock | edge-case hunter | Brings realistic use cases and the edge cases that break designs: multi-tenant data, imports, retries. | nobody covers tenant isolation`;
     return digest;
   }
 
   private async *member(prompt: string, opts: SendOptions): AsyncIterable<AgentEvent> {
     if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs * 8));
+    if (/You're in a side thread/.test(prompt)) {
+      yield* this.stream("For product pages 30 s is fine; checkout re-reads prices, so nobody pays a stale price.", opts.signal);
+      return;
+    }
     const line = this.cast.next(this.role);
     if (!line) {
       yield* this.stream("PASS", opts.signal);
@@ -167,9 +186,19 @@ class ScriptedRoomMock implements AgentTransport {
   }
 }
 
+/** A rough read of what a scripted line does, for the mock floor's tags. */
+function kindOf(text: string): string {
+  if (/\?\s*$|^Before/.test(text)) return "question";
+  if (/right about|fair point|can live with/i.test(text)) return "concession";
+  if (/^Agree|fine for/i.test(text)) return "agreement";
+  if (/^For single|^But|nobody has covered|angle nobody/i.test(text)) return "critique";
+  if (/plan v\d/i.test(text)) return "decision";
+  return "idea";
+}
+
 const SCRIBE = [
-  "=== decisions.md ===\n- Use an in-process LRU per instance, no shared cache yet.\n\n=== open-questions.md ===\n- How stale may a price be? (skeptic)\n\n=== code-notes.md ===\n- Product reads go through the repository layer; writes come from update, delete and bulk import.",
-  "=== decisions.md ===\n- Use an in-process LRU per instance.\n- 30 s TTL is acceptable for product pages; checkout re-reads prices.\n\n=== open-questions.md ===\n- Invalidation strategy for bulk import (skeptic).",
+  "=== decisions.md ===\n- Use an in-process LRU per instance, no shared cache yet.\n\n=== open-questions.md ===\n- How stale may a price be? (reliability-scientist)\n\n=== code-notes.md ===\n- Product reads go through the repository layer; writes come from update, delete and bulk import.",
+  "=== decisions.md ===\n- Use an in-process LRU per instance.\n- 30 s TTL is acceptable for product pages; checkout re-reads prices.\n\n=== open-questions.md ===\n- Invalidation strategy for bulk import (reliability-scientist).",
 ];
 
 /** Mock transports for a room; the persona (or support role) picks the script. */

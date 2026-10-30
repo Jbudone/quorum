@@ -143,9 +143,9 @@ func (a *App) Init() tea.Cmd {
 		a.call("personas.list", map[string]any{})
 		a.call("clis.list", map[string]any{})
 	} else {
-		// The room is the app: reopen this repo's latest room, or start an empty one.
+		// The room is the app: carry on in this repo's latest channel, or set up the first one.
 		a.newRoomUI("opening")
-		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
+		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
 	}
 	return tea.Batch(a.listen(), a.tick())
 }
@@ -195,7 +195,7 @@ func (a *App) needsTick() bool {
 		return true // the banner animates
 	}
 	if a.screen == screenRoom {
-		return a.rm != nil && (a.rm.room == nil || a.rm.room.animating())
+		return a.rm != nil && (a.rm.room == nil && a.rm.setup == nil || a.rm.room != nil && a.rm.room.animating() || a.rm.setup != nil && (a.rm.setup.waiting || a.rm.setup.creating))
 	}
 	s := a.sess
 	return s != nil && (s.animating() || s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
@@ -264,6 +264,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.start.topic, c = a.start.topic.Update(msg)
 		return a, c
 	}
+	if a.screen == screenRoom && a.rm != nil && a.rm.setup != nil {
+		var c tea.Cmd
+		a.rm.setup.in, c = a.rm.setup.in.Update(msg)
+		return a, c
+	}
 	if a.screen == screenRoom && a.rm != nil && a.rm.room != nil {
 		var c tea.Cmd
 		if a.rm.room.pane == paneAssistant {
@@ -292,7 +297,10 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 		a.handleResponse(v)
 	case rpc.Event:
 		if a.screen == screenRoom && a.rm != nil {
-			if a.rm.room != nil {
+			switch {
+			case a.rm.setup != nil:
+				a.rm.setup.apply(v)
+			case a.rm.room != nil:
 				a.rm.room.apply(v)
 			}
 			return nil

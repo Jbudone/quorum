@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,9 +14,12 @@ import (
 	"github.com/jbud/quorum/tui/internal/rpc"
 )
 
-// roomUI is the room screen's own widgets, kept apart from the council session's.
+// roomUI is the room screen's own widgets, kept apart from the council session's. It shows either
+// the setup chat (no channel yet) or a channel.
 type roomUI struct {
 	room       *roomModel
+	setup      *setupModel
+	channels   []rpc.RoomListItem // the workspace's channels, for the switcher
 	feedVP     viewport.Model
 	assistVP   viewport.Model
 	overlayVP  viewport.Model
@@ -22,9 +27,11 @@ type roomUI struct {
 	assistIn   textarea.Model
 	feedFollow bool
 	asstFollow bool
-	opening    string // what we're waiting for ("opening", "starting", "reopening"); "" once the room is here
-	err        string // why the room couldn't be opened
-	listing    bool   // a rooms.list is for the /rooms overlay
+	hideStats  bool
+	opening    string // what we're waiting for ("opening", "reopening"); "" once something is on screen
+	err        string // why nothing could be opened
+	switching  bool   // a workspace.open is for the switcher
+	openThread bool   // the next room.post answer is an /ask: show its thread
 }
 
 const (
@@ -32,13 +39,19 @@ const (
 	roomInputRows = 2
 )
 
+func workspaceName(repo string) string { return filepath.Base(repo) }
+
 func (a *App) newRoomUI(opening string) {
 	in := newInput(a.th, roomInputRows)
 	as := newInput(a.th, roomInputRows)
 	as.Placeholder = "Ask your assistant anything…"
+	var channels []rpc.RoomListItem
+	if a.rm != nil {
+		channels = a.rm.channels
+	}
 	a.rm = &roomUI{
 		feedVP: viewport.New(), assistVP: viewport.New(), overlayVP: viewport.New(),
-		roomIn: in, assistIn: as, feedFollow: true, asstFollow: true, opening: opening,
+		roomIn: in, assistIn: as, feedFollow: true, asstFollow: true, opening: opening, channels: channels,
 	}
 	a.rm.feedVP.MouseWheelEnabled = true
 	a.rm.assistVP.MouseWheelEnabled = true
@@ -46,13 +59,19 @@ func (a *App) newRoomUI(opening string) {
 	a.screen = screenRoom
 }
 
-func (a *App) startRoom() {
-	a.newRoomUI("starting")
+// startSetup opens the setup chat for a new channel; the channel on screen (if any) pauses meanwhile.
+func (a *App) startSetup() {
+	if a.rm != nil && a.rm.room != nil && a.rm.room.state != "paused" {
+		a.call("room.pause", map[string]any{"reason": "switched away"})
+	}
+	canLeave := a.rm != nil && len(a.rm.channels) > 0
+	a.newRoomUI("")
+	a.rm.setup = newSetup(a.th, canLeave)
 	params := map[string]any{"repo": a.opts.Repo}
 	if a.opts.Mock {
 		params["mock"] = true
 	}
-	a.call("room.start", params)
+	a.call("setup.start", params)
 }
 
 func (a *App) openRoom(id string) {
@@ -60,9 +79,9 @@ func (a *App) openRoom(id string) {
 	a.call("room.open", map[string]any{"repo": a.opts.Repo, "id": id})
 }
 
-// handleRoomResponse handles answers to room requests. It reports whether it took the method.
+// handleRoomResponse handles answers to workspace, setup and room requests. It reports whether it took the method.
 func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
-	if method != "rooms.list" && !strings.HasPrefix(method, "room.") {
+	if !strings.HasPrefix(method, "room.") && !strings.HasPrefix(method, "setup.") && method != "workspace.open" {
 		return false
 	}
 	u := a.rm
@@ -71,6 +90,8 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 	}
 	if r.Err != "" {
 		switch {
+		case u.setup != nil:
+			u.setup.apply(rpc.Event{Name: "error", Data: rpc.EngineError{Message: r.Err}})
 		case u.room == nil:
 			u.err, u.opening = r.Err, ""
 		case method == "room.ask":
@@ -78,67 +99,86 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 			u.room.asking = false
 		default:
 			u.room.asides = append(u.room.asides, noteItem{kind: "error", text: r.Err})
+			u.asstFollow = true
 		}
 		return true
 	}
 	switch method {
-	case "rooms.list":
-		var l []rpc.RoomListItem
-		if err := rpc.DecodeResult(r.Result, &l); err != nil {
-			u.err = "bad room list from engine: " + err.Error()
+	case "workspace.open":
+		var w rpc.Workspace
+		if err := rpc.DecodeResult(r.Result, &w); err != nil {
+			u.err = "bad workspace from engine: " + err.Error()
 			return true
 		}
-		if u.listing && u.room != nil {
-			u.listing = false
-			o := &docOverlay{title: "Rooms in this project", list: []docRef{}, rooms: true}
-			for _, it := range l {
-				label := it.Topic
-				if label == "" {
-					label = "(empty room)"
-				}
-				label = ansiCut(firstLine(label), 60) + "  " + shortTime(it.Updated)
-				if it.ID == u.room.id {
-					label += "  · this room"
-				}
-				o.list = append(o.list, docRef{name: it.ID, label: label})
-			}
-			u.room.overlay = o
+		u.channels = w.Channels
+		if u.switching && u.room != nil {
+			u.switching = false
+			u.room.overlay = a.switcher()
 			return true
 		}
-		if u.room == nil {
-			// Opening the app: pick up the latest room here, or start a fresh one.
-			if len(l) == 0 {
-				a.startRoom()
+		if u.room == nil && u.setup == nil {
+			// Opening the app: carry on in the latest channel, or set up the first one.
+			if len(w.Channels) == 0 {
+				a.startSetup()
 			} else {
-				a.openRoom(l[0].ID)
+				a.openRoom(w.Channels[0].ID)
 			}
 		}
-	case "room.start", "room.open":
+	case "setup.start":
+		if u.setup != nil {
+			u.setup.ready = true
+		}
+	case "setup.create", "room.open":
 		var s rpc.RoomSnapshot
 		if err := rpc.DecodeResult(r.Result, &s); err != nil {
-			u.err = "bad room from engine: " + err.Error()
+			u.err = "bad channel from engine: " + err.Error()
 			return true
 		}
+		u.setup = nil
 		u.room = newRoom(s, a.opts.Calm)
+		u.room.workspace = workspaceName(a.opts.Repo)
 		u.room.frame = a.frame
 		u.opening = ""
+		u.roomIn.Focus()
 		for _, sub := range s.Substitutions {
 			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: sub.Agent + " uses " + sub.To + " instead of " + sub.From + " (" + sub.From + " is unavailable)."})
 		}
+		if len(s.Skipped) > 0 {
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Not on the reading list (couldn't find them): " + strings.Join(s.Skipped, ", ") + ". /read sets it."})
+		}
 		switch {
-		case method == "room.start":
+		case method == "setup.create":
 			a.call("room.resume", map[string]any{})
 		case u.room.resumesOnOpen():
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Picked up where you left off. ctrl+p pauses."})
-			a.call("room.resume", map[string]any{})
-		case len(u.room.agents) == 0:
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Picked up where you left off."})
 			a.call("room.resume", map[string]any{})
 		default:
 			why := u.room.lastPause
 			if why == "" {
 				why = "paused"
 			}
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "This room is paused (" + why + "). ctrl+p carries on; ask me /catchup for a recap first."})
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Paused (" + why + "). ctrl+p carries on."})
+		}
+		// Keep the switcher's list current without asking the user to wait for it.
+		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
+	case "room.post":
+		if u.openThread && u.room != nil {
+			u.openThread = false
+			var res struct {
+				Seq int `json:"seq"`
+			}
+			if rpc.DecodeResult(r.Result, &res) == nil && res.Seq > 0 {
+				u.room.view = res.Seq
+				u.feedFollow = true
+			}
+		}
+	case "room.read":
+		var res struct {
+			Reading []string `json:"reading"`
+		}
+		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
+			u.room.reading = res.Reading
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Reading list: " + strings.Join(res.Reading, ", ") + ". Members read what's new on their next turn."})
 		}
 	case "room.doc":
 		var d rpc.RoomDocText
@@ -157,6 +197,41 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 	return true
 }
 
+// switcher lists the workspace's channels, this channel's threads, and a way to start a new channel.
+func (a *App) switcher() *docOverlay {
+	r := a.rm.room
+	o := &docOverlay{title: "Switch to", list: []docRef{}, rooms: true}
+	for _, c := range a.rm.channels {
+		name := c.Name
+		if name == "" {
+			name = ansiCut(firstLine(c.Topic), 30)
+		}
+		label := "# " + name
+		if c.ID == r.id {
+			label += "  · here"
+		}
+		if d := firstLine(c.Digest); d != "" {
+			label += "  " + ansiCut(d, 60)
+		}
+		o.list = append(o.list, docRef{name: c.ID, label: label, kind: "channel"})
+		if c.ID != r.id {
+			continue
+		}
+		if r.view != 0 {
+			o.list = append(o.list, docRef{name: "0", label: "  ↰ back to the channel", kind: "thread"})
+		}
+		for _, t := range r.threadList() {
+			state := "open"
+			if t.summary != "" {
+				state = "settled"
+			}
+			o.list = append(o.list, docRef{name: fmt.Sprint(t.root), label: fmt.Sprintf("  ↳ %s  · %s", ansiCut(t.title, 50), state), kind: "thread"})
+		}
+	}
+	o.list = append(o.list, docRef{label: "+ new channel", kind: "new"})
+	return o
+}
+
 // shortTime turns a log timestamp into local "Jan 2 15:04".
 func shortTime(iso string) string {
 	t, err := time.Parse(time.RFC3339Nano, iso)
@@ -173,9 +248,53 @@ func ansiCut(s string, n int) string {
 	return s
 }
 
+func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
+	s := a.rm.setup
+	switch k.String() {
+	case "esc":
+		if s.canLeave && len(a.rm.channels) > 0 {
+			a.openRoom(a.rm.channels[0].ID)
+		}
+		return nil
+	case "ctrl+s":
+		if s.proposal != nil && !s.creating && !s.waiting {
+			s.creating = true
+			a.call("setup.create", map[string]any{"proposal": s.proposal})
+		}
+		return nil
+	case "pgup", "ctrl+u":
+		s.vp.HalfPageUp()
+		s.follow = s.vp.AtBottom()
+		return nil
+	case "pgdown", "ctrl+d":
+		s.vp.HalfPageDown()
+		s.follow = s.vp.AtBottom()
+		return nil
+	case "enter":
+		text := strings.TrimSpace(s.in.Value())
+		if text == "" || s.waiting || s.creating {
+			return nil
+		}
+		s.in.Reset()
+		s.msgs = append(s.msgs, noteItem{kind: "you", text: text})
+		s.waiting, s.follow = true, true
+		a.call("setup.say", map[string]any{"text": text})
+		return nil
+	case "alt+enter", "shift+enter":
+		s.in.InsertString("\n")
+		return nil
+	}
+	var c tea.Cmd
+	s.in, c = s.in.Update(k)
+	return c
+}
+
 func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	u := a.rm
 	key := k.String()
+	if u.setup != nil {
+		return a.handleSetupKey(k)
+	}
 	if u.room == nil {
 		return nil // still opening
 	}
@@ -183,7 +302,7 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	if r.overlay != nil {
 		o := r.overlay
 		switch key {
-		case "esc", "q":
+		case "esc", "q", "ctrl+k":
 			r.overlay = nil
 		case "up", "k":
 			if o.list != nil {
@@ -203,16 +322,45 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			u.overlayVP.HalfPageDown()
 		case "enter":
 			if o.list != nil && o.cur < len(o.list) {
-				pick := o.list[o.cur].name
+				pick := o.list[o.cur]
 				switch {
-				case o.rooms && pick == r.id:
+				case !o.rooms:
+					a.call("room.doc", map[string]any{"name": pick.name})
+				case pick.kind == "new":
+					a.startSetup()
+				case pick.kind == "thread":
+					var seq int
+					fmt.Sscan(pick.name, &seq)
+					r.view, r.overlay, u.feedFollow = seq, nil, true
+				case pick.name == r.id:
 					r.overlay = nil
-				case o.rooms:
-					a.openRoom(pick)
 				default:
-					a.call("room.doc", map[string]any{"name": pick})
+					if r.state != "paused" {
+						a.call("room.pause", map[string]any{"reason": "switched away"})
+					}
+					a.openRoom(pick.name)
 				}
 			}
+		}
+		return nil
+	}
+	// Reviewing the assistant's suggestions: keys answer them, nothing reaches the text boxes.
+	if r.review {
+		switch key {
+		case "up", "k":
+			r.sugCur = max(r.sugCur-1, 0)
+		case "down", "j":
+			r.sugCur = min(r.sugCur+1, len(r.pending)-1)
+		case "y", "n":
+			if r.sugCur < len(r.pending) {
+				a.call("room.resolve", map[string]any{"id": r.pending[r.sugCur].ID, "accept": key == "y"})
+			}
+		case "a":
+			for _, s := range r.pending {
+				a.call("room.resolve", map[string]any{"id": s.ID, "accept": true})
+			}
+		case "esc", "ctrl+n":
+			r.review = false
 		}
 		return nil
 	}
@@ -226,6 +374,19 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		r.pane = paneRoom
 		u.assistIn.Blur()
 		return u.roomIn.Focus()
+	case "ctrl+n":
+		if len(r.pending) > 0 {
+			r.review = true
+			r.sugCur = min(r.sugCur, len(r.pending)-1)
+		}
+		return nil
+	case "ctrl+k":
+		u.switching = true
+		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
+		return nil
+	case "ctrl+t":
+		u.hideStats = !u.hideStats
+		return nil
 	case "ctrl+p":
 		if r.state == "paused" {
 			a.call("room.resume", map[string]any{})
@@ -244,26 +405,14 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "esc":
 		a.help = false
+		if r.view != 0 {
+			r.view, u.feedFollow = 0, true
+		}
 		return nil
 	}
 	in := &u.roomIn
 	if r.pane == paneAssistant {
 		in = &u.assistIn
-		// With the box empty, the arrow keys and y/n work the suggestion list.
-		if strings.TrimSpace(in.Value()) == "" && len(r.pending) > 0 {
-			switch key {
-			case "up":
-				r.sugCur = max(r.sugCur-1, 0)
-				return nil
-			case "down":
-				r.sugCur = min(r.sugCur+1, len(r.pending)-1)
-				return nil
-			case "y", "n":
-				s := r.pending[r.sugCur]
-				a.call("room.resolve", map[string]any{"id": s.ID, "accept": key == "y"})
-				return nil
-			}
-		}
 	}
 	switch key {
 	case "enter":
@@ -303,7 +452,7 @@ func (a *App) submitRoom() tea.Cmd {
 	u.roomIn.Reset()
 	switch cmd.local {
 	case "help":
-		r.overlay = &docOverlay{title: "Room help", text: "```\n" + roomHelp + "\n```"}
+		r.overlay = &docOverlay{title: "Help", text: "```\n" + roomHelp + "\n```"}
 		return nil
 	case "docs":
 		r.overlay = &docOverlay{title: "Documents", list: r.docList()}
@@ -311,16 +460,28 @@ func (a *App) submitRoom() tea.Cmd {
 	case "topics":
 		r.asides = append(r.asides, noteItem{kind: "system", text: renderTopics(r)})
 		return nil
-	case "rooms":
-		u.listing = true
-		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
+	case "reading":
+		r.asides = append(r.asides, noteItem{kind: "system", text: "Reading list: " + strings.Join(r.reading, ", ")})
+		return nil
+	case "switch":
+		u.switching = true
+		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
 		return nil
 	case "new":
-		a.startRoom()
+		a.startSetup()
 		return nil
+	case "thread":
+		r.view, u.feedFollow = cmd.params["seq"].(int), true
+		return nil
+	case "open-thread":
+		u.openThread = true
 	}
 	if cmd.method == "" {
 		return nil
+	}
+	// In a thread, what the human says goes into the thread.
+	if cmd.method == "room.post" && r.view != 0 && cmd.params["to"] == nil && cmd.params["thread"] == nil {
+		cmd.params["thread"] = r.view
 	}
 	if cmd.echo != "" {
 		r.asides = append(r.asides, noteItem{kind: "system", text: cmd.echo})
@@ -340,7 +501,7 @@ func (a *App) assistW() int {
 		return a.w
 	}
 	if a.w >= 100 {
-		return min(max(34, a.w*36/100), 64)
+		return min(max(34, a.w*34/100), 60)
 	}
 	return max(26, a.w*40/100)
 }
@@ -352,9 +513,18 @@ func (a *App) feedW() int {
 	return a.w - a.assistW() - 1
 }
 
+// statsShown reports whether the stats strip is on screen: it's hidden on short terminals and by ctrl+t.
+func (a *App) statsShown() bool {
+	return a.rm != nil && a.rm.room != nil && a.rm.room.overlay == nil && !a.rm.hideStats && a.h >= 30 && !a.rm.room.empty()
+}
+
 func (a *App) roomBodyH() int {
 	// header, spacer, roster line, input boxes (rows + border), footer
-	return max(a.h-1-1-1-(roomInputRows+2)-1, 6)
+	h := a.h - 1 - 1 - 1 - (roomInputRows + 2) - 1
+	if a.statsShown() {
+		h -= statsHeight()
+	}
+	return max(h, 6)
 }
 
 // paneHeights splits the body when the assistant sits under the feed.
@@ -367,27 +537,37 @@ func (a *App) paneHeights() (feed, assist int) {
 	return feed, max(bh-feed-1, 3)
 }
 
-// assistantColumn lays out the assistant pane top to bottom: pinned digest, conversation, suggestions.
-func (a *App) assistantColumn(width, height int) (digest, sug string, vpH int) {
+// assistantColumn lays out the assistant pane top to bottom: what needs the human, where things stand, the chat.
+func (a *App) assistantColumn(width, height int) (top string, vpH int) {
 	r := a.rm.room
-	sug = renderSuggestions(r, a.th, width, r.pane == paneAssistant, false)
-	if lipgloss.Height(sug) > height/2 {
-		sug = renderSuggestions(r, a.th, width, r.pane == paneAssistant, true)
+	var parts []string
+	if sug := renderSuggestions(r, a.th, width, false); sug != "" {
+		if lipgloss.Height(sug) > height/2 {
+			sug = renderSuggestions(r, a.th, width, true)
+		}
+		parts = append(parts, sug)
 	}
-	digest = renderDigest(r, a.th, width, max(height/3, 3))
-	used := 0
-	if digest != "" {
-		used += lipgloss.Height(digest) + 1
+	if d := renderDigest(r, a.th, width, 3); d != "" {
+		parts = append(parts, d)
 	}
-	if sug != "" {
-		used += lipgloss.Height(sug) + 1
+	if len(parts) == 0 {
+		return "", height
 	}
-	return digest, sug, max(height-used, 3)
+	parts = append(parts, fg(a.th.Subtle).Render(strings.Repeat("─", width)))
+	top = strings.Join(parts, "\n\n")
+	return top, max(height-lipgloss.Height(top)-1, 3)
 }
 
 func (a *App) refreshRoom() {
 	u := a.rm
-	if u == nil || u.room == nil {
+	if u == nil {
+		return
+	}
+	if u.setup != nil {
+		a.refreshSetup()
+		return
+	}
+	if u.room == nil {
 		return
 	}
 	r := u.room
@@ -401,7 +581,7 @@ func (a *App) refreshRoom() {
 		u.feedVP.GotoBottom()
 	}
 	inner := aw - 2
-	_, _, vpH := a.assistantColumn(inner, ah)
+	_, vpH := a.assistantColumn(inner, ah)
 	u.assistVP.SetWidth(inner)
 	u.assistVP.SetHeight(vpH)
 	u.assistVP.SetContent(renderAssistant(r, a.th, inner, spin))
@@ -420,22 +600,28 @@ func (a *App) refreshRoom() {
 	u.roomIn.SetWidth(roomBox)
 	u.assistIn.SetWidth(max(assistBox, 10))
 	switch {
+	case r.view != 0:
+		u.roomIn.Placeholder = "Reply in this thread · esc back to the channel"
 	case len(r.agents) == 0:
-		u.roomIn.Placeholder = "Describe the problem you want worked out…"
+		u.roomIn.Placeholder = "Nobody's here yet · /add, or ask your assistant who to bring in"
 	default:
-		u.roomIn.Placeholder = "Say something to the room · @name to ask one member · /help"
+		u.roomIn.Placeholder = "Say something · @name to ask one member · /ask for a side thread · /help"
 	}
-	u.roomIn.SetPromptFunc(6, func(pi textarea.PromptInfo) string {
+	u.roomIn.SetPromptFunc(7, func(pi textarea.PromptInfo) string {
 		if pi.LineNumber != 0 {
-			return strings.Repeat(" ", 6)
+			return strings.Repeat(" ", 7)
 		}
-		target, c := "room", a.th.Accent2
+		target, c := "you", a.th.Accent2
 		if v := u.roomIn.Value(); strings.HasPrefix(v, "/dm ") {
 			target, c = "dm", a.th.Warn
+		} else if strings.HasPrefix(v, "/ask ") {
+			target, c = "thread", a.th.Info
 		} else if strings.HasPrefix(v, "/") {
 			target, c = "cmd", a.th.Muted
+		} else if r.view != 0 {
+			target, c = "thread", a.th.Info
 		}
-		return fg(c).Bold(true).Render(padRight(target, 4)) + fg(a.th.Subtle).Render("▸ ")
+		return fg(c).Bold(true).Render(padRight(target, 6)) + fg(a.th.Subtle).Render("▸")
 	})
 	u.assistIn.SetPromptFunc(5, func(pi textarea.PromptInfo) string {
 		if pi.LineNumber != 0 {
@@ -446,14 +632,17 @@ func (a *App) refreshRoom() {
 }
 
 func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
+	if w := lipgloss.Width(s); w >= n {
+		return ansiCut(s, n)
 	}
-	return s + strings.Repeat(" ", n-len(s))
+	return s + strings.Repeat(" ", n-lipgloss.Width(s))
 }
 
 func (a *App) roomScroll(dir int, page bool) {
 	u := a.rm
+	if u.setup != nil {
+		return
+	}
 	vp, follow := &u.feedVP, &u.feedFollow
 	if u.room != nil && u.room.pane == paneAssistant {
 		vp, follow = &u.assistVP, &u.asstFollow
@@ -473,7 +662,19 @@ func (a *App) roomScroll(dir int, page bool) {
 
 func (a *App) roomWheel(m tea.MouseWheelMsg) {
 	u := a.rm
-	if u == nil || u.room == nil {
+	if u == nil {
+		return
+	}
+	if u.setup != nil {
+		if m.Mouse().Button == tea.MouseWheelUp {
+			u.setup.vp.ScrollUp(3)
+		} else {
+			u.setup.vp.ScrollDown(3)
+		}
+		u.setup.follow = u.setup.vp.AtBottom()
+		return
+	}
+	if u.room == nil {
 		return
 	}
 	if u.room.overlay != nil {
@@ -485,7 +686,11 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 		return
 	}
 	fh, _ := a.paneHeights()
-	inAssist := a.roomSide() && m.Mouse().X > a.feedW() || !a.roomSide() && m.Mouse().Y > 2+fh
+	top := 2
+	if a.statsShown() {
+		top += statsHeight()
+	}
+	inAssist := a.roomSide() && m.Mouse().X > a.feedW() || !a.roomSide() && m.Mouse().Y > top+fh
 	vp, follow := &u.feedVP, &u.feedFollow
 	if inAssist {
 		vp, follow = &u.assistVP, &u.asstFollow
@@ -500,9 +705,12 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 
 func (a *App) roomView() string {
 	u := a.rm
+	if u.setup != nil {
+		return a.setupView()
+	}
 	spin := a.spin.View()
 	if u.room == nil {
-		msg := fg(a.th.Muted).Italic(true).Render(spin + " " + u.opening + " the room…")
+		msg := fg(a.th.Muted).Italic(true).Render(spin + " " + u.opening + "…")
 		if u.err != "" {
 			msg = fg(a.th.Err).Render("✗ "+u.err) + "\n\n" + fg(a.th.Muted).Render("ctrl+c to quit")
 		}
@@ -515,17 +723,12 @@ func (a *App) roomView() string {
 	fw, aw := a.feedW(), a.assistW()
 
 	feed := lipgloss.NewStyle().Width(fw).Height(fh).Render(u.feedVP.View())
-	digest, sug, _ := a.assistantColumn(aw-2, ah)
-	parts := []string{}
-	if digest != "" {
-		parts = append(parts, digest, "")
+	top, _ := a.assistantColumn(aw-2, ah)
+	col := u.assistVP.View()
+	if top != "" {
+		col = top + "\n" + col
 	}
-	parts = append(parts, u.assistVP.View())
-	assistBody := lipgloss.NewStyle().Height(ah - lipgloss.Height(sug) - 1).MaxHeight(ah).Render(strings.Join(parts, "\n"))
-	if sug != "" {
-		assistBody = lipgloss.JoinVertical(lipgloss.Left, assistBody, "", sug)
-	}
-	assist := lipgloss.NewStyle().Width(aw).Height(ah).MaxHeight(ah).PaddingLeft(1).Render(assistBody)
+	assist := lipgloss.NewStyle().Width(aw).Height(ah).MaxHeight(ah).PaddingLeft(1).Render(col)
 
 	var body string
 	switch {
@@ -541,7 +744,7 @@ func (a *App) roomView() string {
 
 	box := func(in textarea.Model, focused bool, w int) string {
 		st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Width(w)
-		if focused {
+		if focused && !r.review {
 			st = st.BorderForegroundBlend(a.th.Accent2, a.th.Accent, a.th.Info, a.th.Speaker(2)).BorderForegroundBlendOffset(a.frame)
 		} else {
 			st = st.BorderForeground(a.th.Border)
@@ -557,6 +760,10 @@ func (a *App) roomView() string {
 	default:
 		inputs = box(u.roomIn, true, a.w)
 	}
-	roster := renderRoomRoster(r, a.th, a.w, spin)
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", body, roster, inputs, roomFooter(r, a.th, a.w))
+	rows := []string{header, ""}
+	if a.statsShown() {
+		rows = append(rows, renderStats(r, a.th, a.w), "")
+	}
+	rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, roomFooter(r, a.th, a.w))
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }

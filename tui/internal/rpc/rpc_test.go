@@ -191,40 +191,43 @@ func TestRecordedRoomDecodesStrictly(t *testing.T) {
 			}
 		case Response:
 			switch v.ID {
-			case 2: // an empty room, as the TUI starts one
+			case 1: // first launch: no channels yet
+				var w Workspace
+				if err := DecodeResult(v.Result, &w); err != nil || len(w.Channels) != 0 {
+					t.Fatalf("workspace: %v %+v", err, w)
+				}
+			case 5, 13:
 				var s RoomSnapshot
 				if err := DecodeResult(v.Result, &s); err != nil {
 					t.Fatalf("snapshot %d: %v", v.ID, err)
 				}
-				if s.ID == "" || len(s.Agents) != 0 || len(s.Events) != 0 || s.Support.Floor.CLI != "mock" {
-					t.Fatalf("unexpected empty room: %+v", s)
+				if s.ID == "" || s.Name != "product-cache" || len(s.Agents) != 3 || s.Support.Floor.CLI != "mock" || len(s.Events) < 3 {
+					t.Fatalf("unexpected channel %d: %+v", v.ID, s)
 				}
-			case 12:
-				var s RoomSnapshot
-				if err := DecodeResult(v.Result, &s); err != nil {
-					t.Fatalf("snapshot %d: %v", v.ID, err)
+				if v.ID == 5 && (len(s.Skipped) != 1 || s.Skipped[0] != "docs") {
+					t.Fatalf("missing reading-list entries should be reported: %+v", s.Skipped)
 				}
-				if len(s.Agents) != 3 || s.Focus == "" || s.Digest == "" || len(s.Events) < 10 {
-					t.Fatalf("unexpected reopened room: %+v", s)
+				if v.ID == 13 && s.Digest == "" {
+					t.Fatal("a reopened channel should carry the assistant's digest")
 				}
-			case 9:
+			case 8:
 				var d RoomDocText
 				if err := DecodeResult(v.Result, &d); err != nil || !strings.Contains(d.Text, "# Plan") {
 					t.Fatalf("doc: %v %+v", err, d)
 				}
-			case 11:
-				var l []RoomListItem
-				if err := DecodeResult(v.Result, &l); err != nil || len(l) != 1 {
-					t.Fatalf("rooms.list: %v %+v", err, l)
+			case 12:
+				var w Workspace
+				if err := DecodeResult(v.Result, &w); err != nil || len(w.Channels) != 1 || len(w.Members) != 3 {
+					t.Fatalf("workspace: %v %+v", err, w)
 				}
-			case 13:
+			case 14:
 				if v.Err == "" {
 					t.Fatal("focusing an unknown topic should fail")
 				}
 			}
 		}
 	}
-	for _, want := range []string{"room.state", "room.turn.start", "room.turn.delta", "room.turn.tool", "room.turn.end", "room.assistant.delta", "message", "aside", "suggestion", "suggestion.resolved", "doc.revised", "doc.accepted", "agent.joined", "floor", "paused", "resumed"} {
+	for _, want := range []string{"room.state", "room.turn.start", "room.turn.delta", "room.turn.tool", "room.turn.end", "room.assistant.delta", "message", "aside", "suggestion", "doc.revised", "doc.accepted", "floor", "tags", "thread.summary", "room.support", "setup.delta", "setup.reply", "paused", "resumed"} {
 		if types[want] == 0 {
 			t.Errorf("recording has no %s", want)
 		}

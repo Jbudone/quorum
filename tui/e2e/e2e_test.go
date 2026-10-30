@@ -257,43 +257,52 @@ func TestRealBinaryLiveClaude(t *testing.T) {
 	tm.snapshot("live-done")
 }
 
-// A mock room end to end, the way `quorum` opens: an empty room, the assistant proposing members,
-// the scripted cast talking through the real floor and room tools, a question to the assistant,
-// and reopening the room on the next launch.
+// A mock workspace end to end, the way `quorum` opens: the setup chat, the channel the human
+// approves, the scripted cast talking through the real floor and room tools, a side thread, the
+// assistant's suggestions, and reopening the channel on the next launch.
 func TestRealBinaryMockRoom(t *testing.T) {
 	repo := t.TempDir()
 	tm := start(t, 150, 46, "--mock", "--repo", repo)
-	tm.waitFor("This room is empty", 30*time.Second)
-	tm.snapshot("room-0-empty")
+	tm.waitFor("What should this channel work on", 30*time.Second)
+	tm.snapshot("room-0-setup")
 	tm.typ("Should we add a cache to the product API?")
 	tm.send("\r")
-	tm.waitFor("NEEDS YOUR OK · 3", 30*time.Second)
-	tm.snapshot("room-1-staffing")
-	tm.send("\t") // the assistant's box
-	for i := 0; i < 3; i++ {
-		tm.send("y")
-		time.Sleep(100 * time.Millisecond)
-	}
-	tm.waitFor("pragmatist joined", 10*time.Second)
+	tm.waitFor("starting fresh?", 20*time.Second)
+	tm.typ("No docs yet")
+	tm.send("\r")
+	tm.waitFor("ctrl+s open the channel", 20*time.Second)
+	tm.snapshot("room-1-lineup")
+	tm.send("\x13") // ctrl+s
 	tm.waitFor("TALKING", 20*time.Second)
 	tm.snapshot("room-2-talking")
 	tm.waitFor("accepted by the chair", 60*time.Second)
-	s := tm.waitFor("PAUSED", 10*time.Second)
-	for _, want := range []string{"Plan v2 answers every objection", "↩ ", "pragmatist"} {
+	tm.waitFor("PAUSED", 10*time.Second)
+	s := tm.waitFor("Plan v2 answers every objection", 10*time.Second) // the Chair speaks just after the milestone pause
+	for _, want := range []string{"↩ ", "RECENT", "DISCUSSIONS", "MEMBERS"} {
 		if !strings.Contains(s, want) {
-			t.Fatalf("settled room is missing %q:\n%s", want, s)
+			t.Fatalf("settled channel is missing %q:\n%s", want, s)
 		}
 	}
-	tm.waitFor("WHERE WE ARE", 10*time.Second) // the assistant's digest
+	tm.waitFor("WHERE WE ARE", 10*time.Second)
 	tm.snapshot("room-3-milestone")
-	tm.typ("where are we?")
+
+	tm.send("\x10") // ctrl+p: carry on
+	time.Sleep(200 * time.Millisecond)
+	tm.typ("/ask How long can a price be stale?")
 	tm.send("\r")
-	tm.waitFor("In short", 30*time.Second)
-	tm.snapshot("room-4-assistant")
+	tm.waitFor("nobody pays a stale price", 30*time.Second)
+	tm.waitFor("settled", 30*time.Second)
+	tm.snapshot("room-4-thread")
+	tm.send("\x1b") // back to the channel
+	tm.waitFor("NEEDS YOU", 30*time.Second)
+	tm.send("\x0e") // ctrl+n: review
+	tm.waitFor("y approve", 5*time.Second)
+	tm.snapshot("room-5-review")
 	tm.send("\x03")
 	time.Sleep(300 * time.Millisecond)
 
 	again := start(t, 150, 46, "--mock", "--repo", repo)
-	again.waitFor("This room is paused (milestone: plan v2 accepted)", 30*time.Second)
+	again.waitFor("#product-cache", 30*time.Second)
+	again.waitFor("Picked up where you left off", 10*time.Second)
 	again.send("\x03")
 }

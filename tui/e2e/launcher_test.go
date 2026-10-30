@@ -3,6 +3,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,10 +24,10 @@ func TestLauncherWorksFromAnyDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm := launch(t, 140, 40, project, link, "--mock")
-	tm.waitFor("This room is empty", 90*time.Second) // first run may compile the TUI
-	// The room lives in the project it was started from.
-	if rooms, err := os.ReadDir(filepath.Join(project, ".quorum", "rooms")); err != nil || len(rooms) != 1 {
-		t.Fatalf("the room should be stored in the launch directory %s: %v %v", project, rooms, err)
+	// First run may compile the TUI. The workspace is the project it was started from.
+	s := tm.waitFor("What should this channel work on", 90*time.Second)
+	if !strings.Contains(s, filepath.Base(project)+" › new channel") {
+		t.Fatalf("the workspace should be the launch directory %s:\n%s", project, s)
 	}
 	tm.send("\x03")
 	done := make(chan error, 1)

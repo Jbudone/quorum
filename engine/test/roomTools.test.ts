@@ -235,7 +235,7 @@ describe("Room support roles", () => {
     ]);
     expect(room.digest()).toBe("- LRU agreed (#3)");
     expect(room.pending()).toMatchObject([{ action: "add", args: ["security", "claude"] }]);
-    expect(r.calls.filter((c) => c.agent === "assistant")[1].prompt).toContain("Your current digest for the human:\n- LRU agreed (#3)");
+    expect(r.calls.filter((c) => c.agent === "assistant")[1].prompt).toContain("Your current two-line status for the human:\n- LRU agreed (#3)");
   });
 
   it("a removed member writes an exit memo and can be brought back", async () => {
@@ -245,11 +245,11 @@ describe("Room support roles", () => {
     await room.removeMember("skeptic");
     expect(room.store.config().agents.map((a) => a.id)).toEqual(["arch"]);
     expect(room.store.events().at(-1)).toMatchObject({ type: "agent.left", agent: "skeptic", memo: "- skeptic memo" });
-    expect(room.store.notebook("skeptic")).toBe("");
+    // The notebook belongs to the member, not the channel, so it keeps the memo.
+    expect(room.store.notebook("skeptic")).toBe("my notes\n\n## Left #pick-a-cache\n\n- skeptic memo\n");
     await expect(room.removeMember("skeptic")).rejects.toThrow(/no member/);
 
     expect(room.addMember({ persona: "skeptic", cli: "mock" })).toBe("skeptic");
-    expect(room.store.notebook("skeptic")).toContain("## Exit memo");
     expect(room.addMember({ persona: "skeptic", cli: "mock", model: "other" })).toBe("skeptic-2");
     expect(() => room.addMember({ persona: "nope", cli: "mock" })).toThrow(/persona/);
     room.resume();

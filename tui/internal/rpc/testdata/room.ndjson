@@ -1,307 +1,428 @@
-{"id":1,"result":[]}
-{"id":2,"result":{"id":"2026-10-30-22-11-08-room","dir":"/tmp/rec-Acvh6p/.quorum/rooms/2026-10-30-22-11-08-room","topic":"","state":"paused","agents":[],"left":[],"support":{"assistant":{"cli":"mock"},"chair":{"cli":"mock"},"scribe":{"cli":"mock"},"floor":{"cli":"mock"}},"digest":"","tuning":{"parallel":2,"turnCap":40,"quotaWarn":0.75,"quotaStop":0.9},"focus":"","topics":[],"docs":[],"pending":[],"events":[],"substitutions":[]}}
-{"event":"room.event","data":{"type":"resumed","seq":1,"ts":"2026-10-30T22:11:08.316Z"}}
-{"event":"room.state","data":{"state":"running"}}
-{"event":"room.state","data":{"state":"idle"}}
+{"id":1,"result":{"channels":[],"members":[]}}
+{"id":2,"result":{}}
 {"id":3,"result":{}}
-{"event":"room.event","data":{"type":"topic.raised","slug":"should-we-add-a-cache","title":"Should we add a cache to the product API?","by":"human","seq":2,"ts":"2026-10-30T22:11:08.317Z"}}
-{"event":"room.event","data":{"type":"topic.focus","slug":"should-we-add-a-cache","by":"human","seq":3,"ts":"2026-10-30T22:11:08.317Z"}}
-{"event":"room.event","data":{"type":"message","from":"human","to":"room","text":"Should we add a cache to the product API?","seq":4,"ts":"2026-10-30T22:11:08.317Z"}}
-{"id":4,"result":{"seq":4}}
-{"event":"room.event","data":{"type":"aside","from":"assistant","text":"For a caching decision I'd start with three people who will disagree usefully: someone to propose the design, someone to attack its consistency story, and someone to keep it simple.","kind":"note","seq":5,"ts":"2026-10-30T22:11:09.957Z"}}
-{"event":"room.event","data":{"type":"suggestion","id":1,"from":"assistant","action":"add","args":["architect","mock"],"why":"proposes the design and writes the plan","seq":6,"ts":"2026-10-30T22:11:09.957Z"}}
-{"event":"room.event","data":{"type":"suggestion","id":2,"from":"assistant","action":"add","args":["skeptic","mock"],"why":"will press on consistency and failure modes","seq":7,"ts":"2026-10-30T22:11:09.957Z"}}
-{"event":"room.event","data":{"type":"suggestion","id":3,"from":"assistant","action":"add","args":["pragmatist","mock"],"why":"keeps scope and operational cost honest","seq":8,"ts":"2026-10-30T22:11:09.957Z"}}
-{"event":"room.event","data":{"type":"agent.joined","agent":"architect","persona":"architect","cli":"mock","seq":9,"ts":"2026-10-30T22:11:09.958Z"}}
+{"event":"setup.delta","data":{"delta":"Got "}}
+{"event":"setup.delta","data":{"delta":"it. "}}
+{"event":"setup.delta","data":{"delta":"Is "}}
+{"event":"setup.delta","data":{"delta":"there "}}
+{"event":"setup.delta","data":{"delta":"a "}}
+{"event":"setup.delta","data":{"delta":"folder "}}
+{"event":"setup.delta","data":{"delta":"of "}}
+{"event":"setup.delta","data":{"delta":"earlier "}}
+{"event":"setup.delta","data":{"delta":"notes "}}
+{"event":"setup.delta","data":{"delta":"they "}}
+{"event":"setup.delta","data":{"delta":"should "}}
+{"event":"setup.delta","data":{"delta":"read "}}
+{"event":"setup.delta","data":{"delta":"first, "}}
+{"event":"setup.delta","data":{"delta":"or "}}
+{"event":"setup.delta","data":{"delta":"are "}}
+{"event":"setup.delta","data":{"delta":"they "}}
+{"event":"setup.delta","data":{"delta":"starting "}}
+{"event":"setup.delta","data":{"delta":"fresh?"}}
+{"event":"setup.reply","data":{"text":"Got it. Is there a folder of earlier notes they should read first, or are they starting fresh?"}}
+{"id":4,"result":{}}
+{"event":"setup.delta","data":{"delta":"Here's "}}
+{"event":"setup.delta","data":{"delta":"who "}}
+{"event":"setup.delta","data":{"delta":"I'd "}}
+{"event":"setup.delta","data":{"delta":"bring "}}
+{"event":"setup.delta","data":{"delta":"in. "}}
+{"event":"setup.delta","data":{"delta":"Tell "}}
+{"event":"setup.delta","data":{"delta":"me "}}
+{"event":"setup.delta","data":{"delta":"if "}}
+{"event":"setup.delta","data":{"delta":"you "}}
+{"event":"setup.delta","data":{"delta":"want "}}
+{"event":"setup.delta","data":{"delta":"anyone "}}
+{"event":"setup.delta","data":{"delta":"else.\n"}}
+{"event":"setup.delta","data":{"delta":">> "}}
+{"event":"setup.delta","data":{"delta":"channel: "}}
+{"event":"setup.delta","data":{"delta":"product-cache "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"Should "}}
+{"event":"setup.delta","data":{"delta":"we "}}
+{"event":"setup.delta","data":{"delta":"add "}}
+{"event":"setup.delta","data":{"delta":"a "}}
+{"event":"setup.delta","data":{"delta":"cache "}}
+{"event":"setup.delta","data":{"delta":"to "}}
+{"event":"setup.delta","data":{"delta":"the "}}
+{"event":"setup.delta","data":{"delta":"product "}}
+{"event":"setup.delta","data":{"delta":"API, "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"how?\n"}}
+{"event":"setup.delta","data":{"delta":">> "}}
+{"event":"setup.delta","data":{"delta":"read: "}}
+{"event":"setup.delta","data":{"delta":"docs\n"}}
+{"event":"setup.delta","data":{"delta":">> "}}
+{"event":"setup.delta","data":{"delta":"member: "}}
+{"event":"setup.delta","data":{"delta":"perf-researcher "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"mock "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"performance "}}
+{"event":"setup.delta","data":{"delta":"researcher "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"Studies "}}
+{"event":"setup.delta","data":{"delta":"read "}}
+{"event":"setup.delta","data":{"delta":"paths "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"latency; "}}
+{"event":"setup.delta","data":{"delta":"proposes "}}
+{"event":"setup.delta","data":{"delta":"designs "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"backs "}}
+{"event":"setup.delta","data":{"delta":"them "}}
+{"event":"setup.delta","data":{"delta":"with "}}
+{"event":"setup.delta","data":{"delta":"numbers.\n"}}
+{"event":"setup.delta","data":{"delta":">> "}}
+{"event":"setup.delta","data":{"delta":"member: "}}
+{"event":"setup.delta","data":{"delta":"reliability-scientist "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"mock "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"reliability "}}
+{"event":"setup.delta","data":{"delta":"scientist "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"Hunts "}}
+{"event":"setup.delta","data":{"delta":"for "}}
+{"event":"setup.delta","data":{"delta":"consistency "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"failure "}}
+{"event":"setup.delta","data":{"delta":"modes; "}}
+{"event":"setup.delta","data":{"delta":"won't "}}
+{"event":"setup.delta","data":{"delta":"accept "}}
+{"event":"setup.delta","data":{"delta":"a "}}
+{"event":"setup.delta","data":{"delta":"design "}}
+{"event":"setup.delta","data":{"delta":"without "}}
+{"event":"setup.delta","data":{"delta":"a "}}
+{"event":"setup.delta","data":{"delta":"staleness "}}
+{"event":"setup.delta","data":{"delta":"bound.\n"}}
+{"event":"setup.delta","data":{"delta":">> "}}
+{"event":"setup.delta","data":{"delta":"member: "}}
+{"event":"setup.delta","data":{"delta":"product-engineer "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"mock "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"product "}}
+{"event":"setup.delta","data":{"delta":"engineer "}}
+{"event":"setup.delta","data":{"delta":"| "}}
+{"event":"setup.delta","data":{"delta":"Has "}}
+{"event":"setup.delta","data":{"delta":"to "}}
+{"event":"setup.delta","data":{"delta":"build "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"run "}}
+{"event":"setup.delta","data":{"delta":"it; "}}
+{"event":"setup.delta","data":{"delta":"keeps "}}
+{"event":"setup.delta","data":{"delta":"scope "}}
+{"event":"setup.delta","data":{"delta":"and "}}
+{"event":"setup.delta","data":{"delta":"operational "}}
+{"event":"setup.delta","data":{"delta":"cost "}}
+{"event":"setup.delta","data":{"delta":"honest."}}
+{"event":"setup.reply","data":{"text":"Here's who I'd bring in. Tell me if you want anyone else.","proposal":{"reading":["docs"],"members":[{"id":"perf-researcher","cli":"mock","role":"performance researcher","persona":"Studies read paths and latency; proposes designs and backs them with numbers."},{"id":"reliability-scientist","cli":"mock","role":"reliability scientist","persona":"Hunts for consistency and failure modes; won't accept a design without a staleness bound."},{"id":"product-engineer","cli":"mock","role":"product engineer","persona":"Has to build and run it; keeps scope and operational cost honest."}],"name":"product-cache","topic":"Should we add a cache to the product API, and how?"}}}
+{"id":5,"result":{"id":"2026-10-30-23-32-39-room","dir":"/tmp/rec-yD6YDp/.quorum/rooms/2026-10-30-23-32-39-room","name":"product-cache","topic":"Should we add a cache to the product API, and how?","reading":[],"state":"paused","agents":[{"id":"perf-researcher","persona":"perf-researcher","cli":"mock"},{"id":"reliability-scientist","persona":"reliability-scientist","cli":"mock"},{"id":"product-engineer","persona":"product-engineer","cli":"mock"}],"left":[],"support":{"assistant":{"cli":"mock"},"chair":{"cli":"mock"},"scribe":{"cli":"mock"},"floor":{"cli":"mock"}},"digest":"","tuning":{"parallel":2,"turnCap":40,"quotaWarn":0.75,"quotaStop":0.9,"independent":false},"focus":"should-we-add-a-cache","topics":[{"slug":"should-we-add-a-cache","title":"Should we add a cache to the product API, and how?","closed":false}],"docs":[],"pending":[],"events":[{"type":"topic.raised","slug":"should-we-add-a-cache","title":"Should we add a cache to the product API, and how?","by":"human","seq":1,"ts":"2026-10-30T23:32:39.311Z"},{"type":"topic.focus","slug":"should-we-add-a-cache","by":"human","seq":2,"ts":"2026-10-30T23:32:39.311Z"},{"type":"message","from":"human","to":"room","text":"Should we add a cache to the product API, and how?","seq":3,"ts":"2026-10-30T23:32:39.311Z"}],"skipped":["docs"]}}
+{"event":"room.event","data":{"type":"resumed","seq":4,"ts":"2026-10-30T23:32:39.312Z"}}
 {"event":"room.state","data":{"state":"running"}}
-{"event":"room.event","data":{"type":"suggestion.resolved","id":1,"accepted":true,"seq":10,"ts":"2026-10-30T22:11:09.960Z"}}
-{"id":5,"result":{}}
-{"event":"room.event","data":{"type":"agent.joined","agent":"skeptic","persona":"skeptic","cli":"mock","seq":11,"ts":"2026-10-30T22:11:09.960Z"}}
-{"event":"room.event","data":{"type":"suggestion.resolved","id":2,"accepted":true,"seq":12,"ts":"2026-10-30T22:11:09.961Z"}}
 {"id":6,"result":{}}
-{"event":"room.event","data":{"type":"agent.joined","agent":"pragmatist","persona":"pragmatist","cli":"mock","seq":13,"ts":"2026-10-30T22:11:09.961Z"}}
-{"event":"room.event","data":{"type":"suggestion.resolved","id":3,"accepted":true,"seq":14,"ts":"2026-10-30T22:11:09.961Z"}}
-{"id":7,"result":{}}
-{"event":"room.turn.start","data":{"agent":"architect"}}
-{"event":"room.turn.start","data":{"agent":"skeptic"}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"Starting "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"Before "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"point: "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"we "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"an "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"pick "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"in-process "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"LRU "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"cache: "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"per "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"what's "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"instance. "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"About "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"consistency "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"90% "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"requirement? "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"If "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"our "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"reads "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"price "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"are "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"changes, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"product "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"how "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"lookups "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"long "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"by "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"may "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"id, "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"so "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"stale "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"price "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"read-through "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"be "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"cache "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"shown? "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"in "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"Nobody "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"front "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"has "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"said."}}
-{"event":"room.turn.end","data":{"agent":"skeptic"}}
-{"event":"room.event","data":{"type":"message","from":"skeptic","to":"room","text":"Before we pick a cache: what's the consistency requirement? If a price changes, how long may a stale price be shown? Nobody has said.","seq":15,"ts":"2026-10-30T22:11:10.765Z"}}
-{"event":"room.turn.start","data":{"agent":"pragmatist"}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"repository "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"gets "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"most "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"win "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"without "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"new "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"Agree "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"infrastructure."}}
-{"event":"room.turn.end","data":{"agent":"architect"}}
-{"event":"room.event","data":{"type":"message","from":"architect","to":"room","text":"Starting point: an in-process LRU per instance. About 90% of our reads are product lookups by id, so a read-through cache in front of the repository gets most of the win without new infrastructure.","seq":16,"ts":"2026-10-30T22:11:11.014Z"}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"with "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"an "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"in-process "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"LRU "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"for "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"now. "}}
-{"event":"room.event","data":{"type":"floor","picks":[{"agent":"skeptic","why":"has something to add on this","replyTo":16}],"seq":17,"ts":"2026-10-30T22:11:11.165Z"}}
-{"event":"room.turn.start","data":{"agent":"skeptic"}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"Redis "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"is "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"one "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"more "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"thing "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"to "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"run, "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"and "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"Let me write that down first."}}
-{"event":"room.turn.tool","data":{"agent":"skeptic","name":"mcp__quorum__raise_topic"}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"we "}}
-{"event":"room.event","data":{"type":"topic.raised","slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","by":"skeptic","why":"it needs its own answer before we ship","seq":18,"ts":"2026-10-30T22:11:11.378Z"}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"don't "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"For "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"have "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"single "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"writes, "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"traffic "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"yes. "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"to "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"But "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"justify "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"bulk "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"it "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"import "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"yet."}}
-{"event":"room.turn.end","data":{"agent":"pragmatist"}}
-{"event":"room.event","data":{"type":"message","from":"pragmatist","to":"room","text":"Agree with an in-process LRU for now. Redis is one more thing to run, and we don't have the traffic to justify it yet.","seq":19,"ts":"2026-10-30T22:11:11.577Z"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"writes "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"thousands "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"rows; "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"if "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"we "}}
-{"event":"room.event","data":{"type":"floor","picks":[{"agent":"architect","why":"has something to add on this","replyTo":19}],"seq":20,"ts":"2026-10-30T22:11:11.728Z"}}
-{"event":"room.turn.start","data":{"agent":"architect"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"only "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"invalidate "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"at "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"end, "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"readers "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"see "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"Let me write that down first."}}
-{"event":"room.turn.tool","data":{"agent":"architect","name":"mcp__quorum__doc_draft"}}
-{"event":"room.event","data":{"type":"doc.revised","slug":"plan","version":1,"kind":"plan","by":"architect","note":"first draft","seq":21,"ts":"2026-10-30T22:11:11.930Z"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"half-updated "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"I've "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"catalog "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"put "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"for "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"up "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"whole "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"first "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"import."}}
-{"event":"room.turn.end","data":{"agent":"skeptic"}}
-{"event":"room.event","data":{"type":"message","from":"skeptic","to":"room","text":"For single writes, yes. But bulk import writes thousands of rows; if we only invalidate at the end, readers see a half-updated catalog for the whole import.","replyTo":16,"seq":22,"ts":"2026-10-30T22:11:12.060Z"}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"plan "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"(plan "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"v1): "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"LRU, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"30 "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"s "}}
-{"event":"room.event","data":{"type":"floor","picks":[{"agent":"pragmatist","why":"has something to add on this","replyTo":22}],"seq":23,"ts":"2026-10-30T22:11:12.213Z"}}
-{"event":"room.turn.start","data":{"agent":"pragmatist"}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"TTL, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"invalidate "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"on "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"three "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"write "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"paths. "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"@skeptic, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"does "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"30 "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"seconds "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"30 "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"second "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"staleness "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"bound "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"is "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"answer "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"fine "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"your "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"for "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"staleness "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"product "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"question?"}}
-{"event":"room.turn.end","data":{"agent":"architect"}}
-{"event":"room.event","data":{"type":"message","from":"architect","to":"room","text":"I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @skeptic, does a 30 second bound answer your staleness question?","replyTo":19,"seq":24,"ts":"2026-10-30T22:11:12.632Z"}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"pages; "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"checkout "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"re-reads "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"prices "}}
-{"event":"room.turn.delta","data":{"agent":"pragmatist","delta":"anyway."}}
-{"event":"room.turn.end","data":{"agent":"pragmatist"}}
-{"event":"room.event","data":{"type":"message","from":"pragmatist","to":"room","text":"30 seconds of staleness is fine for product pages; checkout re-reads prices anyway.","replyTo":22,"seq":25,"ts":"2026-10-30T22:11:12.744Z"}}
-{"event":"room.event","data":{"type":"floor","picks":[{"agent":"skeptic","why":"has something to add on this","replyTo":24}],"seq":26,"ts":"2026-10-30T22:11:12.783Z"}}
-{"event":"room.turn.start","data":{"agent":"skeptic"}}
-{"event":"room.event","data":{"type":"floor","picks":[{"agent":"architect","why":"has something to add on this","replyTo":25}],"seq":27,"ts":"2026-10-30T22:11:12.934Z"}}
-{"event":"room.turn.start","data":{"agent":"architect"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"If "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"we "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"invalidate "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"per "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"batch "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"Let me write that down first."}}
-{"event":"room.turn.tool","data":{"agent":"architect","name":"mcp__quorum__doc_draft"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"instead "}}
-{"event":"room.event","data":{"type":"doc.revised","slug":"plan","version":2,"kind":"plan","by":"architect","note":"per-batch invalidation, load test","seq":28,"ts":"2026-10-30T22:11:13.136Z"}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"@skeptic "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"at "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"is "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"right "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"end, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"about "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"I "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"bulk "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"can "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"imports. "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"live "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"Plan "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"with "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"v2 "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"it, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"invalidates "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"as "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"per "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"long "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"batch "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"as "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"instead "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"of "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"TTL "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"at "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"stays "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"the "}}
-{"event":"room.turn.delta","data":{"agent":"skeptic","delta":"short."}}
-{"event":"room.turn.end","data":{"agent":"skeptic"}}
-{"event":"room.event","data":{"type":"message","from":"skeptic","to":"room","text":"If we invalidate per batch instead of at the end, I can live with it, as long as the TTL stays short.","replyTo":24,"seq":29,"ts":"2026-10-30T22:11:13.538Z"}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"end, "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"and "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"adds "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"a "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"load "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"test "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"before "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"we "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"turn "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"it "}}
-{"event":"room.turn.delta","data":{"agent":"architect","delta":"on."}}
-{"event":"room.turn.end","data":{"agent":"architect"}}
-{"event":"room.event","data":{"type":"message","from":"architect","to":"room","text":"@skeptic is right about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.","replyTo":25,"seq":30,"ts":"2026-10-30T22:11:13.790Z"}}
+{"event":"room.turn.start","data":{"agent":"perf-researcher"}}
+{"event":"room.turn.start","data":{"agent":"reliability-scientist"}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"Starting "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"Before "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"point: "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"we "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"an "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"pick "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"in-process "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"LRU "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"cache: "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"per "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"what's "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"instance. "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"About "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"consistency "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"90% "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"requirement? "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"If "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"our "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"reads "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"price "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"are "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"changes, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"product "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"how "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"lookups "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"long "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"by "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"may "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"id, "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"so "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"stale "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"price "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"read-through "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"be "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"cache "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"shown? "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"in "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"Nobody "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"front "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"has "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"said."}}
+{"event":"room.turn.end","data":{"agent":"reliability-scientist"}}
+{"event":"room.event","data":{"type":"message","from":"reliability-scientist","to":"room","text":"Before we pick a cache: what's the consistency requirement? If a price changes, how long may a stale price be shown? Nobody has said.","replyTo":3,"seq":5,"ts":"2026-10-30T23:32:40.126Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.start","data":{"agent":"product-engineer"}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"repository "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"gets "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"most "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"the "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":5,"from":"reliability-scientist","kind":"question","headline":"Before we pick a cache: what's"}],"seq":6,"ts":"2026-10-30T23:32:40.282Z"}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"win "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"without "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"new "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"Agree "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"infrastructure."}}
+{"event":"room.turn.end","data":{"agent":"perf-researcher"}}
+{"event":"room.event","data":{"type":"message","from":"perf-researcher","to":"room","text":"Starting point: an in-process LRU per instance. About 90% of our reads are product lookups by id, so a read-through cache in front of the repository gets most of the win without new infrastructure.","replyTo":3,"seq":7,"ts":"2026-10-30T23:32:40.374Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"with "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"an "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"in-process "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"LRU "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"for "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"now. "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"Redis "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"is "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"one "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"more "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"thing "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":7,"from":"perf-researcher","kind":"idea","headline":"Starting point: an in-process LRU per"}],"seq":8,"ts":"2026-10-30T23:32:40.653Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"reliability-scientist","why":"has something to add on this","replyTo":7}],"seq":9,"ts":"2026-10-30T23:32:40.653Z"}}
+{"event":"room.turn.start","data":{"agent":"reliability-scientist"}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"to "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"run, "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"and "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"we "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"don't "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"have "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"traffic "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"Let me write that down first."}}
+{"event":"room.turn.tool","data":{"agent":"reliability-scientist","name":"mcp__quorum__raise_topic"}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"to "}}
+{"event":"room.event","data":{"type":"topic.raised","slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","by":"reliability-scientist","why":"it needs its own answer before we ship","seq":10,"ts":"2026-10-30T23:32:40.868Z"}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"justify "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"For "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"it "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"single "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"yet."}}
+{"event":"room.turn.end","data":{"agent":"product-engineer"}}
+{"event":"room.event","data":{"type":"message","from":"product-engineer","to":"room","text":"Agree with an in-process LRU for now. Redis is one more thing to run, and we don't have the traffic to justify it yet.","replyTo":3,"seq":11,"ts":"2026-10-30T23:32:40.942Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"writes, "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"yes. "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"But "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"bulk "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"import "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"writes "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"thousands "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"rows; "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"if "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"we "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":11,"from":"product-engineer","kind":"agreement","headline":"Agree with an in-process LRU for"}],"seq":12,"ts":"2026-10-30T23:32:41.219Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"perf-researcher","why":"has something to add on this","replyTo":11}],"seq":13,"ts":"2026-10-30T23:32:41.219Z"}}
+{"event":"room.turn.start","data":{"agent":"perf-researcher"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"only "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"invalidate "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"at "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"end, "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"readers "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"see "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"Let me write that down first."}}
+{"event":"room.turn.tool","data":{"agent":"perf-researcher","name":"mcp__quorum__doc_draft"}}
+{"event":"room.event","data":{"type":"doc.revised","slug":"plan","version":1,"kind":"plan","by":"perf-researcher","note":"first draft","seq":14,"ts":"2026-10-30T23:32:41.422Z"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"half-updated "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"I've "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"catalog "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"put "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"for "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"up "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"whole "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"first "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"import."}}
+{"event":"room.turn.end","data":{"agent":"reliability-scientist"}}
+{"event":"room.event","data":{"type":"message","from":"reliability-scientist","to":"room","text":"For single writes, yes. But bulk import writes thousands of rows; if we only invalidate at the end, readers see a half-updated catalog for the whole import.","replyTo":7,"seq":15,"ts":"2026-10-30T23:32:41.553Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"plan "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"(plan "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"v1): "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"LRU, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"30 "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"s "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"TTL, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"invalidate "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"on "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"three "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":15,"from":"reliability-scientist","kind":"critique","headline":"For single writes, yes. But bulk"}],"seq":16,"ts":"2026-10-30T23:32:41.832Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"product-engineer","why":"has something to add on this","replyTo":15}],"seq":17,"ts":"2026-10-30T23:32:41.833Z"}}
+{"event":"room.turn.start","data":{"agent":"product-engineer"}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"write "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"paths. "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"@reliability-scientist, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"does "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"30 "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"second "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"bound "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"30 "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"answer "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"seconds "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"your "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"staleness "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"staleness "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"question?"}}
+{"event":"room.turn.end","data":{"agent":"perf-researcher"}}
+{"event":"room.event","data":{"type":"message","from":"perf-researcher","to":"room","text":"I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @reliability-scientist, does a 30 second bound answer your staleness question?","replyTo":11,"seq":18,"ts":"2026-10-30T23:32:42.136Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"is "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"fine "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"for "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"product "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"pages; "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"checkout "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"re-reads "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"prices "}}
+{"event":"room.turn.delta","data":{"agent":"product-engineer","delta":"anyway."}}
+{"event":"room.turn.end","data":{"agent":"product-engineer"}}
+{"event":"room.event","data":{"type":"message","from":"product-engineer","to":"room","text":"30 seconds of staleness is fine for product pages; checkout re-reads prices anyway.","replyTo":15,"seq":19,"ts":"2026-10-30T23:32:42.361Z"}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":18,"from":"perf-researcher","kind":"question","headline":"I've put up a first plan"}],"seq":20,"ts":"2026-10-30T23:32:42.414Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"reliability-scientist","why":"has something to add on this","replyTo":18}],"seq":21,"ts":"2026-10-30T23:32:42.414Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.start","data":{"agent":"reliability-scientist"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"If "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"we "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"invalidate "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":19,"from":"product-engineer","kind":"agreement","headline":"30 seconds of staleness is fine"}],"seq":22,"ts":"2026-10-30T23:32:42.692Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"perf-researcher","why":"has something to add on this","replyTo":19}],"seq":23,"ts":"2026-10-30T23:32:42.692Z"}}
+{"event":"room.turn.start","data":{"agent":"perf-researcher"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"per "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"batch "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"instead "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"at "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"end, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"Let me write that down first."}}
+{"event":"room.turn.tool","data":{"agent":"perf-researcher","name":"mcp__quorum__doc_draft"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"I "}}
+{"event":"room.event","data":{"type":"doc.revised","slug":"plan","version":2,"kind":"plan","by":"perf-researcher","note":"per-batch invalidation, load test","seq":24,"ts":"2026-10-30T23:32:42.897Z"}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"can "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"Fair "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"live "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"point "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"with "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"about "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"it, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"bulk "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"as "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"imports. "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"long "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"Plan "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"as "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"v2 "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"invalidates "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"TTL "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"per "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"stays "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"batch "}}
+{"event":"room.turn.delta","data":{"agent":"reliability-scientist","delta":"short."}}
+{"event":"room.turn.end","data":{"agent":"reliability-scientist"}}
+{"event":"room.event","data":{"type":"message","from":"reliability-scientist","to":"room","text":"If we invalidate per batch instead of at the end, I can live with it, as long as the TTL stays short.","replyTo":18,"seq":25,"ts":"2026-10-30T23:32:43.173Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"instead "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"of "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"at "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"the "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"end, "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"and "}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":25,"from":"reliability-scientist","kind":"concession","headline":"If we invalidate per batch instead"}],"seq":26,"ts":"2026-10-30T23:32:43.326Z"}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"adds "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"a "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"load "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"test "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"before "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"we "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"turn "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"it "}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"on."}}
+{"event":"room.turn.end","data":{"agent":"perf-researcher"}}
+{"event":"room.event","data":{"type":"message","from":"perf-researcher","to":"room","text":"Fair point about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.","replyTo":19,"seq":27,"ts":"2026-10-30T23:32:43.533Z"}}
+{"event":"room.support","data":{"role":"scribe","busy":true}}
+{"event":"room.support","data":{"role":"watch","busy":true}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":27,"from":"perf-researcher","kind":"concession","headline":"Fair point about bulk imports. Plan"}],"seq":28,"ts":"2026-10-30T23:32:43.696Z"}}
 {"event":"room.state","data":{"state":"idle"}}
-{"event":"room.event","data":{"type":"doc.accepted","slug":"plan","version":2,"by":"chair","seq":31,"ts":"2026-10-30T22:11:14.103Z"}}
+{"event":"room.support","data":{"role":"chair","busy":true}}
+{"event":"room.event","data":{"type":"doc.accepted","slug":"plan","version":2,"by":"chair","seq":29,"ts":"2026-10-30T23:32:43.974Z"}}
 {"event":"room.state","data":{"state":"paused","reason":"milestone: plan v2 accepted"}}
-{"event":"room.event","data":{"type":"paused","reason":"milestone: plan v2 accepted","seq":32,"ts":"2026-10-30T22:11:14.103Z"}}
-{"event":"room.event","data":{"type":"message","from":"chair","to":"room","text":"Plan v2 answers every objection raised so far.","seq":33,"ts":"2026-10-30T22:11:14.103Z"}}
-{"event":"room.event","data":{"type":"aside","from":"human","text":"where are we?","seq":34,"ts":"2026-10-30T22:11:14.104Z"}}
-{"id":8,"result":{}}
-{"event":"room.assistant.delta","data":{"delta":"In "}}
-{"event":"room.assistant.delta","data":{"delta":"short: "}}
-{"event":"room.assistant.delta","data":{"delta":"they "}}
+{"event":"room.event","data":{"type":"paused","reason":"milestone: plan v2 accepted","seq":30,"ts":"2026-10-30T23:32:43.974Z"}}
+{"event":"room.event","data":{"type":"message","from":"chair","to":"room","text":"Plan v2 answers every objection raised so far.","seq":31,"ts":"2026-10-30T23:32:43.975Z"}}
+{"event":"room.support","data":{"role":"chair","busy":false}}
+{"event":"room.event","data":{"type":"aside","from":"human","text":"where are we?","seq":32,"ts":"2026-10-30T23:32:43.975Z"}}
+{"event":"room.support","data":{"role":"assistant","busy":true}}
+{"id":7,"result":{}}
+{"event":"room.assistant.delta","data":{"delta":"They "}}
 {"event":"room.assistant.delta","data":{"delta":"agree "}}
 {"event":"room.assistant.delta","data":{"delta":"on "}}
-{"event":"room.assistant.delta","data":{"delta":"a "}}
-{"event":"room.assistant.delta","data":{"delta":"simple "}}
+{"event":"room.assistant.delta","data":{"delta":"an "}}
 {"event":"room.assistant.delta","data":{"delta":"in-process "}}
-{"event":"room.assistant.delta","data":{"delta":"cache "}}
-{"event":"room.assistant.delta","data":{"delta":"and "}}
-{"event":"room.assistant.delta","data":{"delta":"are "}}
-{"event":"room.assistant.delta","data":{"delta":"now "}}
-{"event":"room.assistant.delta","data":{"delta":"arguing "}}
-{"event":"room.assistant.delta","data":{"delta":"about "}}
-{"event":"room.assistant.delta","data":{"delta":"how "}}
-{"event":"room.assistant.delta","data":{"delta":"stale "}}
-{"event":"room.assistant.delta","data":{"delta":"data "}}
-{"event":"room.assistant.delta","data":{"delta":"may "}}
-{"event":"room.assistant.delta","data":{"delta":"get. "}}
-{"event":"room.assistant.delta","data":{"delta":"The "}}
-{"event":"room.assistant.delta","data":{"delta":"skeptic's "}}
-{"event":"room.assistant.delta","data":{"delta":"bulk-import "}}
-{"event":"room.assistant.delta","data":{"delta":"concern "}}
-{"event":"room.assistant.delta","data":{"delta":"is "}}
+{"event":"room.event","data":{"type":"aside","from":"assistant","text":"Agreed on an in-process LRU; bulk-import staleness still open. Plan v2.","kind":"digest","seq":33,"ts":"2026-10-30T23:32:44.122Z"}}
+{"event":"room.event","data":{"type":"aside","from":"assistant","text":"They converged on the LRU fast; nothing needs you yet.","kind":"note","seq":34,"ts":"2026-10-30T23:32:44.122Z"}}
+{"event":"room.support","data":{"role":"watch","busy":false}}
+{"event":"room.assistant.delta","data":{"delta":"cache; "}}
 {"event":"room.assistant.delta","data":{"delta":"the "}}
 {"event":"room.assistant.delta","data":{"delta":"open "}}
-{"event":"room.assistant.delta","data":{"delta":"thread; "}}
+{"event":"room.assistant.delta","data":{"delta":"question "}}
+{"event":"room.assistant.delta","data":{"delta":"is "}}
+{"event":"room.assistant.delta","data":{"delta":"how "}}
+{"event":"room.assistant.delta","data":{"delta":"stale "}}
+{"event":"room.assistant.delta","data":{"delta":"reads "}}
+{"event":"room.assistant.delta","data":{"delta":"may "}}
+{"event":"room.assistant.delta","data":{"delta":"get "}}
+{"event":"room.assistant.delta","data":{"delta":"during "}}
+{"event":"room.assistant.delta","data":{"delta":"bulk "}}
+{"event":"room.assistant.delta","data":{"delta":"imports, "}}
+{"event":"room.assistant.delta","data":{"delta":"and "}}
 {"event":"room.assistant.delta","data":{"delta":"the "}}
-{"event":"room.event","data":{"type":"aside","from":"assistant","text":"- Agreed: an in-process LRU per instance, no Redis yet.\n- Contested: staleness during bulk import (skeptic).\n- Plan is at v2.","kind":"digest","seq":35,"ts":"2026-10-30T22:11:14.828Z"}}
-{"event":"room.event","data":{"type":"aside","from":"assistant","text":"They converged on the LRU quickly; the only real disagreement is bulk-import staleness. Nothing needs you yet.","kind":"note","seq":36,"ts":"2026-10-30T22:11:14.828Z"}}
 {"event":"room.assistant.delta","data":{"delta":"plan "}}
 {"event":"room.assistant.delta","data":{"delta":"is "}}
 {"event":"room.assistant.delta","data":{"delta":"at "}}
-{"event":"room.event","data":{"type":"docs.updated","files":["decisions.md","open-questions.md","code-notes.md"],"by":"scribe","seq":37,"ts":"2026-10-30T22:11:14.902Z"}}
 {"event":"room.assistant.delta","data":{"delta":"v2.\n"}}
 {"event":"room.assistant.delta","data":{"delta":">> "}}
 {"event":"room.assistant.delta","data":{"delta":"steer: "}}
+{"event":"room.event","data":{"type":"docs.updated","files":["decisions.md","open-questions.md","code-notes.md"],"by":"scribe","seq":35,"ts":"2026-10-30T23:32:44.653Z"}}
+{"event":"room.support","data":{"role":"scribe","busy":false}}
 {"event":"room.assistant.delta","data":{"delta":"Settle "}}
 {"event":"room.assistant.delta","data":{"delta":"the "}}
 {"event":"room.assistant.delta","data":{"delta":"staleness "}}
@@ -311,11 +432,53 @@
 {"event":"room.assistant.delta","data":{"delta":"the "}}
 {"event":"room.assistant.delta","data":{"delta":"bulk-import "}}
 {"event":"room.assistant.delta","data":{"delta":"strategy."}}
-{"event":"room.event","data":{"type":"aside","from":"assistant","text":"In short: they agree on a simple in-process cache and are now arguing about how stale data may get. The skeptic's bulk-import concern is the open thread; the plan is at v2.","kind":"answer","seq":38,"ts":"2026-10-30T22:11:15.184Z"}}
-{"event":"room.event","data":{"type":"suggestion","id":4,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":39,"ts":"2026-10-30T22:11:15.185Z"}}
-{"id":9,"result":{"name":"plan","text":"# Plan: cache layer for the product API\n\n## Decision\nAn in-process LRU per instance (64 MB), with a 30 s TTL on product reads and explicit invalidation on writes.\n\n## Steps\n1. Wrap the product repository with a read-through cache.\n2. Invalidate on the three write paths (update, delete, bulk import).\n3. Export hit rate and eviction counts.\n4. Load-test with production-shaped traffic before turning it on per tenant.\n\n## Risks\n- Stale reads during bulk import: invalidate per batch, not at the end.\n"}}
-{"event":"room.event","data":{"type":"message","from":"human","to":"room","text":"Keep the TTL under a minute.","seq":40,"ts":"2026-10-30T22:11:15.186Z"}}
-{"id":10,"result":{"seq":40}}
-{"id":11,"result":[{"id":"2026-10-30-22-11-08-room","topic":"Should we add a cache to the product API?","events":40,"updated":"2026-10-30T22:11:15.186Z"}]}
-{"id":12,"result":{"id":"2026-10-30-22-11-08-room","dir":"/tmp/rec-Acvh6p/.quorum/rooms/2026-10-30-22-11-08-room","topic":"Should we add a cache to the product API?","state":"paused","agents":[{"id":"architect","cli":"mock","persona":"architect"},{"id":"skeptic","cli":"mock","persona":"skeptic"},{"id":"pragmatist","cli":"mock","persona":"pragmatist"}],"left":[],"support":{"assistant":{"cli":"mock"},"chair":{"cli":"mock"},"scribe":{"cli":"mock"},"floor":{"cli":"mock"}},"digest":"- Agreed: an in-process LRU per instance, no Redis yet.\n- Contested: staleness during bulk import (skeptic).\n- Plan is at v2.","tuning":{"parallel":2,"turnCap":40,"quotaWarn":0.75,"quotaStop":0.9},"focus":"should-we-add-a-cache","topics":[{"slug":"should-we-add-a-cache","title":"Should we add a cache to the product API?","closed":false},{"slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","closed":false}],"docs":[{"slug":"plan","version":2,"kind":"plan","accepted":2}],"pending":[{"type":"suggestion","id":4,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":39,"ts":"2026-10-30T22:11:15.185Z"}],"events":[{"type":"resumed","seq":1,"ts":"2026-10-30T22:11:08.316Z"},{"type":"topic.raised","slug":"should-we-add-a-cache","title":"Should we add a cache to the product API?","by":"human","seq":2,"ts":"2026-10-30T22:11:08.317Z"},{"type":"topic.focus","slug":"should-we-add-a-cache","by":"human","seq":3,"ts":"2026-10-30T22:11:08.317Z"},{"type":"message","from":"human","to":"room","text":"Should we add a cache to the product API?","seq":4,"ts":"2026-10-30T22:11:08.317Z"},{"type":"aside","from":"assistant","text":"For a caching decision I'd start with three people who will disagree usefully: someone to propose the design, someone to attack its consistency story, and someone to keep it simple.","kind":"note","seq":5,"ts":"2026-10-30T22:11:09.957Z"},{"type":"suggestion","id":1,"from":"assistant","action":"add","args":["architect","mock"],"why":"proposes the design and writes the plan","seq":6,"ts":"2026-10-30T22:11:09.957Z"},{"type":"suggestion","id":2,"from":"assistant","action":"add","args":["skeptic","mock"],"why":"will press on consistency and failure modes","seq":7,"ts":"2026-10-30T22:11:09.957Z"},{"type":"suggestion","id":3,"from":"assistant","action":"add","args":["pragmatist","mock"],"why":"keeps scope and operational cost honest","seq":8,"ts":"2026-10-30T22:11:09.957Z"},{"type":"agent.joined","agent":"architect","persona":"architect","cli":"mock","seq":9,"ts":"2026-10-30T22:11:09.958Z"},{"type":"suggestion.resolved","id":1,"accepted":true,"seq":10,"ts":"2026-10-30T22:11:09.960Z"},{"type":"agent.joined","agent":"skeptic","persona":"skeptic","cli":"mock","seq":11,"ts":"2026-10-30T22:11:09.960Z"},{"type":"suggestion.resolved","id":2,"accepted":true,"seq":12,"ts":"2026-10-30T22:11:09.961Z"},{"type":"agent.joined","agent":"pragmatist","persona":"pragmatist","cli":"mock","seq":13,"ts":"2026-10-30T22:11:09.961Z"},{"type":"suggestion.resolved","id":3,"accepted":true,"seq":14,"ts":"2026-10-30T22:11:09.961Z"},{"type":"message","from":"skeptic","to":"room","text":"Before we pick a cache: what's the consistency requirement? If a price changes, how long may a stale price be shown? Nobody has said.","seq":15,"ts":"2026-10-30T22:11:10.765Z"},{"type":"message","from":"architect","to":"room","text":"Starting point: an in-process LRU per instance. About 90% of our reads are product lookups by id, so a read-through cache in front of the repository gets most of the win without new infrastructure.","seq":16,"ts":"2026-10-30T22:11:11.014Z"},{"type":"floor","picks":[{"agent":"skeptic","why":"has something to add on this","replyTo":16}],"seq":17,"ts":"2026-10-30T22:11:11.165Z"},{"type":"topic.raised","slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","by":"skeptic","why":"it needs its own answer before we ship","seq":18,"ts":"2026-10-30T22:11:11.378Z"},{"type":"message","from":"pragmatist","to":"room","text":"Agree with an in-process LRU for now. Redis is one more thing to run, and we don't have the traffic to justify it yet.","seq":19,"ts":"2026-10-30T22:11:11.577Z"},{"type":"floor","picks":[{"agent":"architect","why":"has something to add on this","replyTo":19}],"seq":20,"ts":"2026-10-30T22:11:11.728Z"},{"type":"doc.revised","slug":"plan","version":1,"kind":"plan","by":"architect","note":"first draft","seq":21,"ts":"2026-10-30T22:11:11.930Z"},{"type":"message","from":"skeptic","to":"room","text":"For single writes, yes. But bulk import writes thousands of rows; if we only invalidate at the end, readers see a half-updated catalog for the whole import.","replyTo":16,"seq":22,"ts":"2026-10-30T22:11:12.060Z"},{"type":"floor","picks":[{"agent":"pragmatist","why":"has something to add on this","replyTo":22}],"seq":23,"ts":"2026-10-30T22:11:12.213Z"},{"type":"message","from":"architect","to":"room","text":"I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @skeptic, does a 30 second bound answer your staleness question?","replyTo":19,"seq":24,"ts":"2026-10-30T22:11:12.632Z"},{"type":"message","from":"pragmatist","to":"room","text":"30 seconds of staleness is fine for product pages; checkout re-reads prices anyway.","replyTo":22,"seq":25,"ts":"2026-10-30T22:11:12.744Z"},{"type":"floor","picks":[{"agent":"skeptic","why":"has something to add on this","replyTo":24}],"seq":26,"ts":"2026-10-30T22:11:12.783Z"},{"type":"floor","picks":[{"agent":"architect","why":"has something to add on this","replyTo":25}],"seq":27,"ts":"2026-10-30T22:11:12.934Z"},{"type":"doc.revised","slug":"plan","version":2,"kind":"plan","by":"architect","note":"per-batch invalidation, load test","seq":28,"ts":"2026-10-30T22:11:13.136Z"},{"type":"message","from":"skeptic","to":"room","text":"If we invalidate per batch instead of at the end, I can live with it, as long as the TTL stays short.","replyTo":24,"seq":29,"ts":"2026-10-30T22:11:13.538Z"},{"type":"message","from":"architect","to":"room","text":"@skeptic is right about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.","replyTo":25,"seq":30,"ts":"2026-10-30T22:11:13.790Z"},{"type":"doc.accepted","slug":"plan","version":2,"by":"chair","seq":31,"ts":"2026-10-30T22:11:14.103Z"},{"type":"paused","reason":"milestone: plan v2 accepted","seq":32,"ts":"2026-10-30T22:11:14.103Z"},{"type":"message","from":"chair","to":"room","text":"Plan v2 answers every objection raised so far.","seq":33,"ts":"2026-10-30T22:11:14.103Z"},{"type":"aside","from":"human","text":"where are we?","seq":34,"ts":"2026-10-30T22:11:14.104Z"},{"type":"aside","from":"assistant","text":"- Agreed: an in-process LRU per instance, no Redis yet.\n- Contested: staleness during bulk import (skeptic).\n- Plan is at v2.","kind":"digest","seq":35,"ts":"2026-10-30T22:11:14.828Z"},{"type":"aside","from":"assistant","text":"They converged on the LRU quickly; the only real disagreement is bulk-import staleness. Nothing needs you yet.","kind":"note","seq":36,"ts":"2026-10-30T22:11:14.828Z"},{"type":"docs.updated","files":["decisions.md","open-questions.md","code-notes.md"],"by":"scribe","seq":37,"ts":"2026-10-30T22:11:14.902Z"},{"type":"aside","from":"assistant","text":"In short: they agree on a simple in-process cache and are now arguing about how stale data may get. The skeptic's bulk-import concern is the open thread; the plan is at v2.","kind":"answer","seq":38,"ts":"2026-10-30T22:11:15.184Z"},{"type":"suggestion","id":4,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":39,"ts":"2026-10-30T22:11:15.185Z"},{"type":"message","from":"human","to":"room","text":"Keep the TTL under a minute.","seq":40,"ts":"2026-10-30T22:11:15.186Z"}]}}
-{"id":13,"error":{"message":"no topic \"nope\"; topics are should-we-add-a-cache, cache-consistency-during-bulk-import"}}
+{"event":"room.event","data":{"type":"aside","from":"assistant","text":"They agree on an in-process cache; the open question is how stale reads may get during bulk imports, and the plan is at v2.","kind":"answer","seq":36,"ts":"2026-10-30T23:32:44.861Z"}}
+{"event":"room.event","data":{"type":"suggestion","id":1,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":37,"ts":"2026-10-30T23:32:44.861Z"}}
+{"event":"room.support","data":{"role":"assistant","busy":false}}
+{"id":8,"result":{"name":"plan","text":"# Plan: cache layer for the product API\n\n## Decision\nAn in-process LRU per instance (64 MB), with a 30 s TTL on product reads and explicit invalidation on writes.\n\n## Steps\n1. Wrap the product repository with a read-through cache.\n2. Invalidate on the three write paths (update, delete, bulk import).\n3. Export hit rate and eviction counts.\n4. Load-test with production-shaped traffic before turning it on per tenant.\n\n## Risks\n- Stale reads during bulk import: invalidate per batch, not at the end.\n"}}
+{"event":"room.event","data":{"type":"resumed","seq":38,"ts":"2026-10-30T23:32:44.864Z"}}
+{"event":"room.state","data":{"state":"running"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"id":9,"result":{}}
+{"event":"room.event","data":{"type":"message","from":"human","to":"room","text":"How long can a price be stale?","thread":39,"seq":39,"ts":"2026-10-30T23:32:44.866Z"}}
+{"id":10,"result":{"seq":39}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":31,"from":"chair","kind":"decision","headline":"Plan v2 answers every objection raised"}],"seq":40,"ts":"2026-10-30T23:32:45.019Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":39,"from":"human","kind":"question","headline":"How long can a price be","thread":39}],"seq":41,"ts":"2026-10-30T23:32:45.222Z"}}
+{"event":"room.event","data":{"type":"floor","picks":[{"agent":"perf-researcher","why":"can answer this","replyTo":39,"thread":39}],"seq":42,"ts":"2026-10-30T23:32:45.222Z"}}
+{"event":"room.turn.start","data":{"agent":"perf-researcher","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"For ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"product ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"pages ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"30 ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"s ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"is ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"fine; ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"checkout ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"re-reads ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"prices, ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"so ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"nobody ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"pays ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"a ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"stale ","thread":39}}
+{"event":"room.turn.delta","data":{"agent":"perf-researcher","delta":"price.","thread":39}}
+{"event":"room.turn.end","data":{"agent":"perf-researcher","thread":39}}
+{"event":"room.event","data":{"type":"message","from":"perf-researcher","to":"room","text":"For product pages 30 s is fine; checkout re-reads prices, so nobody pays a stale price.","replyTo":39,"thread":39,"seq":43,"ts":"2026-10-30T23:32:45.826Z"}}
+{"event":"room.support","data":{"role":"floor","busy":true}}
+{"event":"room.support","data":{"role":"scribe","busy":true}}
+{"event":"room.support","data":{"role":"floor","busy":false}}
+{"event":"room.event","data":{"type":"tags","items":[{"seq":43,"from":"perf-researcher","kind":"idea","headline":"For product pages 30 s is","thread":39}],"seq":44,"ts":"2026-10-30T23:32:45.980Z"}}
+{"event":"room.state","data":{"state":"idle"}}
+{"event":"room.support","data":{"role":"chair","busy":true}}
+{"event":"room.support","data":{"role":"watch","busy":true}}
+{"event":"room.event","data":{"type":"thread.summary","thread":39,"text":"They agreed 30 s is fine for product pages since checkout re-reads prices.","seq":45,"ts":"2026-10-30T23:32:46.307Z"}}
+{"event":"room.support","data":{"role":"scribe","busy":false}}
+{"event":"room.state","data":{"state":"paused","reason":"paused by the human"}}
+{"event":"room.event","data":{"type":"paused","reason":"paused by the human","seq":46,"ts":"2026-10-30T23:32:46.308Z"}}
+{"id":11,"result":{}}
+{"id":12,"result":{"channels":[{"id":"2026-10-30-23-32-39-room","name":"product-cache","topic":"Should we add a cache to the product API, and how?","events":46,"updated":"2026-10-30T23:32:46.308Z","digest":"Agreed on an in-process LRU; bulk-import staleness still open. Plan v2."}],"members":[{"id":"perf-researcher","persona":"perf-researcher","cli":"mock","role":"performance researcher"},{"id":"reliability-scientist","persona":"reliability-scientist","cli":"mock","role":"reliability scientist"},{"id":"product-engineer","persona":"product-engineer","cli":"mock","role":"product engineer"}]}}
+{"id":13,"result":{"id":"2026-10-30-23-32-39-room","dir":"/tmp/rec-yD6YDp/.quorum/rooms/2026-10-30-23-32-39-room","name":"product-cache","topic":"Should we add a cache to the product API, and how?","reading":[],"state":"paused","agents":[{"id":"perf-researcher","persona":"perf-researcher","cli":"mock"},{"id":"reliability-scientist","persona":"reliability-scientist","cli":"mock"},{"id":"product-engineer","persona":"product-engineer","cli":"mock"}],"left":[],"support":{"assistant":{"cli":"mock"},"chair":{"cli":"mock"},"scribe":{"cli":"mock"},"floor":{"cli":"mock"}},"digest":"Agreed on an in-process LRU; bulk-import staleness still open. Plan v2.","tuning":{"parallel":2,"turnCap":40,"quotaWarn":0.75,"quotaStop":0.9,"independent":false},"focus":"should-we-add-a-cache","topics":[{"slug":"should-we-add-a-cache","title":"Should we add a cache to the product API, and how?","closed":false},{"slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","closed":false}],"docs":[{"slug":"plan","version":2,"kind":"plan","accepted":2}],"pending":[{"type":"suggestion","id":1,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":37,"ts":"2026-10-30T23:32:44.861Z"}],"events":[{"type":"topic.raised","slug":"should-we-add-a-cache","title":"Should we add a cache to the product API, and how?","by":"human","seq":1,"ts":"2026-10-30T23:32:39.311Z"},{"type":"topic.focus","slug":"should-we-add-a-cache","by":"human","seq":2,"ts":"2026-10-30T23:32:39.311Z"},{"type":"message","from":"human","to":"room","text":"Should we add a cache to the product API, and how?","seq":3,"ts":"2026-10-30T23:32:39.311Z"},{"type":"resumed","seq":4,"ts":"2026-10-30T23:32:39.312Z"},{"type":"message","from":"reliability-scientist","to":"room","text":"Before we pick a cache: what's the consistency requirement? If a price changes, how long may a stale price be shown? Nobody has said.","replyTo":3,"seq":5,"ts":"2026-10-30T23:32:40.126Z"},{"type":"tags","items":[{"seq":5,"from":"reliability-scientist","kind":"question","headline":"Before we pick a cache: what's"}],"seq":6,"ts":"2026-10-30T23:32:40.282Z"},{"type":"message","from":"perf-researcher","to":"room","text":"Starting point: an in-process LRU per instance. About 90% of our reads are product lookups by id, so a read-through cache in front of the repository gets most of the win without new infrastructure.","replyTo":3,"seq":7,"ts":"2026-10-30T23:32:40.374Z"},{"type":"tags","items":[{"seq":7,"from":"perf-researcher","kind":"idea","headline":"Starting point: an in-process LRU per"}],"seq":8,"ts":"2026-10-30T23:32:40.653Z"},{"type":"floor","picks":[{"agent":"reliability-scientist","why":"has something to add on this","replyTo":7}],"seq":9,"ts":"2026-10-30T23:32:40.653Z"},{"type":"topic.raised","slug":"cache-consistency-during-bulk-import","title":"Cache consistency during bulk import","by":"reliability-scientist","why":"it needs its own answer before we ship","seq":10,"ts":"2026-10-30T23:32:40.868Z"},{"type":"message","from":"product-engineer","to":"room","text":"Agree with an in-process LRU for now. Redis is one more thing to run, and we don't have the traffic to justify it yet.","replyTo":3,"seq":11,"ts":"2026-10-30T23:32:40.942Z"},{"type":"tags","items":[{"seq":11,"from":"product-engineer","kind":"agreement","headline":"Agree with an in-process LRU for"}],"seq":12,"ts":"2026-10-30T23:32:41.219Z"},{"type":"floor","picks":[{"agent":"perf-researcher","why":"has something to add on this","replyTo":11}],"seq":13,"ts":"2026-10-30T23:32:41.219Z"},{"type":"doc.revised","slug":"plan","version":1,"kind":"plan","by":"perf-researcher","note":"first draft","seq":14,"ts":"2026-10-30T23:32:41.422Z"},{"type":"message","from":"reliability-scientist","to":"room","text":"For single writes, yes. But bulk import writes thousands of rows; if we only invalidate at the end, readers see a half-updated catalog for the whole import.","replyTo":7,"seq":15,"ts":"2026-10-30T23:32:41.553Z"},{"type":"tags","items":[{"seq":15,"from":"reliability-scientist","kind":"critique","headline":"For single writes, yes. But bulk"}],"seq":16,"ts":"2026-10-30T23:32:41.832Z"},{"type":"floor","picks":[{"agent":"product-engineer","why":"has something to add on this","replyTo":15}],"seq":17,"ts":"2026-10-30T23:32:41.833Z"},{"type":"message","from":"perf-researcher","to":"room","text":"I've put up a first plan (plan v1): LRU, 30 s TTL, invalidate on the three write paths. @reliability-scientist, does a 30 second bound answer your staleness question?","replyTo":11,"seq":18,"ts":"2026-10-30T23:32:42.136Z"},{"type":"message","from":"product-engineer","to":"room","text":"30 seconds of staleness is fine for product pages; checkout re-reads prices anyway.","replyTo":15,"seq":19,"ts":"2026-10-30T23:32:42.361Z"},{"type":"tags","items":[{"seq":18,"from":"perf-researcher","kind":"question","headline":"I've put up a first plan"}],"seq":20,"ts":"2026-10-30T23:32:42.414Z"},{"type":"floor","picks":[{"agent":"reliability-scientist","why":"has something to add on this","replyTo":18}],"seq":21,"ts":"2026-10-30T23:32:42.414Z"},{"type":"tags","items":[{"seq":19,"from":"product-engineer","kind":"agreement","headline":"30 seconds of staleness is fine"}],"seq":22,"ts":"2026-10-30T23:32:42.692Z"},{"type":"floor","picks":[{"agent":"perf-researcher","why":"has something to add on this","replyTo":19}],"seq":23,"ts":"2026-10-30T23:32:42.692Z"},{"type":"doc.revised","slug":"plan","version":2,"kind":"plan","by":"perf-researcher","note":"per-batch invalidation, load test","seq":24,"ts":"2026-10-30T23:32:42.897Z"},{"type":"message","from":"reliability-scientist","to":"room","text":"If we invalidate per batch instead of at the end, I can live with it, as long as the TTL stays short.","replyTo":18,"seq":25,"ts":"2026-10-30T23:32:43.173Z"},{"type":"tags","items":[{"seq":25,"from":"reliability-scientist","kind":"concession","headline":"If we invalidate per batch instead"}],"seq":26,"ts":"2026-10-30T23:32:43.326Z"},{"type":"message","from":"perf-researcher","to":"room","text":"Fair point about bulk imports. Plan v2 invalidates per batch instead of at the end, and adds a load test before we turn it on.","replyTo":19,"seq":27,"ts":"2026-10-30T23:32:43.533Z"},{"type":"tags","items":[{"seq":27,"from":"perf-researcher","kind":"concession","headline":"Fair point about bulk imports. Plan"}],"seq":28,"ts":"2026-10-30T23:32:43.696Z"},{"type":"doc.accepted","slug":"plan","version":2,"by":"chair","seq":29,"ts":"2026-10-30T23:32:43.974Z"},{"type":"paused","reason":"milestone: plan v2 accepted","seq":30,"ts":"2026-10-30T23:32:43.974Z"},{"type":"message","from":"chair","to":"room","text":"Plan v2 answers every objection raised so far.","seq":31,"ts":"2026-10-30T23:32:43.975Z"},{"type":"aside","from":"human","text":"where are we?","seq":32,"ts":"2026-10-30T23:32:43.975Z"},{"type":"aside","from":"assistant","text":"Agreed on an in-process LRU; bulk-import staleness still open. Plan v2.","kind":"digest","seq":33,"ts":"2026-10-30T23:32:44.122Z"},{"type":"aside","from":"assistant","text":"They converged on the LRU fast; nothing needs you yet.","kind":"note","seq":34,"ts":"2026-10-30T23:32:44.122Z"},{"type":"docs.updated","files":["decisions.md","open-questions.md","code-notes.md"],"by":"scribe","seq":35,"ts":"2026-10-30T23:32:44.653Z"},{"type":"aside","from":"assistant","text":"They agree on an in-process cache; the open question is how stale reads may get during bulk imports, and the plan is at v2.","kind":"answer","seq":36,"ts":"2026-10-30T23:32:44.861Z"},{"type":"suggestion","id":1,"from":"assistant","action":"steer","args":["Settle the staleness limit first, then the bulk-import strategy."],"why":"","seq":37,"ts":"2026-10-30T23:32:44.861Z"},{"type":"resumed","seq":38,"ts":"2026-10-30T23:32:44.864Z"},{"type":"message","from":"human","to":"room","text":"How long can a price be stale?","thread":39,"seq":39,"ts":"2026-10-30T23:32:44.866Z"},{"type":"tags","items":[{"seq":31,"from":"chair","kind":"decision","headline":"Plan v2 answers every objection raised"}],"seq":40,"ts":"2026-10-30T23:32:45.019Z"},{"type":"tags","items":[{"seq":39,"from":"human","kind":"question","headline":"How long can a price be","thread":39}],"seq":41,"ts":"2026-10-30T23:32:45.222Z"},{"type":"floor","picks":[{"agent":"perf-researcher","why":"can answer this","replyTo":39,"thread":39}],"seq":42,"ts":"2026-10-30T23:32:45.222Z"},{"type":"message","from":"perf-researcher","to":"room","text":"For product pages 30 s is fine; checkout re-reads prices, so nobody pays a stale price.","replyTo":39,"thread":39,"seq":43,"ts":"2026-10-30T23:32:45.826Z"},{"type":"tags","items":[{"seq":43,"from":"perf-researcher","kind":"idea","headline":"For product pages 30 s is","thread":39}],"seq":44,"ts":"2026-10-30T23:32:45.980Z"},{"type":"thread.summary","thread":39,"text":"They agreed 30 s is fine for product pages since checkout re-reads prices.","seq":45,"ts":"2026-10-30T23:32:46.307Z"},{"type":"paused","reason":"paused by the human","seq":46,"ts":"2026-10-30T23:32:46.308Z"}]}}
+{"id":14,"error":{"message":"no topic \"nope\"; topics are should-we-add-a-cache, cache-consistency-during-bulk-import"}}

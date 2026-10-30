@@ -4,7 +4,29 @@ A long-running discussion where agents work in parallel on a problem, with the h
 personal assistant beside them. It runs until the human or the assistant pauses it, and can be resumed
 days later.
 
-Status: built (engine, RPC and TUI). See the README's "The room" section for how to use it.
+Status: built (engine, RPC and TUI). See the README's "Channels" section for how to use it.
+
+### Revision 3 (workspace, channels, threads)
+
+The human's picture after using revision 2: a Slack workspace with top researchers and engineers that lives
+for weeks, where they come back to ask questions, steer, and add feature requests. Their calls:
+
+| Area | Decision |
+| --- | --- |
+| Structure | Workspace (the repo's `.quorum/`) → channels (rooms) → threads. Members belong to the workspace: invented personas live in `personas/`, notebooks in `members/<id>.md` and carry across channels, and each member sees its other channels' digests. |
+| First run | No channel until the human approves a lineup. A setup chat with the assistant (`setup.*` RPC): short questions, then `>> channel / read / member` lines shown as a card; `ctrl+s` creates it, and every member gets a kickoff turn to read the reading list and give a first take. |
+| Personas | Invented per problem by the assistant (research specialties, UX, use-case/edge-case roles), saved to the workspace; the built-in personas stay as templates. Mid-channel the assistant proposes `>> hire:` (new) or `>> add:` (a workspace member). |
+| Reading list | Per channel. Members read it on their first turn and note what matters in their notebook; afterwards they're told which files changed (mtime) or were added. |
+| Threads | A side conversation off any message (`/ask`, `/thread N`). Members see the channel digest, the root and the thread; each thread has its own vendor session per member. When it goes quiet the scribe posts a one-line outcome back. |
+| Stats | The floor tags each message it reads (idea, critique, agreement, concession, question, evidence, decision; headline; whom it challenges) in the same call: a full-width strip of recent events, discussions (agreed/open) and member activity. |
+| Assistant | Short, natural replies (one to three sentences). Column: a "needs you" card (selected only in `ctrl+n` review, so Enter always sends text), a two-line status, then the chat. Visible "typing" for the assistant and every support role. |
+| Independent takes | Per-channel knob, default off (`/independent on`): members picked together draft from the same snapshot, then revise after reading whoever answered first. To be measured. |
+| Rule | The human is never left unanswered: if the floor picks nobody after the human speaks, the member who spoke least recently in that conversation answers. |
+
+Verified live (Claude Sonnet assistant, Haiku/Codex/opencode members, opencode floor): setup reply in ~8 s with
+invented roles and a reading list it found; members cited real lines, conceded and retracted, drafted a
+versioned spec; the assistant paused for review when the design converged and answered in ~4.5 s; a thread
+question was answered in one line and its outcome posted back in ~30 s.
 
 ### Revision 2 (after the first review)
 

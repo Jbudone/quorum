@@ -290,6 +290,12 @@ func Decode(line []byte) (Message, error) {
 		data = new(RoomUsage)
 	case "room.assistant.delta":
 		data = new(AssistantDelta)
+	case "room.support":
+		data = new(RoomSupportEvent)
+	case "setup.delta":
+		data = new(SetupDelta)
+	case "setup.reply":
+		data = new(SetupReply)
 	default:
 		return nil, fmt.Errorf("unknown engine event %q", env.Event)
 	}
@@ -345,6 +351,12 @@ func derefs(p any) any {
 	case *RoomUsage:
 		return *v
 	case *AssistantDelta:
+		return *v
+	case *RoomSupportEvent:
+		return *v
+	case *SetupDelta:
+		return *v
+	case *SetupReply:
 		return *v
 	}
 	return p

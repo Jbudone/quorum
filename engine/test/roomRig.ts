@@ -59,7 +59,7 @@ export function rig(o: RigOptions = {}) {
   const results: Record<string, { text?: string; error?: string }[]> = {};
   const decisions: FloorContext[] = [];
   const floor: FloorPolicy = {
-    decide: async (c) => (decisions.push(c), (o.floor ?? everyoneElse)(c)),
+    decide: async (c) => (decisions.push(c), { picks: (o.floor ?? everyoneElse)(c), tags: [] }),
   };
   const turns: Record<string, number> = {};
   const member = o.member ?? ((agent) => `${agent} has a thought`);

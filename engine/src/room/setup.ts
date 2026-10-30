@@ -16,7 +16,9 @@ const BEST_FIRST: CliName[] = ["claude", "codex", "gemini", "opencode", "agy"];
 export function supportFor(usable: CliName[], settings: UserSettings = readSettings()): Required<RoomConfig["support"]> {
   const pick = (h: HelperModel | undefined, fallback: SupportSpec): SupportSpec =>
     h && h.cli !== "openrouter" && usable.includes(h.cli) ? { cli: h.cli, ...(h.model ? { model: h.model } : {}) } : fallback;
-  const best: SupportSpec = { cli: BEST_FIRST.find((c) => usable.includes(c)) ?? usable[0] ?? "mock" };
+  const bestCli = BEST_FIRST.find((c) => usable.includes(c)) ?? usable[0] ?? "mock";
+  // The assistant talks to the human in real time, so on Claude it gets a fast model unless settings say otherwise.
+  const best: SupportSpec = { cli: bestCli, ...(bestCli === "claude" ? { model: "sonnet" } : {}) };
   const cheapCli = CHEAP_FIRST.find((c) => usable.includes(c));
   const cheap: SupportSpec = cheapCli ? { cli: cheapCli } : best;
   return {

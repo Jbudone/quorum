@@ -21,8 +21,27 @@ const (
 
 // liveTurn is a member mid-turn: what it has said so far and the side action it is taking.
 type liveTurn struct {
-	text string
-	tool string
+	agent  string
+	thread int
+	text   string
+	tool   string
+}
+
+// liveKey keys a turn by member and conversation, as the engine does.
+func liveKey(agent string, thread int) string {
+	if thread == 0 {
+		return agent
+	}
+	return fmt.Sprintf("%s#%d", agent, thread)
+}
+
+// threadInfo is a side thread hanging off a channel message.
+type threadInfo struct {
+	root    int
+	title   string
+	replies int
+	last    int    // seq of its latest message
+	summary string // the outcome posted back to the channel, once it settled
 }
 
 // feedItem is one log entry shown in the room feed, cached per width.
@@ -44,17 +63,21 @@ type docOverlay struct {
 	text  string
 	list  []docRef // non-nil for a list view
 	cur   int
-	rooms bool // the list is saved rooms: enter opens one
+	rooms bool // the list is the channel switcher: enter switches
 }
 
 type docRef struct {
 	name  string
 	label string
+	kind  string // switcher entries: channel | thread | new
 }
 
 // roomModel is the client-side view of a room, rebuilt from the snapshot and kept current by events.
 type roomModel struct {
 	id, dir, topic string
+	workspace      string   // the project's folder name, for the header
+	name           string   // the channel's short name
+	reading        []string // the channel's reading list
 	state, reason  string
 	agents, left   []rpc.PresetAgent
 	support        rpc.RoomSupport
@@ -68,6 +91,12 @@ type roomModel struct {
 
 	feed    []*feedItem
 	authors map[int]string // message seq → who wrote it, for reply references
+	texts   map[int]string // message seq → its text, for thread titles
+	tags    []rpc.MessageTag
+	threads map[int]*threadInfo
+	view    int             // 0 shows the channel; otherwise the root seq of the thread on screen
+	busy    map[string]bool // support roles at work: assistant, watch, chair, scribe, floor
+	review  bool            // the human is going through the suggestions (keys answer them)
 	live    map[string]*liveTurn
 	colors  map[string]int
 	pending []rpc.RoomEvent
@@ -84,9 +113,10 @@ type roomModel struct {
 
 func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 	r := &roomModel{
-		id: s.ID, dir: s.Dir, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
+		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
-		authors: map[int]string{}, live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
+		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
+		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -132,23 +162,26 @@ func (r *roomModel) apply(ev rpc.Event) {
 		r.state, r.reason = v.State, v.Reason
 		if v.State == "paused" {
 			r.live = map[string]*liveTurn{}
+			r.busy = map[string]bool{}
 		}
 	case rpc.RoomTurn:
 		if ev.Name == "room.turn.start" {
-			r.live[v.Agent] = &liveTurn{}
+			r.live[liveKey(v.Agent, v.Thread)] = &liveTurn{agent: v.Agent, thread: v.Thread}
 		} else {
-			delete(r.live, v.Agent)
+			delete(r.live, liveKey(v.Agent, v.Thread))
 		}
 	case rpc.RoomTurnDelta:
-		if t := r.live[v.Agent]; t != nil {
+		if t := r.live[liveKey(v.Agent, v.Thread)]; t != nil {
 			t.text += v.Delta
 			t.tool = ""
 		}
 	case rpc.RoomTurnTool:
 		// What a member wrote before a tool call was thinking aloud; the engine drops it too.
-		if t := r.live[v.Agent]; t != nil {
+		if t := r.live[liveKey(v.Agent, v.Thread)]; t != nil {
 			t.text, t.tool = "", strings.TrimPrefix(v.Name, "mcp__quorum__")
 		}
+	case rpc.RoomSupportEvent:
+		r.busy[v.Role] = v.Busy
 	case rpc.RoomUsage:
 		if v.QuotaUtilization != nil {
 			r.quota[v.CLI] = *v.QuotaUtilization
@@ -200,13 +233,29 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 			}
 		}
 		r.sugCur = min(r.sugCur, max(len(r.pending)-1, 0))
+		if len(r.pending) == 0 {
+			r.review = false
+		}
 		return
+	case "tags":
+		r.tags = append(r.tags, e.Items...)
+		return
+	case "thread.summary":
+		r.thread(e.Thread).summary = e.Text
 	case "budget":
 		r.asides = append(r.asides, noteItem{kind: "system", text: "Budget " + e.Level + ": " + e.Detail})
 	case "message":
 		r.authors[e.Seq] = e.From
-		if e.From == "human" && e.To == "room" && r.topic == "" {
+		r.texts[e.Seq] = e.Text
+		if e.From == "human" && e.To == "room" && r.topic == "" && e.Thread == 0 {
 			r.topic = e.Text
+		}
+		if e.Thread != 0 {
+			t := r.thread(e.Thread)
+			if e.Seq != e.Thread {
+				t.replies++
+			}
+			t.last = e.Seq
 		}
 	case "topic.raised":
 		r.setTopic(rpc.RoomTopic{Slug: e.Slug, Title: e.Title})
@@ -264,6 +313,30 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 	r.feed = append(r.feed, &feedItem{ev: e})
 }
 
+// thread returns the thread hanging off `root`, creating it on first sight.
+func (r *roomModel) thread(root int) *threadInfo {
+	if t, ok := r.threads[root]; ok {
+		return t
+	}
+	title := firstLine(r.texts[root])
+	if title == "" {
+		title = fmt.Sprintf("message #%d", root)
+	}
+	t := &threadInfo{root: root, title: title, last: root}
+	r.threads[root] = t
+	return t
+}
+
+// threadList is the channel's threads, most recently active first.
+func (r *roomModel) threadList() []*threadInfo {
+	ts := make([]*threadInfo, 0, len(r.threads))
+	for _, t := range r.threads {
+		ts = append(ts, t)
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i].last > ts[j].last })
+	return ts
+}
+
 func (r *roomModel) setTopic(t rpc.RoomTopic) {
 	for _, x := range r.topics {
 		if x.Slug == t.Slug {
@@ -283,14 +356,27 @@ func without(xs []rpc.PresetAgent, id string) []rpc.PresetAgent {
 	return out
 }
 
-// speaking lists members mid-turn in a stable order.
-func (r *roomModel) speaking() []string {
-	ids := make([]string, 0, len(r.live))
-	for id := range r.live {
-		ids = append(ids, id)
+// speaking lists the turns under way in the conversation on screen, in a stable order.
+func (r *roomModel) speaking() []*liveTurn {
+	ts := make([]*liveTurn, 0, len(r.live))
+	for _, t := range r.live {
+		if t.thread == r.view {
+			ts = append(ts, t)
+		}
 	}
-	sort.Strings(ids)
-	return ids
+	sort.Slice(ts, func(i, j int) bool { return ts[i].agent < ts[j].agent })
+	return ts
+}
+
+// talking reports whether a member is mid-turn anywhere, and what it's doing.
+func (r *roomModel) talking(agent string) (*liveTurn, bool) {
+	var found *liveTurn
+	for _, t := range r.live {
+		if t.agent == agent && (found == nil || t.thread == r.view) {
+			found = t
+		}
+	}
+	return found, found != nil
 }
 
 // animating reports whether the room screen needs the clock running.
@@ -313,7 +399,7 @@ func (r *roomModel) focusTitle() string {
 // resumesOnOpen reports whether a reopened room should carry on by itself: it was paused only
 // because the interface closed, not by the human, the assistant, a milestone or the budget.
 func (r *roomModel) resumesOnOpen() bool {
-	return len(r.agents) > 0 && (r.lastPause == "closed" || r.lastPause == "interrupted")
+	return len(r.agents) > 0 && (r.lastPause == "closed" || r.lastPause == "interrupted" || r.lastPause == "switched away")
 }
 
 var reAction = regexp.MustCompile(`(?m)^\s*>>.*$\n?`)
@@ -329,9 +415,18 @@ func suggestionLabel(s rpc.RoomEvent) string {
 	case "steer":
 		return "steer the room: “" + args + "”"
 	case "add":
-		label := "bring in " + s.Args[0]
+		label := "bring back " + s.Args[0]
 		if len(s.Args) > 1 {
 			label += " on " + strings.Join(s.Args[1:], " ")
+		}
+		return label
+	case "hire":
+		label := "bring in " + s.Args[0]
+		if len(s.Args) > 3 && s.Args[3] != "" {
+			label += " (" + s.Args[3] + ")"
+		}
+		if len(s.Args) > 2 {
+			label += " on " + strings.TrimSpace(s.Args[1]+" "+s.Args[2])
 		}
 		return label
 	case "remove":
@@ -356,22 +451,28 @@ type roomCommand struct {
 }
 
 const roomHelp = `Talking (left box):
-  text              say it to the room; whoever has something to add answers
-  @member text      ask one member directly, in the open room
+  text              say it to the channel; whoever has something to add answers
+  @member text      ask one member directly, in the open channel
   /dm member text   a private message only that member (and your assistant) sees
+  /ask question     ask in a new side thread, so it doesn't fill the channel's context
+  /thread N         open the thread on message #N (or start one there); esc goes back
 
 Your assistant (right box):
   ask it anything about the discussion; /catchup for a recap
-  with its box empty: ↑↓ pick a suggestion, y approve, n decline
+  ctrl+n            go through its suggestions: ↑↓ choose, y approve, n decline, a approve all
 
-Room:
+Channel:
+  ctrl+k            switch channel or thread, or start a new channel
   ctrl+p            pause / resume           ctrl+o   documents and notes
+  ctrl+t            show / hide the stats strip
+  /read <path>…     set the reading list members work through (folders or files)
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document
-  /add <persona> <cli> [model]   /remove <member>   /rejoin <member>
+  /add <member> <cli> [model]   /remove <member>   /rejoin <member>
   /parallel N       most members talking at once      /turns N   turn cap per CLI
+  /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
-  /new              start a fresh room       /rooms   switch to a saved room`
+  /new              set up a new channel`
 
 func (r *roomModel) parseRoomInput(in string) roomCommand {
 	in = strings.TrimSpace(in)
@@ -406,8 +507,8 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{local: "docs"}
 	case in == "/topics":
 		return roomCommand{local: "topics"}
-	case in == "/rooms":
-		return roomCommand{local: "rooms"}
+	case in == "/rooms" || in == "/channels":
+		return roomCommand{local: "switch"}
 	case in == "/new":
 		return roomCommand{local: "new"}
 	case in == "/resume":
@@ -420,6 +521,37 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{method: "room.pause", params: p}
 	case strings.HasPrefix(in, "/parallel"):
 		return num("/parallel", "parallel")
+	case strings.HasPrefix(in, "/independent"):
+		switch word("/independent") {
+		case "on":
+			return roomCommand{method: "room.configure", params: map[string]any{"independent": true}, echo: "Independent takes on: members picked together draft without seeing each other, then revise."}
+		case "off":
+			return roomCommand{method: "room.configure", params: map[string]any{"independent": false}, echo: "Independent takes off."}
+		}
+		return roomCommand{err: "/independent takes on or off"}
+	case strings.HasPrefix(in, "/read"):
+		paths := strings.Fields(word("/read"))
+		if len(paths) == 0 {
+			if len(r.reading) == 0 {
+				return roomCommand{err: "/read takes the folders or files members should read, e.g. /read docs/design"}
+			}
+			return roomCommand{local: "reading"}
+		}
+		return roomCommand{method: "room.read", params: map[string]any{"paths": paths}}
+	case strings.HasPrefix(in, "/ask"):
+		if v, ok := needs("/ask"); ok {
+			return roomCommand{method: "room.post", params: map[string]any{"text": v, "thread": "new"}, local: "open-thread"}
+		}
+		return roomCommand{err: "/ask takes a question; it starts a side thread"}
+	case strings.HasPrefix(in, "/thread"):
+		n, err := strconv.Atoi(strings.TrimPrefix(word("/thread"), "#"))
+		if err != nil || n < 1 {
+			return roomCommand{err: "/thread takes a message number, e.g. /thread 12"}
+		}
+		if _, ok := r.authors[n]; !ok {
+			return roomCommand{err: fmt.Sprintf("no message #%d here", n)}
+		}
+		return roomCommand{local: "thread", params: map[string]any{"seq": n}}
 	case strings.HasPrefix(in, "/turns"):
 		return num("/turns", "turnCap")
 	case strings.HasPrefix(in, "/focus"):

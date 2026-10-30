@@ -112,37 +112,40 @@ await record(process.argv[3], async (c) => {
   await c.until((m) => m.id === 9);
 });
 
-// 3. A room, as the TUI opens one: no saved rooms, so it starts an empty room. The human describes
-// the problem, approves the assistant's proposed members, the room talks until the Chair accepts the
-// plan, then the human asks the assistant, reads the plan, posts, and reopens the room from the list.
+// 3. A channel, as the TUI opens one: no channels yet, so it runs the setup chat (a question, then a
+// lineup), creates the channel, and lets it talk until the Chair accepts the plan. Then the human asks
+// the assistant, reads the plan, asks a side question in a thread, and reopens the channel.
 if (process.argv[4]) {
   await record(process.argv[4], async (c) => {
     const dir = repo();
-    c.send(1, "rooms.list", { repo: dir });
+    c.send(1, "workspace.open", { repo: dir });
     await c.until((m) => m.id === 1);
-    c.send(2, "room.start", { repo: dir, mock: true });
+    c.send(2, "setup.start", { repo: dir, mock: true });
     await c.until((m) => m.id === 2);
-    c.send(3, "room.resume");
-    await c.until((m) => m.id === 3);
-    c.send(4, "room.post", { text: "Should we add a cache to the product API?", to: "room" });
-    await c.until((m) => c.count((x: any) => x.event === "room.event" && x.data.type === "suggestion") === 3 && m === m);
-    for (const [id, sug] of [[5, 1], [6, 2], [7, 3]]) {
-      c.send(id, "room.resolve", { id: sug, accept: true });
-      await c.until((m) => m.event === "room.event" && m.data.type === "suggestion.resolved" && m.data.id === sug);
-    }
+    c.send(3, "setup.say", { text: "Should we add a cache to the product API?" });
+    await c.until((m) => m.event === "setup.reply");
+    c.send(4, "setup.say", { text: "No docs yet, they're starting fresh." });
+    await c.until((m) => m.event === "setup.reply" && m.data.proposal);
+    c.send(5, "setup.create", {});
+    await c.until((m) => m.id === 5);
+    c.send(6, "room.resume");
     await c.until((m) => m.event === "room.state" && m.data.state === "paused");
-    c.send(8, "room.ask", { text: "where are we?" });
+    c.send(7, "room.ask", { text: "where are we?" });
     await c.until((m) => m.event === "room.event" && m.data.type === "aside" && m.data.kind === "answer");
-    c.send(9, "room.doc", { name: "plan" });
+    c.send(8, "room.doc", { name: "plan" });
+    await c.until((m) => m.id === 8);
+    c.send(9, "room.resume");
     await c.until((m) => m.id === 9);
-    c.send(10, "room.post", { text: "Keep the TTL under a minute.", to: "room" });
-    await c.until((m) => m.id === 10);
-    c.send(11, "rooms.list", { repo: dir });
-    await c.until((m) => m.id === 11);
-    const id = (await import("node:fs")).readdirSync(join(dir, ".quorum", "rooms"))[0];
-    c.send(12, "room.open", { repo: dir, id });
+    c.send(10, "room.post", { text: "How long can a price be stale?", to: "room", thread: "new" });
+    await c.until((m) => m.event === "room.event" && m.data.type === "thread.summary");
+    c.send(11, "room.pause", {});
+    await c.until((m) => m.event === "room.state" && m.data.state === "paused");
+    c.send(12, "workspace.open", { repo: dir });
     await c.until((m) => m.id === 12);
-    c.send(13, "room.focus", { slug: "nope" });
+    const id = (await import("node:fs")).readdirSync(join(dir, ".quorum", "rooms"))[0];
+    c.send(13, "room.open", { repo: dir, id });
     await c.until((m) => m.id === 13);
+    c.send(14, "room.focus", { slug: "nope" });
+    await c.until((m) => m.id === 14);
   });
 }

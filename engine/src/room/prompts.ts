@@ -17,8 +17,13 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       const to = e.to === "room" ? "" : ` → ${e.to} (private)`;
       const re = e.replyTo ? ` (re #${e.replyTo})` : "";
       const topic = e.topic && e.topic !== focus ? ` [note on parked topic ${e.topic}]` : "";
-      return `[#${e.seq}] ${e.from}${to}${re}${topic}:\n${e.text}`;
+      const thread = e.thread === e.seq ? " [starts a side thread]" : e.thread ? ` [in thread #${e.thread}]` : "";
+      return `[#${e.seq}] ${e.from}${to}${re}${topic}${thread}:\n${e.text}`;
     }
+    case "thread.summary":
+      return `[#${e.seq}] — side thread #${e.thread} settled: ${e.text}`;
+    case "tags":
+      return "";
     case "topic.raised":
       return `[#${e.seq}] — ${e.by} raised a topic: "${e.title}" (${e.slug})${e.why ? `: ${e.why}` : ""}`;
     case "topic.focus":
@@ -87,10 +92,24 @@ export interface FloorReason {
   replyTo?: number;
   /** Set when answering a private message: the reply goes only to this sender. */
   to?: string;
+  /** The side conversation this turn belongs to. */
+  thread?: number;
+  /** With independent takes on: the last event this member may see before it drafts. */
+  snapshot?: number;
+}
+
+/** What a member should read, and what changed since it last did. */
+export interface Reading {
+  paths: string[];
+  /** Files changed since the member last read the list; undefined when it never has. */
+  changed?: string[];
 }
 
 export interface MemberContext {
   agent: string;
+  reading?: Reading;
+  /** Where things stand in this member's other channels, as [channel, digest]. */
+  elsewhere?: [string, string][];
   view: RoomView;
   /** Shared notes worth showing on a fresh start, as [path, text]. */
   notes: [string, string][];
@@ -102,6 +121,14 @@ export interface MemberContext {
   joined: boolean;
   tools: boolean;
   floor?: FloorReason;
+}
+
+function readingLine(r?: Reading): string {
+  if (!r?.paths.length) return "";
+  if (!r.changed) {
+    return `This channel's reading list: ${r.paths.join(", ")}. You haven't read it yet: read it now (it's where earlier discussions left off), and write what you need to remember into your notebook (notebook_write) so you don't have to reread it.`;
+  }
+  return r.changed.length ? `Changed in the reading list since you last read it: ${r.changed.slice(0, 20).join(", ")}${r.changed.length > 20 ? " …" : ""}. Read what matters to you.` : "";
 }
 
 export function memberRules(tools: boolean): string {
@@ -131,7 +158,9 @@ export function memberFresh(c: MemberContext): string {
   const others = c.view.members.filter((m) => m !== c.agent);
   const parts = [
     `You are ${c.agent}, a member of a Quorum room: a standing discussion between AI agents and a human ("human"), working toward a good answer over many turns.`,
-    `Other members: ${others.join(", ") || "none yet"}. Nobody takes turns in order: you're brought in when you have something relevant to add, and several members may be talking at once. A Chair moderates, a scribe keeps shared notes, and the human has an assistant who reads everything.`,
+    `Other members: ${others.join(", ") || "none yet"}. It works like a team chat: nobody takes turns in order, you're brought in when you have something relevant to add, and several members may be talking at once. A Chair moderates, a scribe keeps shared notes, and the human has an assistant who reads everything.`,
+    readingLine(c.reading),
+    ...(c.elsewhere ?? []).map(([ch, d]) => `You're also in #${ch}, where things stand like this:\n${clip(d, 800)}`),
     c.joined ? "You have just joined a discussion already under way. Read the notes below before you speak, and bring a fresh view." : "",
     describeRoom(c.view),
     ...c.notes.map(([p, t]) => `Shared notes, ${p}:\n${clip(t, 3000)}`),
@@ -146,17 +175,50 @@ export function memberFresh(c: MemberContext): string {
 }
 
 /** A member's prompt when its vendor session already remembers the room. */
-export function memberIncremental(c: Pick<MemberContext, "view" | "recent" | "tools" | "floor">): string {
+export function memberIncremental(c: Pick<MemberContext, "view" | "recent" | "tools" | "floor" | "reading">): string {
   const focus = c.view.topics.find((t) => t.slug === c.view.focus);
   return [
     "New in the room since you last spoke:",
     renderEvents(c.recent, c.view.focus) || "(nothing new)",
     focus ? `In focus: ${focus.slug} — ${focus.title}` : "",
+    readingLine(c.reading),
     floorLine(c.floor),
     memberRules(c.tools),
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** A member's prompt inside a side thread: the channel in brief, the message it hangs off, and the thread. */
+export function memberThread(c: { agent: string; view: RoomView; digest?: string; root?: RoomEvent; thread: readonly RoomEvent[]; tools: boolean; floor?: FloorReason; fresh: boolean }): string {
+  return [
+    c.fresh ? `You are ${c.agent}, a member of a Quorum channel: a standing discussion between AI agents and a human.` : "",
+    c.fresh ? describeRoom(c.view) : "",
+    c.fresh && c.digest ? `Where the channel stands:\n${clip(c.digest, 1200)}` : "",
+    "You're in a side thread: a focused conversation off the main channel. Keep to its question; when it's answered, say so in one line.",
+    c.root ? `It hangs off this message:\n${renderEvent(c.root)}` : "",
+    c.thread.length ? `${c.fresh ? "The thread so far" : "New in the thread"}:\n\n${renderEvents(c.thread)}` : "",
+    floorLine(c.floor),
+    memberRules(c.tools),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Asks a member who thought independently to revise after reading what others said meanwhile. */
+export function reviseIndependent(draft: string, others: readonly RoomEvent[]): string {
+  return [
+    "While you were thinking, other members answered the same thing:",
+    renderEvents(others),
+    `Your draft was:\n${draft}`,
+    "Reply with your final message: keep the draft if it still adds something, sharpen it in light of what they said, or answer exactly PASS if they already covered it. Don't mention that you revised.",
+  ].join("\n\n");
+}
+
+export const THREAD_SUMMARY = `You summarize side threads in a team discussion. Answer with one short sentence: the thread's outcome or where it stands, naming who holds which view if they disagree.`;
+
+export function threadSummaryPrompt(root: RoomEvent | undefined, thread: readonly RoomEvent[]): string {
+  return [root ? `The thread hangs off:\n${renderEvent(root)}` : "", `The thread:\n\n${renderEvents(thread)}`, "One sentence."].filter(Boolean).join("\n\n");
 }
 
 export const CHAIR_SYSTEM = `You chair a Quorum room: AI members discuss a problem with a human present. You don't argue a position. You keep the discussion productive: keep it on the topic in focus, notice when it circles or stalls, bring in quiet members, and decide when a document the room produced is agreed.`;
@@ -200,22 +262,23 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
   ].join("\n\n");
 }
 
-export const ASSISTANT_SYSTEM = `You are the human's personal assistant in a Quorum room, where AI members discuss a problem with the human present. You work only for the human: you translate what the members are saying into plain language, answer the human's questions about the discussion, suggest next steps, and tell the human honestly when the room has tunnel vision or needs a different member. You don't speak in the room yourself. Cite message numbers like #12 so the human can check you; keep your own paraphrase apart from what someone actually said.`;
+export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum channel, where AI members work on a problem with the human present. You work only for the human: you say plainly what the members mean, answer questions about the discussion, suggest next steps, and say honestly when the room has tunnel vision or is missing someone. You don't speak in the channel yourself.
 
-export function assistantActions(clis: string[], personas: string[]): string {
-  return `To propose a change, end your answer with action lines. The human approves or declines each one; nothing happens until they do.
->> add: <persona> <cli> [model] | <why>   bring in a member (personas: ${personas.join(", ")}; CLIs: ${clis.join(", ")})
->> steer: <text>                          post a steering message to the room as the human
+Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked. Cite a message number like #12 only when it helps the human check you. Never pad, never recap what the human just said.`;
+
+export function assistantActions(clis: string[], members: string[]): string {
+  return `To propose a change, end with action lines; the human approves or declines each, and nothing happens until they do.
+>> hire: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
+                                   bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
+>> add: <member> <cli> [model] | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
+>> steer: <text>                          post a steering message to the channel as the human
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
->> focus: <topic-slug> | <why>            move the room's focus
+>> focus: <topic-slug> | <why>            move the focus
 >> close: <topic-slug> | <why>            close a topic
 >> parallel: <n> | <why>                  change how many members may speak at once
-You may also pause the room yourself (this one takes effect at once):
+You may also pause the channel yourself (this one takes effect at once):
 >> pause: <one-line reason>`;
 }
-
-/** Shown to the assistant while the room has no members: its first job is proposing who to bring in. */
-export const STAFFING = `The room has no members yet. Help the human staff it: from what they've said, propose three to five members with distinct roles who will disagree usefully, as one add line each. Mix CLIs where it helps (different models catch different things), keep Claude for the roles that need the most judgment, and say in a sentence why this lineup fits the problem. If you don't know enough about the problem yet, ask the human one short question instead.`;
 
 export function assistantContext(o: { view: RoomView; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
   return [
@@ -223,7 +286,7 @@ export function assistantContext(o: { view: RoomView; signals: string; budget: s
     `Signals: ${o.signals}.`,
     o.budget ? `Budget: ${o.budget}` : "",
     ...o.notes.map(([p, t]) => `Scribe's notes, ${p}:\n${clip(t, 2500)}`),
-    o.digest ? `Your current digest for the human:\n${o.digest}` : "",
+    o.digest ? `Your current two-line status for the human:\n${o.digest}` : "",
     o.pending ? `Suggestions waiting for the human:\n${o.pending}` : "",
     `Recent activity (everything, including private messages and your earlier asides):\n\n${o.recent}`,
   ]
@@ -231,22 +294,84 @@ export function assistantContext(o: { view: RoomView; signals: string; budget: s
     .join("\n\n");
 }
 
-export function assistantAsk(context: string, question: string, actions: string, empty: boolean): string {
-  return [context, `The human asks you: ${question}`, empty ? STAFFING : "", "Answer plainly and briefly.", actions].filter(Boolean).join("\n\n");
+export function assistantAsk(context: string, question: string, actions: string): string {
+  return [context, `The human asks you: ${question}`, "Answer in one to three short sentences.", actions].join("\n\n");
 }
 
-export function assistantWatch(context: string, reason: string, actions: string, empty: boolean): string {
+export function assistantWatch(context: string, reason: string, actions: string): string {
   return [
     context,
-    `You are checking on the room because: ${reason}.`,
-    empty
-      ? STAFFING
-      : `First rewrite your digest: where the room stands right now, in three to six short lines (what's agreed, what's contested and by whom, what's next). Start it with a line that says exactly DIGEST: and write it fresh, not as a diff.
+    `You are checking on the channel because: ${reason}.`,
+    `First rewrite the status line the human glances at: at most two short lines on where things stand right now. Start it with a line that says exactly DIGEST: and write it fresh.
 
-Then, only if something shifted that the human should hear about (a decision landed, someone changed their mind, the room is circling or has tunnel vision, a member is missing, or it needs the human), add a line that says exactly NOTE: followed by one or two sentences. Never repeat a point from your earlier notes. Most check-ins have no note.`,
-    `Pause the room only when one of these is true: the members are stuck or looping and steering won't help; they need a decision only the human can make; the budget is nearly spent; or they reached a milestone the human should review.`,
+Then, only if something shifted that the human should hear about (a decision landed, someone changed their mind, the room is circling, someone is missing, or it needs the human), add a line that says exactly NOTE: followed by one sentence. Never repeat an earlier note. Most check-ins have no note.`,
+    `Pause only when the members are stuck and steering won't help, they need a decision only the human can make, the budget is nearly spent, or they reached a milestone the human should review.`,
     actions,
   ].join("\n\n");
+}
+
+export const SETUP_SYSTEM = `You are the human's assistant in Quorum, setting up a new channel: a long-lived team chat where AI members work on a hard problem with the human, possibly for weeks. Your job now is to understand the problem and assemble the right people.
+
+Write like a colleague in a chat: one to three short sentences per reply, plain words, no headings or bullet lists. Ask at most one question at a time, and only when the answer changes who you'd bring in or what they should read.
+
+Choose members the way you'd staff a research group, not a review board: real specialties that fit this problem (for example a research scientist in the relevant field, a UX researcher, someone who brings realistic use cases and edge cases, an engineer who has to build it). Three to six members, each with a distinct angle. Mix CLIs where it helps, since different models catch different things; put the strongest model on the roles that need the most judgment. Reuse existing workspace members when they fit; they bring their memory.`;
+
+export function setupPrompt(o: { repo: string; members: { id: string; role?: string; persona: string; cli: string; model?: string }[]; channels: string[]; clis: string[]; history: { from: "human" | "assistant"; text: string }[] }): string {
+  return [
+    `The project is at ${o.repo}. You can read files there to find the docs the human mentions.`,
+    o.channels.length ? `Existing channels: ${o.channels.map((c) => `#${c}`).join(", ")}.` : "This is the first channel.",
+    o.members.length ? `Workspace members you can reuse:\n${o.members.map((m) => `- ${m.id}: ${m.role ?? m.persona} (${m.cli}${m.model ? ` ${m.model}` : ""})`).join("\n")}` : "",
+    `The conversation so far:\n\n${o.history.map((h) => `${h.from}: ${h.text}`).join("\n\n")}`,
+    `Reply to the human. When you know enough, propose the channel with these lines at the end of your reply (repeat the full set whenever you change it; the human sees it as a card and can ask you to change anything):
+>> channel: <short-name> | <one-sentence topic>
+>> read: <path relative to the project>         one line per folder or file the members should read first
+>> member: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think>
+>> member: <existing-id>                         to reuse a workspace member as they are
+Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** A proposed channel, read from the setup assistant's action lines. */
+export interface SetupProposal {
+  name?: string;
+  topic?: string;
+  reading: string[];
+  members: { id: string; cli?: string; model?: string; role?: string; persona?: string }[];
+}
+
+/** Reads `>> channel/read/member` lines. Returns undefined when the reply proposes nothing. */
+export function parseSetup(text: string): { prose: string; proposal?: SetupProposal } {
+  const prose: string[] = [];
+  const p: SetupProposal = { reading: [], members: [] };
+  let any = false;
+  for (const line of text.split("\n")) {
+    const m = /^\s*>>\s*(channel|read|member)\s*:\s*(.*)$/i.exec(line);
+    if (!m) {
+      prose.push(line);
+      continue;
+    }
+    any = true;
+    const parts = m[2].split("|").map((x) => x.trim());
+    switch (m[1].toLowerCase()) {
+      case "channel":
+        p.name = parts[0].toLowerCase().replace(/^#/, "").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || undefined;
+        p.topic = parts.slice(1).join(" | ") || undefined;
+        break;
+      case "read":
+        if (parts[0]) p.reading.push(parts[0]);
+        break;
+      case "member": {
+        const id = parts[0].toLowerCase();
+        if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) || p.members.some((x) => x.id === id)) break;
+        const [cli, model] = (parts[1] ?? "").split(/\s+/).filter(Boolean);
+        p.members.push({ id, ...(cli ? { cli } : {}), ...(model ? { model } : {}), ...(parts[2] ? { role: parts[2] } : {}), ...(parts[3] ? { persona: parts.slice(3).join(" | ") } : {}) });
+        break;
+      }
+    }
+  }
+  return { prose: prose.join("\n").trim(), ...(any ? { proposal: p } : {}) };
 }
 
 /** Splits a check-in into its digest and optional note. A reply without the markers is all note. */
