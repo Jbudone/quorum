@@ -173,7 +173,7 @@ func (tm *term) snapshot(name string) {
 }
 
 func TestRealBinaryMockSession(t *testing.T) {
-	tm := start(t, 140, 42, "--mock")
+	tm := start(t, 140, 42, "--mock", "--council")
 
 	tm.waitFor("draft → critique → revise", 20*time.Second) // presets have loaded
 	tm.snapshot("1-start")
@@ -237,7 +237,7 @@ func TestRealBinaryLiveClaude(t *testing.T) {
 	if os.Getenv("QUORUM_E2E_LIVE") == "" {
 		t.Skip("set QUORUM_E2E_LIVE=1 to spend real quota")
 	}
-	tm := start(t, 140, 42)
+	tm := start(t, 140, 42, "--council")
 	tm.waitFor("draft → critique → revise", 30*time.Second)
 	tm.send("\t")
 	tm.typ("Plan how to make src/auth.ts safe to ship: credential checking and session ids. Keep every reply under 100 words.")
@@ -257,26 +257,43 @@ func TestRealBinaryLiveClaude(t *testing.T) {
 	tm.snapshot("live-done")
 }
 
-// A mock room end to end: the real binary and engine, the scripted cast calling the real room tools
-// through the MCP bridge's HTTP endpoint, the assistant answering, and pause.
+// A mock room end to end, the way `quorum` opens: an empty room, the assistant proposing members,
+// the scripted cast talking through the real floor and room tools, a question to the assistant,
+// and reopening the room on the next launch.
 func TestRealBinaryMockRoom(t *testing.T) {
-	tm := start(t, 150, 46, "--mock")
-	tm.waitFor("trio", 30*time.Second)
-	tm.send("\x12") // ctrl+r: room mode
-	tm.waitFor("WHO'S IN THE ROOM", 5*time.Second)
-	tm.send("\t")
+	repo := t.TempDir()
+	tm := start(t, 150, 46, "--mock", "--repo", repo)
+	tm.waitFor("This room is empty", 30*time.Second)
+	tm.snapshot("room-0-empty")
 	tm.typ("Should we add a cache to the product API?")
 	tm.send("\r")
-	tm.waitFor("Starting point: an in-process LRU", 30*time.Second)
-	tm.waitFor("wrote plan v1", 30*time.Second)
-	tm.snapshot("room-1-running")
+	tm.waitFor("NEEDS YOUR OK · 3", 30*time.Second)
+	tm.snapshot("room-1-staffing")
 	tm.send("\t") // the assistant's box
+	for i := 0; i < 3; i++ {
+		tm.send("y")
+		time.Sleep(100 * time.Millisecond)
+	}
+	tm.waitFor("pragmatist joined", 10*time.Second)
+	tm.waitFor("TALKING", 20*time.Second)
+	tm.snapshot("room-2-talking")
+	tm.waitFor("accepted by the chair", 60*time.Second)
+	s := tm.waitFor("PAUSED", 10*time.Second)
+	for _, want := range []string{"Plan v2 answers every objection", "↩ ", "pragmatist"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("settled room is missing %q:\n%s", want, s)
+		}
+	}
+	tm.waitFor("WHERE WE ARE", 10*time.Second) // the assistant's digest
+	tm.snapshot("room-3-milestone")
 	tm.typ("where are we?")
 	tm.send("\r")
 	tm.waitFor("In short", 30*time.Second)
-	tm.snapshot("room-2-assistant")
-	tm.send("\x10") // ctrl+p: pause
-	tm.waitFor("PAUSED", 10*time.Second)
-	tm.snapshot("room-3-paused")
+	tm.snapshot("room-4-assistant")
 	tm.send("\x03")
+	time.Sleep(300 * time.Millisecond)
+
+	again := start(t, 150, 46, "--mock", "--repo", repo)
+	again.waitFor("This room is paused (milestone: plan v2 accepted)", 30*time.Second)
+	again.send("\x03")
 }

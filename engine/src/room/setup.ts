@@ -1,26 +1,33 @@
-import type { CliName, CouncilConfig } from "../config.js";
+import type { CliName } from "../config.js";
 import { CHEAP_FIRST, readSettings, type HelperModel, type UserSettings } from "../settings.js";
 import { createTransport } from "../transports/index.js";
 import { mockRoomTransports } from "./mock.js";
 import type { TransportFactory } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
 
+/** CLIs tried, in order, for the roles that need judgment (assistant, Chair) when settings.toml names none. */
+const BEST_FIRST: CliName[] = ["claude", "codex", "gemini", "opencode", "agy"];
+
 /**
- * Who runs the support roles. settings.toml wins; otherwise the assistant and Chair use the
- * council's Chair model and the scribe the first cheap CLI available (Claude is never picked
- * silently for the scribe's frequent, low-stakes work).
+ * Who runs the support roles. settings.toml wins; otherwise the assistant and Chair get the most
+ * capable CLI available, and the scribe and floor, which run often on low-stakes work, the first
+ * cheap one (Claude is never picked silently for those).
  */
-export function supportFor(council: CouncilConfig, usable: CliName[], settings: UserSettings = readSettings()): RoomConfig["support"] {
-  const chair: SupportSpec = { cli: council.chair.cli, ...(council.chair.model ? { model: council.chair.model } : {}) };
+export function supportFor(usable: CliName[], settings: UserSettings = readSettings()): Required<RoomConfig["support"]> {
   const pick = (h: HelperModel | undefined, fallback: SupportSpec): SupportSpec =>
     h && h.cli !== "openrouter" && usable.includes(h.cli) ? { cli: h.cli, ...(h.model ? { model: h.model } : {}) } : fallback;
-  const cheap = CHEAP_FIRST.find((c) => usable.includes(c));
+  const best: SupportSpec = { cli: BEST_FIRST.find((c) => usable.includes(c)) ?? usable[0] ?? "mock" };
+  const cheapCli = CHEAP_FIRST.find((c) => usable.includes(c));
+  const cheap: SupportSpec = cheapCli ? { cli: cheapCli } : best;
   return {
-    assistant: pick(settings.assistant, chair),
-    chair: pick(settings.chair, chair),
-    scribe: pick(settings.scribe, cheap ? { cli: cheap } : chair),
+    assistant: pick(settings.assistant, best),
+    chair: pick(settings.chair, best),
+    scribe: pick(settings.scribe, cheap),
+    floor: pick(settings.floor, cheap),
   };
 }
+
+export const MOCK_SUPPORT: Required<RoomConfig["support"]> = { assistant: { cli: "mock" }, chair: { cli: "mock" }, scribe: { cli: "mock" }, floor: { cli: "mock" } };
 
 /** Transports for a room: the real CLIs, and the scripted cast (keyed by persona) for the mock CLI. */
 export function roomTransports(personaOf: (id: string) => string, delayMs?: number): TransportFactory {

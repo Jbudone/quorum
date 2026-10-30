@@ -23,6 +23,8 @@ export interface UserSettings {
   assistant?: HelperModel;
   chair?: HelperModel;
   scribe?: HelperModel;
+  /** Decides who speaks next in a room; runs after most messages, so a cheap fast model fits. */
+  floor?: HelperModel;
 }
 
 const helper = (v: any): HelperModel | undefined =>
@@ -41,6 +43,7 @@ export function readSettings(user = userDir()): UserSettings {
       assistant: helper(raw.assistant),
       chair: helper(raw.chair),
       scribe: helper(raw.scribe),
+      floor: helper(raw.floor),
       jev: j && j.enabled === true ? { enabled: true, model: typeof j.model === "string" ? j.model : undefined, endpoint: typeof j.endpoint === "string" ? j.endpoint : undefined } : undefined,
     };
   } catch {

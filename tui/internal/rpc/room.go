@@ -40,6 +40,15 @@ type (
 
 		Level  string `json:"level"`
 		Detail string `json:"detail"`
+
+		// Floor decisions: who was given the next turn, and why.
+		Picks []RoomPick `json:"picks"`
+	}
+	RoomPick struct {
+		Agent   string `json:"agent"`
+		Why     string `json:"why"`
+		ReplyTo int    `json:"replyTo"`
+		To      string `json:"to"`
 	}
 	RoomStateEvent struct {
 		State  string `json:"state"` // paused | running | idle
@@ -90,6 +99,7 @@ type (
 		Assistant ChairSpec `json:"assistant"`
 		Chair     ChairSpec `json:"chair"`
 		Scribe    ChairSpec `json:"scribe"`
+		Floor     ChairSpec `json:"floor"`
 	}
 	// RoomSnapshot is what room.start and room.open return: the room as it stands, with recent history.
 	RoomSnapshot struct {
@@ -100,6 +110,7 @@ type (
 		Agents        []PresetAgent  `json:"agents"`
 		Left          []PresetAgent  `json:"left"`
 		Support       RoomSupport    `json:"support"`
+		Digest        string         `json:"digest"`
 		Tuning        RoomTuning     `json:"tuning"`
 		Focus         string         `json:"focus"`
 		Topics        []RoomTopic    `json:"topics"`

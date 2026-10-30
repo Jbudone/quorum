@@ -36,7 +36,9 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     case "pass":
       return `[#${e.seq}] — ${e.from} passed`;
     case "aside":
-      return `[#${e.seq}] (aside) ${e.from}: ${e.text}`;
+      return `[#${e.seq}] (aside${e.kind === "digest" ? ", digest" : ""}) ${e.from}: ${e.text}`;
+    case "floor":
+      return `[#${e.seq}] (floor) ${e.picks.map((p) => `${p.agent}${p.why ? ` (${p.why})` : ""}`).join(", ") || "nobody"}`;
     case "suggestion":
       return `[#${e.seq}] (suggestion ${e.id} from ${e.from}) ${e.action} ${e.args.join(" ")}${e.why ? ` | ${e.why}` : ""}`;
     case "suggestion.resolved":
@@ -79,6 +81,14 @@ export function describeRoom(v: RoomView): string {
   return lines.join("\n");
 }
 
+/** Why a member was given the floor this turn. */
+export interface FloorReason {
+  why: string;
+  replyTo?: number;
+  /** Set when answering a private message: the reply goes only to this sender. */
+  to?: string;
+}
+
 export interface MemberContext {
   agent: string;
   view: RoomView;
@@ -91,49 +101,59 @@ export interface MemberContext {
   total: number;
   joined: boolean;
   tools: boolean;
-  maxSpoken: number;
+  floor?: FloorReason;
 }
 
-export function memberRules(tools: boolean, maxSpoken: number): string {
+export function memberRules(tools: boolean): string {
   return [
+    "Your reply is what you say to the room: everyone sees it as it is written, so write it as a message, not as a report about what you did. Don't narrate reading files or calling tools.",
     tools
-      ? "Speak only through the quorum tools: post to the room (reply_to a #number when answering one), dm one member, pass when you have nothing new, read_room for older messages, raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing, read_doc to read documents and shared notes, notebook_read/notebook_write for private notes you want to keep. Your final reply is private scratch that nobody sees."
+      ? "Tools are for side actions only: dm one member (or the human) privately, raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing (then say in your reply what you changed), read_doc for documents and shared notes, read_room for older messages, notebook_read/notebook_write for private notes you want to keep."
       : "",
-    "Stay on the topic in focus. A short note on a parked topic is welcome when you have an idea for it, but don't move the discussion there.",
-    "Each time you speak, add something: a claim, evidence (cite files and lines), a question, or a disagreement. Don't agree just to agree; push back when you see a flaw, and say when the room is circling.",
-    "Keep messages short, a few paragraphs at most. Name the member you are answering.",
-    tools ? `Send at most ${maxSpoken} messages per turn.` : "If you have nothing new to add, reply with exactly PASS.",
+    "Stay on the topic in focus.",
+    "Add something each time you speak: a claim, evidence (cite files and lines), a sharp question, or a disagreement. Don't agree just to agree; push back when you see a flaw, and say so when the room is circling.",
+    "Talk like a colleague in a meeting: short, a few sentences to a few paragraphs. Use @name only when you need a particular member to answer; whoever has something to add will be brought in anyway.",
+    "When the room has converged, say so plainly and stop; don't restate agreement.",
+    "If on reflection you have nothing new to add, reply with exactly PASS and nobody will see it.",
   ]
     .filter(Boolean)
     .join(" ");
 }
+
+const floorLine = (f?: FloorReason): string =>
+  !f
+    ? ""
+    : `You have the floor${f.replyTo ? ` to answer #${f.replyTo}` : ""}: ${f.why || "the room wants your view"}.` +
+      (f.to ? ` Your reply goes privately to ${f.to}, not to the room.` : "");
 
 /** A member's prompt when it has no live vendor session: everything it needs, rebuilt from files. */
 export function memberFresh(c: MemberContext): string {
   const others = c.view.members.filter((m) => m !== c.agent);
   const parts = [
     `You are ${c.agent}, a member of a Quorum room: a standing discussion between AI agents and a human ("human"), working toward a good answer over many turns.`,
-    `Other members: ${others.join(", ") || "none yet"}. Members speak in parallel and you are woken whenever there is something new for you. A Chair moderates, a scribe keeps shared notes, and the human has an assistant who reads everything.`,
+    `Other members: ${others.join(", ") || "none yet"}. Nobody takes turns in order: you're brought in when you have something relevant to add, and several members may be talking at once. A Chair moderates, a scribe keeps shared notes, and the human has an assistant who reads everything.`,
     c.joined ? "You have just joined a discussion already under way. Read the notes below before you speak, and bring a fresh view." : "",
     describeRoom(c.view),
     ...c.notes.map(([p, t]) => `Shared notes, ${p}:\n${clip(t, 3000)}`),
     c.staleCode ? `Note: ${c.staleCode}` : "",
-    c.notebook.trim() ? `Your private notebook:\n${clip(c.notebook, 4000)}` : "Your private notebook is empty.",
+    c.notebook.trim() ? `Your private notebook:\n${clip(c.notebook, 4000)}` : "",
     c.total > c.recent.length ? `The room so far (latest ${c.recent.length} of ${c.total} events):` : "The room so far:",
     renderEvents(c.recent, c.view.focus),
-    memberRules(c.tools, c.maxSpoken),
+    floorLine(c.floor),
+    memberRules(c.tools),
   ];
   return parts.filter(Boolean).join("\n\n");
 }
 
 /** A member's prompt when its vendor session already remembers the room. */
-export function memberIncremental(c: Pick<MemberContext, "view" | "recent" | "tools" | "maxSpoken">): string {
+export function memberIncremental(c: Pick<MemberContext, "view" | "recent" | "tools" | "floor">): string {
   const focus = c.view.topics.find((t) => t.slug === c.view.focus);
   return [
-    "New in the room since your last turn:",
-    renderEvents(c.recent, c.view.focus),
+    "New in the room since you last spoke:",
+    renderEvents(c.recent, c.view.focus) || "(nothing new)",
     focus ? `In focus: ${focus.slug} — ${focus.title}` : "",
-    memberRules(c.tools, c.maxSpoken),
+    floorLine(c.floor),
+    memberRules(c.tools),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -180,24 +200,30 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
   ].join("\n\n");
 }
 
-export const ASSISTANT_SYSTEM = `You are the human's personal assistant in a Quorum room, where AI members are discussing a problem. You work only for the human: you translate what the members are saying into plain language, answer the human's questions about the discussion, suggest next steps, and tell the human honestly when the room has tunnel vision or needs a different member. You don't speak in the room yourself. Cite message numbers like #12 so the human can check you; keep your own paraphrase apart from what someone actually said.`;
+export const ASSISTANT_SYSTEM = `You are the human's personal assistant in a Quorum room, where AI members discuss a problem with the human present. You work only for the human: you translate what the members are saying into plain language, answer the human's questions about the discussion, suggest next steps, and tell the human honestly when the room has tunnel vision or needs a different member. You don't speak in the room yourself. Cite message numbers like #12 so the human can check you; keep your own paraphrase apart from what someone actually said.`;
 
-export const ASSISTANT_ACTIONS = `To propose a change, end your answer with action lines. The human approves or declines each one; nothing happens until they do.
+export function assistantActions(clis: string[], personas: string[]): string {
+  return `To propose a change, end your answer with action lines. The human approves or declines each one; nothing happens until they do.
+>> add: <persona> <cli> [model] | <why>   bring in a member (personas: ${personas.join(", ")}; CLIs: ${clis.join(", ")})
 >> steer: <text>                          post a steering message to the room as the human
->> add: <persona> <cli> [model] | <why>   bring in another member (personas: architect, skeptic, pragmatist, security, operator, user-advocate; CLIs: claude, codex, gemini, agy, opencode)
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the room's focus
 >> close: <topic-slug> | <why>            close a topic
->> parallel: <n> | <why>                  change how many members speak at once
+>> parallel: <n> | <why>                  change how many members may speak at once
 You may also pause the room yourself (this one takes effect at once):
 >> pause: <one-line reason>`;
+}
 
-export function assistantContext(o: { view: RoomView; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string }): string {
+/** Shown to the assistant while the room has no members: its first job is proposing who to bring in. */
+export const STAFFING = `The room has no members yet. Help the human staff it: from what they've said, propose three to five members with distinct roles who will disagree usefully, as one add line each. Mix CLIs where it helps (different models catch different things), keep Claude for the roles that need the most judgment, and say in a sentence why this lineup fits the problem. If you don't know enough about the problem yet, ask the human one short question instead.`;
+
+export function assistantContext(o: { view: RoomView; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
   return [
     describeRoom(o.view),
     `Signals: ${o.signals}.`,
     o.budget ? `Budget: ${o.budget}` : "",
     ...o.notes.map(([p, t]) => `Scribe's notes, ${p}:\n${clip(t, 2500)}`),
+    o.digest ? `Your current digest for the human:\n${o.digest}` : "",
     o.pending ? `Suggestions waiting for the human:\n${o.pending}` : "",
     `Recent activity (everything, including private messages and your earlier asides):\n\n${o.recent}`,
   ]
@@ -205,18 +231,32 @@ export function assistantContext(o: { view: RoomView; signals: string; budget: s
     .join("\n\n");
 }
 
-export function assistantAsk(context: string, question: string): string {
-  return [context, `The human asks you: ${question}`, "Answer plainly and briefly.", ASSISTANT_ACTIONS].join("\n\n");
+export function assistantAsk(context: string, question: string, actions: string, empty: boolean): string {
+  return [context, `The human asks you: ${question}`, empty ? STAFFING : "", "Answer plainly and briefly.", actions].filter(Boolean).join("\n\n");
 }
 
-export function assistantWatch(context: string, reason: string): string {
+export function assistantWatch(context: string, reason: string, actions: string, empty: boolean): string {
   return [
     context,
     `You are checking on the room because: ${reason}.`,
-    `Write a status note for the human in two to four sentences: what moved, what's stuck, and anything they should know. If nothing is worth their attention, answer exactly NOTHING.`,
+    empty
+      ? STAFFING
+      : `First rewrite your digest: where the room stands right now, in three to six short lines (what's agreed, what's contested and by whom, what's next). Start it with a line that says exactly DIGEST: and write it fresh, not as a diff.
+
+Then, only if something shifted that the human should hear about (a decision landed, someone changed their mind, the room is circling or has tunnel vision, a member is missing, or it needs the human), add a line that says exactly NOTE: followed by one or two sentences. Never repeat a point from your earlier notes. Most check-ins have no note.`,
     `Pause the room only when one of these is true: the members are stuck or looping and steering won't help; they need a decision only the human can make; the budget is nearly spent; or they reached a milestone the human should review.`,
-    ASSISTANT_ACTIONS,
+    actions,
   ].join("\n\n");
+}
+
+/** Splits a check-in into its digest and optional note. A reply without the markers is all note. */
+export function parseWatch(prose: string): { digest?: string; note?: string } {
+  const d = /^\s*DIGEST:\s*/im.exec(prose);
+  const n = /^\s*NOTE:\s*/im.exec(prose);
+  if (!d && !n) return prose.trim() && prose.trim() !== "NOTHING" ? { note: prose.trim() } : {};
+  const digest = d ? prose.slice(d.index + d[0].length, n && n.index > d.index ? n.index : undefined).trim() : undefined;
+  const note = n ? prose.slice(n.index + n[0].length, d && d.index > n.index ? d.index : undefined).trim() : undefined;
+  return { ...(digest ? { digest } : {}), ...(note && note !== "NOTHING" ? { note } : {}) };
 }
 
 export const EXIT_MEMO = `You are leaving this Quorum room. Write a short exit memo for whoever continues the work: the threads you leave open, what you still believe and why, and anything unfinished. A few bullet points. Reply with the memo only.`;

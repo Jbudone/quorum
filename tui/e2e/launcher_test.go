@@ -3,13 +3,12 @@ package e2e
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
 // The ./quorum launcher must work from any directory, including through a symlink on PATH, and
-// ground the council in the directory it was started from.
+// open the room in the directory it was started from.
 func TestLauncherWorksFromAnyDirectory(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {
@@ -24,10 +23,10 @@ func TestLauncherWorksFromAnyDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm := launch(t, 140, 40, project, link, "--mock")
-	s := tm.waitFor("draft → critique → revise", 90*time.Second) // first run may compile the TUI
-	// The temp dir may be shown through a symlinked prefix, so compare on its last element.
-	if !strings.Contains(s, filepath.Base(project)) {
-		t.Fatalf("council should be grounded in the launch directory %s:\n%s", project, s)
+	tm.waitFor("This room is empty", 90*time.Second) // first run may compile the TUI
+	// The room lives in the project it was started from.
+	if rooms, err := os.ReadDir(filepath.Join(project, ".quorum", "rooms")); err != nil || len(rooms) != 1 {
+		t.Fatalf("the room should be stored in the launch directory %s: %v %v", project, rooms, err)
 	}
 	tm.send("\x03")
 	done := make(chan error, 1)

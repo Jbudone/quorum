@@ -11,7 +11,7 @@ import { createTransport } from "../transports/index.js";
 import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
 import { Room, type TransportFactory } from "../room/room.js";
-import { personaIn, roomTransports, supportFor } from "../room/setup.js";
+import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 
 /**
@@ -22,7 +22,7 @@ import { RoomStore } from "../room/store.js";
  * session.interject {to, text}, session.abort, session.configure {pause?, rounds?}, presets.list, personas.list, clis.list,
  * presets.save {name, config}, doctor.
  *
- * Rooms: rooms.list {repo}, room.start {preset | config, topic, repo, mock?, parallel?, turnCap?}, room.open {repo, id},
+ * Rooms: rooms.list {repo}, room.start {repo, mock?, preset? | config?, topic?, parallel?, turnCap?} (no preset: an empty room), room.open {repo, id},
  * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept},
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
@@ -54,6 +54,7 @@ function snapshot(r: Room) {
     agents: c.agents,
     left: c.left ?? [],
     support: c.support,
+    digest: r.digest() ?? "",
     tuning: { parallel: c.parallel, turnCap: c.turnCap, quotaWarn: c.quotaWarn, quotaStop: c.quotaStop },
     focus: r.focus() ?? "",
     topics: r.topics(),
@@ -214,22 +215,22 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "rooms.list":
         return RoomStore.list(String(p.repo));
       case "room.start": {
-        let config = p.config ? councilFromWire(p.config, opts.assetsDir) : loadPreset(String(p.preset), opts.assetsDir);
+        // With no preset or config the room starts empty: just the human and the assistant, who proposes members.
+        let config = p.config ? councilFromWire(p.config, opts.assetsDir) : p.preset ? loadPreset(String(p.preset), opts.assetsDir) : undefined;
         let substitutions: unknown[] = [];
-        let usable: CliName[] = ["mock"];
-        if (p.mock) config = mockify(config);
-        else if (!opts.roomTransports) {
-          usable = (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
-          ({ config, substitutions } = resolveAvailable(config, usable));
-        }
-        const agents = config.agents;
+        const fake = Boolean(p.mock) || Boolean(opts.roomTransports);
+        const usable: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
+        if (config && p.mock) config = mockify(config);
+        else if (config && !opts.roomTransports) ({ config, substitutions } = resolveAvailable(config, usable));
+        const agents = config?.agents ?? [];
         const r = Room.create({
           repo: String(p.repo),
-          transports: transportsFor((id) => agents.find((a) => a.id === id)?.persona ?? id),
+          transports: transportsFor(personaIn(() => r.store.config())),
           assetsDir: opts.assetsDir,
-          topic: String(p.topic),
+          clis: usable,
+          topic: p.topic ? String(p.topic) : undefined,
           agents,
-          support: p.mock || opts.roomTransports ? { assistant: { cli: "mock" }, chair: { cli: "mock" }, scribe: { cli: "mock" } } : supportFor(config, usable),
+          support: fake ? MOCK_SUPPORT : supportFor(usable),
           parallel: p.parallel ? Number(p.parallel) : undefined,
           turnCap: p.turnCap ? Number(p.turnCap) : undefined,
         });
@@ -238,7 +239,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "room.open": {
         const store = RoomStore.open(String(p.repo), String(p.id));
-        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir });
+        const fake = Boolean(opts.roomTransports) || Object.values(store.config().support).every((x) => x?.cli === "mock");
+        const clis: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
+        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis });
         await adopt(r);
         return snapshot(r);
       }

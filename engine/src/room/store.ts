@@ -18,7 +18,9 @@ export type RoomEventBody =
   | { type: "paused"; reason: string }
   | { type: "resumed" }
   /** The human's private conversation with the assistant, and the assistant's own notes. Members never see these. */
-  | { type: "aside"; from: "human" | "assistant"; text: string; kind?: "answer" | "note" }
+  | { type: "aside"; from: "human" | "assistant"; text: string; kind?: "answer" | "note" | "digest" }
+  /** Who the floor gave the next turn to, and why. Members never see it. */
+  | { type: "floor"; picks: { agent: string; why: string; replyTo?: number }[] }
   | { type: "suggestion"; id: number; from: "assistant" | "chair"; action: SuggestionAction; args: string[]; why: string }
   | { type: "suggestion.resolved"; id: number; accepted: boolean }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }
@@ -46,7 +48,8 @@ export interface RoomConfig {
   /** Current members. Members who left are kept in `left` so they can be brought back. */
   agents: AgentSpec[];
   left?: AgentSpec[];
-  support: { assistant: SupportSpec; chair: SupportSpec; scribe: SupportSpec };
+  /** `floor` decides who speaks next; rooms saved before it existed fall back to the scribe's model. */
+  support: { assistant: SupportSpec; chair: SupportSpec; scribe: SupportSpec; floor?: SupportSpec };
   /** Most agents running a turn at once. */
   parallel: number;
   /** Turns per resume for each CLI that doesn't report its quota. */
@@ -151,6 +154,10 @@ export class RoomStore {
   updateConfig(patch: Partial<RoomTuning>): RoomConfig {
     const set = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
     return this.saveConfig({ ...this.config(), ...set });
+  }
+
+  setTopic(topic: string): RoomConfig {
+    return this.saveConfig({ ...this.config(), topic });
   }
 
   setRoster(agents: AgentSpec[], left: AgentSpec[]): RoomConfig {
@@ -299,6 +306,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "suggestion":
     case "suggestion.resolved":
     case "budget":
+    case "floor":
       return false;
     default:
       return true;

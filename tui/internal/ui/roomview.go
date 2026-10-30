@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jbud/quorum/tui/internal/rpc"
 	"github.com/jbud/quorum/tui/internal/theme"
 )
 
@@ -23,9 +25,29 @@ func (r *roomModel) colorOf(th theme.Theme, id string) color.Color {
 	return th.Speaker(r.color(id))
 }
 
+// displayName is how the feed names a speaker: the human is "you".
+func displayName(id string) string {
+	if id == "human" {
+		return "you"
+	}
+	return id
+}
+
+func clock(ts string) string {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return ""
+	}
+	return t.Local().Format("15:04")
+}
+
 func renderRoomHeader(r *roomModel, th theme.Theme, width int, spin string) string {
+	title := r.focusTitle()
+	if title == "" {
+		title = "new room"
+	}
 	left := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", r.frame/2, th.Accent2, th.Accent, th.Info, th.Speaker(2)) +
-		fg(th.Accent2).Render(" ░▒▓ ") + fg(th.Muted).Render("// room // ") + fg(th.Text).Render(r.focus)
+		fg(th.Accent2).Render(" ░▒▓ ") + fg(th.Text).Bold(true).Render(title)
 	var chips []string
 	for cli, q := range r.quota {
 		c := th.Muted
@@ -36,13 +58,12 @@ func renderRoomHeader(r *roomModel, th theme.Theme, width int, spin string) stri
 		}
 		chips = append(chips, fg(c).Render(fmt.Sprintf("%s %d%%", strings.ToUpper(cli), int(q*100+0.5))))
 	}
-	if n := len(r.pending); n > 0 {
-		chips = append(chips, fg(th.Warn).Render(fmt.Sprintf("%d SUGGESTION%s", n, map[bool]string{true: "", false: "S"}[n == 1])))
-	}
-	switch r.state {
-	case "running":
-		chips = append(chips, fg(th.Accent2).Render(spin+" IN SESSION"))
-	case "idle":
+	switch {
+	case r.state == "running" && len(r.live) > 0:
+		chips = append(chips, fg(th.Accent2).Render(spin+" TALKING"))
+	case r.state == "running":
+		chips = append(chips, fg(th.Accent2).Render(spin+" LISTENING"))
+	case r.state == "idle":
 		chips = append(chips, fg(th.Info).Render("◌ QUIET"))
 	default:
 		chips = append(chips, fg(th.Warn).Bold(true).Render("❚❚ PAUSED"))
@@ -50,71 +71,93 @@ func renderRoomHeader(r *roomModel, th theme.Theme, width int, spin string) stri
 	right := strings.Join(chips, fg(th.Subtle).Render("  ·  "))
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
-		return ansi.Truncate(left, width, "…")
+		return ansi.Truncate(left, max(width-lipgloss.Width(right)-1, 10), "…") + " " + right
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// renderFeedItem draws one log entry; returns "" for entries the feed doesn't show.
+// messageHead is the line above a message: who, to whom, what it answers, and when.
+func messageHead(r *roomModel, th theme.Theme, width int, from, to string, replyTo, seq int, ts string) string {
+	head := fg(r.colorOf(th, from)).Bold(true).Render(displayName(from))
+	if to != "" && to != "room" {
+		head += fg(th.Warn).Render(" → " + displayName(to) + " · private")
+	}
+	if replyTo > 0 {
+		if who, ok := r.authors[replyTo]; ok && who != from {
+			head += fg(th.Subtle).Render(" ↩ " + displayName(who))
+		}
+	}
+	var meta string
+	if seq > 0 {
+		meta = fg(th.Subtle).Render(strings.TrimSpace(clock(ts) + fmt.Sprintf("  #%d", seq)))
+	}
+	if gap := width - lipgloss.Width(head) - lipgloss.Width(meta); gap > 1 && meta != "" {
+		return head + strings.Repeat(" ", gap) + meta
+	}
+	return head
+}
+
+// renderFeedItem draws one log entry as a chat message or a one-line event.
 func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) string {
 	if it.cache != "" && it.cacheW == width {
 		return it.cache
 	}
 	e := it.ev
-	seq := fg(th.Subtle).Render(fmt.Sprintf("#%d", e.Seq))
-	line := func(glyph string, c color.Color, text string) string {
-		return ansi.Truncate(fg(c).Render(glyph+" ")+fg(th.Muted).Render(text)+" "+seq, width, "…")
+	event := func(glyph string, c color.Color, text string) string {
+		return ansi.Truncate(fg(c).Render(glyph+" ")+fg(th.Muted).Render(text), width, "…")
 	}
 	var out string
 	switch e.Type {
 	case "message":
-		col := r.colorOf(th, e.From)
-		head := fg(col).Bold(true).Render(e.From)
+		body := renderMarkdown(e.Text, max(width, 10), th)
 		if e.To != "room" {
-			head += fg(th.Warn).Render(" → " + e.To + " (private)")
+			body = fg(th.Muted).Italic(true).Render(body)
 		}
-		if e.ReplyTo > 0 {
-			head += fg(th.Subtle).Render(fmt.Sprintf(" re #%d", e.ReplyTo))
-		}
-		if e.Topic != "" && e.Topic != r.focus {
-			head += fg(th.Info).Render(" [" + e.Topic + "]")
-		}
-		head += " " + seq
-		body := renderMarkdown(e.Text, max(width-2, 10), th)
-		out = head + "\n" + prefixLines(body, fg(col).Render("│"))
-	case "pass":
-		out = line("·", th.Subtle, e.From+" passed")
+		out = messageHead(r, th, width, e.From, e.To, e.ReplyTo, e.Seq, e.TS) + "\n" + body
 	case "topic.raised":
-		out = line("◆", th.Info, fmt.Sprintf("%s raised a topic: “%s” (%s)", e.By, e.Title, e.Slug))
+		if r.opening(e) {
+			break // the human's opening question already reads as their first message
+		}
+		out = event("◆", th.Info, fmt.Sprintf("%s raised a topic: “%s”", displayName(e.By), e.Title))
 	case "topic.focus":
-		out = sectionTitle("focus → "+e.Slug, width, th, true)
+		if r.opening(e) {
+			break
+		}
+		t := e.Slug
+		for _, x := range r.topics {
+			if x.Slug == e.Slug {
+				t = x.Title
+			}
+		}
+		out = event("▸", th.Accent2, "focus: "+t)
 	case "topic.closed":
-		out = line("✓", th.OK, "topic "+e.Slug+" closed"+suffix(": ", e.Why))
+		out = event("✓", th.OK, "topic "+e.Slug+" closed"+suffix(": ", e.Why))
 	case "doc.revised":
-		out = line("✎", th.Accent, fmt.Sprintf("%s wrote %s v%d%s  (/doc %s)", e.By, e.Slug, e.Version, suffix(" — ", e.Note), e.Slug))
+		out = event("✎", th.Accent, fmt.Sprintf("%s wrote %s v%d%s  · ctrl+o to read", e.By, e.Slug, e.Version, suffix(" — ", e.Note)))
 	case "doc.accepted":
-		out = fg(th.OK).Bold(true).Render(fmt.Sprintf("✓ %s v%d accepted", e.Slug, e.Version)) + " " + seq
-	case "docs.updated":
-		out = line("≡", th.Subtle, "scribe updated "+strings.Join(e.Files, ", "))
+		out = fg(th.OK).Bold(true).Render(fmt.Sprintf("✓ %s v%d accepted by the %s", e.Slug, e.Version, e.By))
 	case "agent.joined":
-		out = line("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
+		out = event("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
 	case "agent.left":
-		out = line("−", th.Muted, e.Agent+" left"+suffix(" · memo: ", firstLine(e.Memo)))
+		out = event("−", th.Muted, e.Agent+" left"+suffix(" · memo: ", firstLine(e.Memo)))
 	case "budget":
 		c := th.Warn
 		if e.Level == "stop" {
 			c = th.Err
 		}
-		out = line("$", c, e.Detail)
+		out = event("$", c, e.Detail)
 	case "paused":
-		out = fg(th.Warn).Render("❚❚ paused: "+e.Reason) + " " + seq
-	case "resumed":
-		out = fg(th.Subtle).Render("▶ resumed") + " " + seq
+		out = fg(th.Warn).Render("❚❚ paused — " + e.Reason)
 	case "turn.failed":
-		out = line("✗", th.Err, e.Agent+": "+firstLine(e.Message))
+		out = event("✗", th.Err, e.Agent+" couldn't speak: "+firstLine(e.Message))
 	}
 	it.cache, it.cacheW = out, width
 	return out
+}
+
+// opening reports whether a topic event is the room's opening question being set up.
+func (r *roomModel) opening(e rpc.RoomEvent) bool {
+	return e.By == "human" && len(r.topics) > 0 && e.Slug == r.topics[0].Slug
 }
 
 func suffix(sep, s string) string {
@@ -132,53 +175,90 @@ func firstLine(s string) string {
 	return s
 }
 
+// toolDoing says in words what a member is doing while it uses a tool.
+func toolDoing(tool string) string {
+	switch tool {
+	case "":
+		return "thinking"
+	case "doc_draft":
+		return "drafting a document"
+	case "read_doc":
+		return "reading the notes"
+	case "raise_topic":
+		return "raising a topic"
+	case "dm":
+		return "writing privately"
+	case "notebook_read", "notebook_write":
+		return "taking notes"
+	case "read_room":
+		return "rereading the room"
+	}
+	return "looking at the code (" + tool + ")"
+}
+
+const emptyRoom = `This room is empty.
+
+Describe the problem you want worked out in the box below. Your assistant, on the right, will suggest who to bring in. Approve each one with y and they'll get started.`
+
 func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
+	if r.empty() {
+		return fg(th.Muted).Render(ansi.Wrap(emptyRoom, min(width, 72), ""))
+	}
 	var blocks []string
 	for _, it := range r.feed {
 		if b := renderFeedItem(r, it, th, width); b != "" {
 			blocks = append(blocks, b)
 		}
 	}
-	// Members mid-turn: who, what tool, and the tail of what they're writing.
+	// Members talking right now: their words stream in as they write them.
 	for _, id := range r.speaking() {
 		t := r.live[id]
-		head := fg(r.colorOf(th, id)).Render(spin+" "+id) + fg(th.Muted).Italic(true).Render(" is thinking")
-		if t.tool != "" {
-			head += fg(th.Subtle).Render(" · " + t.tool)
+		text := strings.TrimSpace(t.text)
+		if text == "" || text == "PASS" {
+			blocks = append(blocks, fg(r.colorOf(th, id)).Bold(true).Render(id)+" "+fg(th.Muted).Italic(true).Render(spin+" "+toolDoing(t.tool)+"…"))
+			continue
 		}
-		if tail := lastLines(t.text, 2); tail != "" && t.tool == "" {
-			head += "\n" + fg(th.Subtle).Italic(true).Render(ansi.Truncate(tail, width-2, "…"))
+		head := fg(r.colorOf(th, id)).Bold(true).Render(id) + " " + fg(th.Subtle).Render(spin)
+		// Styled line by line: a multi-line Render pads every line, which would push the cursor away.
+		lines := strings.Split(ansi.Wrap(text, max(width-1, 10), ""), "\n")
+		for i, l := range lines {
+			lines[i] = fg(th.Text).Render(l)
 		}
-		blocks = append(blocks, head)
-	}
-	if len(blocks) == 0 {
-		return fg(th.Muted).Italic(true).Render("The room is empty so far.")
+		blocks = append(blocks, head+"\n"+strings.Join(lines, "\n")+fg(r.colorOf(th, id)).Render("▌"))
 	}
 	return strings.Join(blocks, "\n\n")
 }
 
-func lastLines(s string, n int) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+// renderDigest is the assistant's pinned "where we are", kept to a few lines.
+func renderDigest(r *roomModel, th theme.Theme, width, maxLines int) string {
+	if r.digest == "" {
+		return ""
 	}
-	return strings.Join(lines, " ")
+	lines := strings.Split(renderMarkdown(r.digest, width, th), "\n")
+	if len(lines) > maxLines {
+		lines = append(lines[:max(maxLines-1, 1)], fg(th.Subtle).Render("… ask me for more"))
+	}
+	return sectionTitle("where we are", width, th, false) + "\n" + strings.Join(lines, "\n")
 }
 
-// renderAssistant draws the assistant pane: the conversation, then open suggestions.
-func renderAssistant(r *roomModel, th theme.Theme, width int, spin string, focused bool) string {
+// renderAssistant draws the assistant's conversation with the human.
+func renderAssistant(r *roomModel, th theme.Theme, width int, spin string) string {
 	var b []string
 	if len(r.asides) == 0 && !r.asking {
-		b = append(b, fg(th.Muted).Italic(true).Render("I read everything in the room, including private messages. Ask me what they mean, what to do next, or /catchup for a recap. I'll leave notes here when something needs you."))
+		intro := "I'm your assistant. I read everything in the room, including private messages, and keep a summary pinned above. Ask me what anyone meant, what to do next, or /catchup for a recap."
+		if r.empty() {
+			intro = "I'm your assistant. Tell the room what you want worked out (left box) and I'll suggest who to bring in. You can also talk it through with me here first."
+		}
+		b = append(b, fg(th.Muted).Italic(true).Render(ansi.Wrap(intro, width, "")))
 	}
 	for _, n := range r.asides {
 		switch n.kind {
 		case "you":
-			b = append(b, fg(th.Accent2).Bold(true).Render("you")+"\n"+prefixLines(renderMarkdown(n.text, width-2, th), fg(th.Accent2).Render("│")))
+			b = append(b, fg(th.Accent2).Bold(true).Render("you")+"\n"+renderMarkdown(n.text, width, th))
 		case "answer":
-			b = append(b, fg(th.Info).Bold(true).Render("assistant")+"\n"+prefixLines(renderMarkdown(n.text, width-2, th), fg(th.Info).Render("│")))
+			b = append(b, fg(th.Info).Bold(true).Render("assistant")+"\n"+renderMarkdown(n.text, width, th))
 		case "note":
-			b = append(b, fg(th.Info).Render("◆ note")+"\n"+prefixLines(renderMarkdown(n.text, width-2, th), fg(th.Subtle).Render("│")))
+			b = append(b, fg(th.Info).Render("◆ assistant")+"\n"+renderMarkdown(n.text, width, th))
 		case "system":
 			b = append(b, fg(th.Muted).Render(ansi.Wrap(n.text, width, "")))
 		case "error":
@@ -188,50 +268,61 @@ func renderAssistant(r *roomModel, th theme.Theme, width int, spin string, focus
 	if r.asking {
 		head := fg(th.Info).Bold(true).Render("assistant") + " " + fg(th.Muted).Render(spin)
 		if a := r.streamingAnswer(); a != "" {
-			head += "\n" + prefixLines(renderMarkdown(a, width-2, th), fg(th.Info).Render("│"))
+			head += "\n" + renderMarkdown(a, width, th)
 		}
 		b = append(b, head)
 	}
 	return strings.Join(b, "\n\n")
 }
 
-// renderSuggestions is the approval list pinned under the assistant's conversation.
-func renderSuggestions(r *roomModel, th theme.Theme, width int, focused bool) string {
+// renderSuggestions is the approval list pinned at the bottom of the assistant pane. Compact
+// leaves out the reasons, for short screens.
+func renderSuggestions(r *roomModel, th theme.Theme, width int, focused, compact bool) string {
 	if len(r.pending) == 0 {
 		return ""
 	}
-	lines := []string{sectionTitle(fmt.Sprintf("suggestions · %d", len(r.pending)), width, th, focused)}
+	lines := []string{sectionTitle(fmt.Sprintf("needs your ok · %d", len(r.pending)), width, th, focused)}
 	for i, s := range r.pending {
-		mark := fg(th.Subtle).Render("  ")
+		mark := "  "
 		label := fg(th.Text).Render(suggestionLabel(s))
-		if i == r.sugCur && focused {
+		if i == r.sugCur {
 			mark = fg(th.Accent2).Render("❯ ")
-			label = fg(th.Accent2).Bold(true).Render(suggestionLabel(s))
+			if focused {
+				label = fg(th.Accent2).Bold(true).Render(suggestionLabel(s))
+			}
 		}
-		who := fg(th.Subtle).Render(" (" + s.From + ")")
-		lines = append(lines, ansi.Truncate(mark+label+who, width, "…"))
-		if s.Why != "" {
+		lines = append(lines, ansi.Truncate(mark+label, width, "…"))
+		if s.Why != "" && (!compact || i == r.sugCur) {
 			lines = append(lines, fg(th.Muted).Render(ansi.Truncate("  "+s.Why, width, "…")))
 		}
 	}
 	if focused {
 		lines = append(lines, fg(th.Subtle).Render("y approve · n decline · ↑↓ choose"))
+	} else {
+		lines = append(lines, fg(th.Subtle).Render("tab here, then y to approve"))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// renderRoster is the one-line member strip above the inputs.
+// renderRoomRoster is the member strip above the inputs: who's here and who's talking.
 func renderRoomRoster(r *roomModel, th theme.Theme, width int, spin string) string {
+	if len(r.agents) == 0 {
+		return fg(th.Subtle).Render("nobody in the room yet")
+	}
 	var parts []string
 	for _, a := range r.agents {
-		g := fg(th.Subtle).Render("○")
-		if _, ok := r.live[a.ID]; ok {
-			g = fg(th.Accent2).Render(spin)
+		name := fg(r.colorOf(th, a.ID)).Render(a.ID)
+		if t, ok := r.live[a.ID]; ok {
+			doing := "typing"
+			if t.text == "" {
+				doing = toolDoing(t.tool)
+			}
+			parts = append(parts, fg(th.Accent2).Render(spin)+" "+name+fg(th.Muted).Italic(true).Render(" "+doing))
+		} else {
+			parts = append(parts, fg(th.Subtle).Render("○ ")+name)
 		}
-		parts = append(parts, g+" "+fg(r.colorOf(th, a.ID)).Render(a.ID)+fg(th.Subtle).Render(" "+a.CLI))
 	}
-	parts = append(parts, fg(th.Subtle).Render(fmt.Sprintf("· %d at once", r.tuning.Parallel)))
-	return ansi.Truncate(strings.Join(parts, "  "), width, "…")
+	return ansi.Truncate(strings.Join(parts, "   "), width, "…")
 }
 
 func renderTopics(r *roomModel) string {
@@ -255,7 +346,7 @@ func renderTopics(r *roomModel) string {
 
 // docList builds the documents overlay: the room's outputs, then the scribe's notes.
 func (r *roomModel) docList() []docRef {
-	var refs []docRef
+	refs := []docRef{}
 	for _, d := range r.docs {
 		label := fmt.Sprintf("%s  %s v%d", d.Slug, d.Kind, d.Version)
 		if d.Accepted > 0 {
@@ -273,7 +364,11 @@ func renderOverlay(o *docOverlay, th theme.Theme, width int) string {
 	if o.list != nil {
 		lines := []string{sectionTitle(o.title, width, th, true), ""}
 		if len(o.list) == 0 {
-			lines = append(lines, fg(th.Muted).Italic(true).Render("Nothing yet. Members write documents with doc_draft; the scribe keeps notes as the room talks."))
+			empty := "Nothing yet. Members write documents as the discussion needs them, and the scribe keeps notes as the room talks."
+			if o.rooms {
+				empty = "No other rooms in this project yet. /new starts one."
+			}
+			lines = append(lines, fg(th.Muted).Italic(true).Render(ansi.Wrap(empty, width, "")))
 		}
 		for i, d := range o.list {
 			if i == o.cur {
@@ -295,7 +390,11 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	if r.state == "paused" {
 		pause = k("ctrl+p", "resume")
 	}
-	parts := []string{k("tab", "switch box"), pause, k("@name", "private"), k("ctrl+o", "docs"), k("/help", "commands"), k("ctrl+c", "quit")}
+	box := k("tab", "talk to your assistant")
+	if r.pane == paneAssistant {
+		box = k("tab", "talk to the room")
+	}
+	parts := []string{box, pause, k("ctrl+o", "docs"), k("/help", "commands"), k("ctrl+c", "quit")}
 	if r.overlay != nil {
 		parts = []string{k("esc", "close"), k("↑↓", "move"), k("enter", "open")}
 	}

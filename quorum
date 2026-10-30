@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launches the Quorum TUI from any directory (or via a symlink on your PATH):
-#   ./quorum/quorum [--mock] [--repo DIR]
-# The council is grounded in the directory you run it from unless --repo says otherwise.
+#   ./quorum/quorum [--mock] [--council] [--repo DIR]
+# The room (or council) is grounded in the directory you run it from unless --repo says otherwise.
 set -euo pipefail
 root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 bin="$root/tui/.bin/quorum"

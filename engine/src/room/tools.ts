@@ -11,22 +11,8 @@ export interface ToolDef {
   inputSchema: Record<string, unknown>;
 }
 
-/** The tools room members speak through. The bridge fetches these, so this is the only copy. */
+/** Side actions room members can take; what they say goes in their reply text. The bridge fetches these, so this is the only copy. */
 export const ROOM_TOOLS: ToolDef[] = [
-  {
-    name: "post",
-    description:
-      "Say something to the whole room. Use reply_to with a message number (#N) when answering one message. Set topic only to file a short note under a parked topic; leave it out to speak on the topic in focus.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        text: { type: "string" },
-        reply_to: { type: "integer", description: "message number you answer" },
-        topic: { type: "string", description: "slug of a parked topic this note belongs to" },
-      },
-      required: ["text"],
-    },
-  },
   {
     name: "dm",
     description: "Send a private message to one member (or 'human'). The human's assistant can still read it.",
@@ -35,11 +21,6 @@ export const ROOM_TOOLS: ToolDef[] = [
       properties: { to: { type: "string" }, text: { type: "string" } },
       required: ["to", "text"],
     },
-  },
-  {
-    name: "pass",
-    description: "Say nothing this turn because you have nothing new to add. Wakes nobody.",
-    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "raise_topic",

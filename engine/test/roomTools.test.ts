@@ -22,16 +22,12 @@ const setup = (o: Parameters<typeof rig>[0] = {}) => {
   return r;
 };
 /** Members whose first turn runs `first` and who pass ever after. */
-const firstTurn = (who: string, first: ToolCall[]) => (agent: string, n: number) => (agent === who && n === 1 ? first : [["pass"] as ToolCall]);
+const firstTurn = (who: string, first: ToolCall[], say?: string) => (agent: string, n: number) =>
+  agent === who && n === 1 ? { tools: first, say } : "PASS";
 
 describe("Room tools", () => {
-  it("posts, replies and DMs through the tools; the final reply text stays private", async () => {
-    const r = setup({
-      member: firstTurn("arch", [
-        ["post", { text: "Use an LRU.", reply_to: 3 }],
-        ["dm", { to: "skeptic", text: "you'll hate this" }],
-      ]),
-    });
+  it("speaks in reply text, DMs through a tool, and drops what was written before the tool call", async () => {
+    const r = setup({ member: firstTurn("arch", [["dm", { to: "skeptic", text: "you'll hate this" }]], "Use an LRU.") });
     // One at a time so message numbers are deterministic.
     const room = r.create({ parallel: 1 });
     room.resume();
@@ -39,15 +35,12 @@ describe("Room tools", () => {
 
     expect(messages(room).map((e) => e.type === "message" && [e.from, e.to, e.text, e.replyTo])).toEqual([
       ["human", "room", "pick a cache", undefined],
-      ["arch", "room", "Use an LRU.", 3],
       ["arch", "skeptic", "you'll hate this", undefined],
+      ["arch", "room", "Use an LRU.", 3],
     ]);
-    expect(JSON.stringify(room.store.events())).not.toContain("scratch notes");
-    expect(r.results.arch).toEqual([{ text: "Sent as #5." }, { text: "Sent as #6." }]);
-    const last = r.memberCalls().at(-1)!.prompt;
-    expect(last).toContain("[#5] arch (re #3)");
-    expect(last).toContain("[#6] arch → skeptic (private)");
-    expect(r.memberCalls()[0].prompt).toContain("Speak only through the quorum tools");
+    expect(JSON.stringify(room.store.events())).not.toContain("thinking aloud");
+    expect(r.results.arch).toEqual([{ text: "Sent privately to skeptic as #6." }]);
+    expect(r.memberCalls()[0].prompt).toContain("Tools are for side actions only");
     expect(room.state).toBe("idle");
   });
 
@@ -56,12 +49,9 @@ describe("Room tools", () => {
       member: firstTurn("arch", [
         ["dm", { to: "nobody", text: "hi" }],
         ["dm", { to: "arch", text: "me" }],
-        ["post", { text: "  " }],
-        ["post", { text: "x", reply_to: 1 }],
-        ["post", { text: "x", topic: "nope" }],
-        ["shout", {}],
+        ["dm", { to: "human", text: "  " }],
+        ["post", { text: "x" }],
         ["read_doc", { name: "nothing" }],
-        ...Array.from({ length: 5 }, (_, i): ToolCall => ["post", { text: `point ${i}` }]),
       ]),
     });
     const room = r.create({ agents: AGENTS.slice(0, 1) });
@@ -71,26 +61,19 @@ describe("Room tools", () => {
       'no member "nobody"; members are human',
       'no member "arch"; members are human',
       "text is required",
-      "no message #1",
-      'no open topic "nope"; open topics are pick-a-cache',
-      'unknown tool "shout"',
+      'unknown tool "post"',
       'nothing called "nothing".\nNo documents yet.\nShared notes: none yet',
-      "Sent as #5.",
-      "Sent as #6.",
-      "Sent as #7.",
-      "Sent as #8.",
-      "at most 4 messages per turn; wait for replies",
     ]);
   });
 
   it("refuses a token once its turn is over", async () => {
-    const r = setup({ member: () => [["pass"]] });
+    const r = setup({ member: () => "PASS" });
     const room = r.create({ agents: AGENTS.slice(0, 1) });
     room.resume();
     await room.settled();
     const spec = r.memberCalls()[0].opts!.mcp!;
-    expect(await callTool(spec, "post", { text: "late" })).toEqual({ error: "this turn is over; nothing was sent" });
-    expect(await callTool({ ...spec, env: { ...spec.env, QUORUM_ROOM_TOKEN: "forged" } }, "pass")).toMatchObject({ error: expect.stringMatching(/turn is over/) });
+    expect(await callTool(spec, "dm", { to: "human", text: "late" })).toEqual({ error: "this turn is over; nothing was sent" });
+    expect(await callTool({ ...spec, env: { ...spec.env, QUORUM_ROOM_TOKEN: "forged" } }, "read_doc")).toMatchObject({ error: expect.stringMatching(/turn is over/) });
   });
 
   it("pages back through history with read_room", async () => {
@@ -102,13 +85,8 @@ describe("Room tools", () => {
     expect(r.results.arch[0].text).toBe("[#3] human:\npick a cache");
   });
 
-  it("raises topics, files parked notes without waking anyone, and moves focus", async () => {
-    const r = setup({
-      member: (agent, n) =>
-        agent === "arch" && n === 1
-          ? [["raise_topic", { title: "Bulk import consistency", why: "keeps coming up" }], ["post", { text: "parked idea", topic: "bulk-import-consistency" }]]
-          : [["pass"]],
-    });
+  it("raises topics and moves focus", async () => {
+    const r = setup({ member: firstTurn("arch", [["raise_topic", { title: "Bulk import consistency", why: "keeps coming up" }]], "Raised it.") });
     const room = r.create({ parallel: 1 });
     room.resume();
     await room.settled();
@@ -116,9 +94,7 @@ describe("Room tools", () => {
       { slug: "pick-a-cache", title: "pick a cache", closed: false },
       { slug: "bulk-import-consistency", title: "Bulk import consistency", closed: false },
     ]);
-    // skeptic took one turn (for the topic) and wasn't woken again by the parked note.
-    expect(r.memberCalls().filter((c) => c.agent === "skeptic")).toHaveLength(1);
-    expect(messages(room).at(-1)).toMatchObject({ topic: "bulk-import-consistency" });
+    expect(r.results.arch[0].text).toMatch(/Raised as bulk-import-consistency/);
 
     room.setFocus("bulk-import-consistency");
     await room.settled();
@@ -131,17 +107,14 @@ describe("Room tools", () => {
 
   it("versions documents, reads them back, and keeps private notebooks", async () => {
     const r = setup({
-      member: (agent, n) =>
-        agent === "arch" && n === 1
-          ? [
-              ["doc_draft", { name: "Plan", kind: "plan", text: "# Plan\nv1" }],
-              ["doc_draft", { name: "plan", text: "# Plan\nv2", note: "tighter" }],
-              ["read_doc", { name: "plan" }],
-              ["read_doc", {}],
-              ["notebook_write", { text: "check TTL" }],
-              ["notebook_read"],
-            ]
-          : [["pass"]],
+      member: firstTurn("arch", [
+        ["doc_draft", { name: "Plan", kind: "plan", text: "# Plan\nv1" }],
+        ["doc_draft", { name: "plan", text: "# Plan\nv2", note: "tighter" }],
+        ["read_doc", { name: "plan" }],
+        ["read_doc", {}],
+        ["notebook_write", { text: "check TTL" }],
+        ["notebook_read"],
+      ]),
     });
     const room = r.create({ agents: AGENTS.slice(0, 1) });
     room.resume();
@@ -170,7 +143,7 @@ describe("Room tools", () => {
 describe("Room support roles", () => {
   it("the Chair posts, nudges, raises topics, proposes focus, and accepting a document pauses for review", async () => {
     const r = setup({
-      member: (agent, n) => (agent === "arch" && n === 1 ? [["doc_draft", { name: "plan", kind: "plan", text: "# Plan" }], ["post", { text: "drafted" }]] : [["pass"]]),
+      member: firstTurn("arch", [["doc_draft", { name: "plan", kind: "plan", text: "# Plan" }]], "drafted"),
       chair: [
         "Skeptic, your view?\n>> nudge: skeptic | weigh in on the plan\n>> raise: Rollout | keeps coming up\n>> focus: rollout | next\n>> accept: plan v1\n>> launch: rockets",
         "PASS",
@@ -210,8 +183,7 @@ describe("Room support roles", () => {
 
     // When the repo moves on, members are warned the code notes may be stale.
     const later = setup({ member: () => "PASS" });
-    const again = (await import("../src/room/room.js")).Room.open(room.id, { repo: r.repo, transports: later.transports, head: () => "def456" });
-    cleanup.push(() => again.close());
+    const again = later.open(room.id, { repo: r.repo, head: () => "def456" });
     again.resume();
     await again.settled();
     const prompt = later.memberCalls()[0].prompt;
@@ -246,6 +218,24 @@ describe("Room support roles", () => {
     expect(room.store.config().agents.map((a) => a.id)).toEqual(["arch", "skeptic", "security"]);
     await room.resolve(2, false);
     expect(messages(room).some((e) => e.type === "message" && e.text === "Decide the TTL first.")).toBe(false);
+  });
+
+  it("the assistant keeps a digest and leaves a note only when something shifted", async () => {
+    const r = setup({
+      member: () => "PASS",
+      assistant: ["DIGEST:\n- LRU agreed (#3)\nNOTE: Nobody has looked at tenants.\n>> add: security claude | tenant isolation", "DIGEST:\n- LRU agreed (#3)"],
+    });
+    const room = r.create();
+    await room.watch("check-in");
+    await room.watch("check-in");
+    const asides = room.store.events().filter((e) => e.type === "aside");
+    expect(asides.map((e) => e.type === "aside" && [e.kind, e.text])).toEqual([
+      ["digest", "- LRU agreed (#3)"],
+      ["note", "Nobody has looked at tenants."],
+    ]);
+    expect(room.digest()).toBe("- LRU agreed (#3)");
+    expect(room.pending()).toMatchObject([{ action: "add", args: ["security", "claude"] }]);
+    expect(r.calls.filter((c) => c.agent === "assistant")[1].prompt).toContain("Your current digest for the human:\n- LRU agreed (#3)");
   });
 
   it("a removed member writes an exit memo and can be brought back", async () => {

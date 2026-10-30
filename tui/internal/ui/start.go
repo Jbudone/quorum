@@ -33,12 +33,6 @@ type startModel struct {
 	designing  bool   // waiting for a model to design the council
 	designReq  bool   // set when a design should be requested; the app sends it and clears it
 	saveReq    string // set when the drawer asks to save; the app sends it and clears it
-
-	roomMode bool               // start a room (open-ended, continuous) instead of a round-based council
-	rooms    []rpc.RoomListItem // saved rooms in this repo, newest first
-	roomCur  int
-	openReq  string // set when a saved room should be reopened; the app sends it and clears it
-	listReq  bool   // set when saved rooms should be (re)listed; the app sends it and clears it
 }
 
 func newStart(th theme.Theme, mock bool) startModel {
@@ -131,27 +125,11 @@ func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 	}
 	switch msg.String() {
 	case "tab", "shift+tab":
-		// Saved rooms are a third stop, only in room mode.
-		stops := 2
-		if m.roomMode && len(m.rooms) > 0 {
-			stops = 3
-		}
-		if msg.String() == "tab" {
-			m.focus = (m.focus + 1) % stops
-		} else {
-			m.focus = (m.focus + stops - 1) % stops
-		}
+		m.focus = 1 - m.focus
 		if m.focus == 1 {
 			return false, m.topic.Focus()
 		}
 		m.topic.Blur()
-		return false, nil
-	case "ctrl+r":
-		m.roomMode = !m.roomMode
-		m.listReq = m.roomMode
-		if !m.roomMode && m.focus == 2 {
-			m.focus = 0
-		}
 		return false, nil
 	case "ctrl+a":
 		m.openDrawer()
@@ -161,19 +139,6 @@ func (m *startModel) update(msg tea.KeyPressMsg) (start bool, cmd tea.Cmd) {
 		return false, nil
 	case "ctrl+s":
 		return m.tryStart()
-	}
-	if m.focus == 2 {
-		switch msg.String() {
-		case "up", "k":
-			m.roomCur = max(m.roomCur-1, 0)
-		case "down", "j":
-			m.roomCur = min(m.roomCur+1, len(m.rooms)-1)
-		case "enter":
-			if m.roomCur < len(m.rooms) {
-				m.openReq = m.rooms[m.roomCur].ID
-			}
-		}
-		return false, nil
 	}
 	if m.focus == 0 {
 		switch msg.String() {
@@ -269,18 +234,7 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		b.WriteString(fg(th.Muted).Render("> a council of AI agents debates your plan, then writes it down_") + "\n\n")
 	}
 
-	mode := func(on bool, label string) string {
-		if on {
-			return fg(th.Accent2).Bold(true).Render("● " + label)
-		}
-		return fg(th.Muted).Render("○ " + label)
-	}
-	b.WriteString(mode(!m.roomMode, "Council") + fg(th.Muted).Render(" rounds, then a plan    ") + mode(m.roomMode, "Room") + fg(th.Muted).Render(" an open-ended discussion") + fg(th.Subtle).Render("  ctrl+r") + "\n\n")
-	if m.roomMode {
-		b.WriteString(sectionTitle("Who's in the room", cw, th, m.focus == 0) + "\n")
-	} else {
-		b.WriteString(sectionTitle("Choose a council", cw, th, m.focus == 0) + "\n")
-	}
+	b.WriteString(sectionTitle("Choose a council", cw, th, m.focus == 0) + "\n")
 	if loading {
 		b.WriteString(fg(th.Muted).Render(spin+" starting the engine…") + "\n")
 	}
@@ -307,9 +261,6 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 			chips = append(chips, fg(th.Speaker(j)).Render(a.ID))
 		}
 		meta := fg(th.Muted).Render(fmt.Sprintf("%s · %d rounds", protocolLabel(p.Protocol), p.Rounds))
-		if m.roomMode {
-			meta = fg(th.Muted).Render(fmt.Sprintf("%d members", len(p.Agents)))
-		}
 		b.WriteString(bar + " " + name + "  " + fg(th.Muted).Render(ansi.Truncate(p.Description, cw-4-lipgloss.Width(p.Name), "…")) + "\n")
 		if !compact {
 			b.WriteString(bar + " " + ansi.Truncate(strings.Join(chips, fg(th.Subtle).Render(" · ")), cw-lipgloss.Width(meta)-6, "…") + "  " + meta + "\n")
@@ -329,21 +280,6 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 	}
 	b.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).Render(m.topic.View()) + "\n")
 
-	if m.roomMode && len(m.rooms) > 0 {
-		b.WriteString("\n" + sectionTitle("Or reopen a room", cw, th, m.focus == 2) + "\n")
-		for i, rm := range m.rooms {
-			if i >= 4 {
-				b.WriteString(fg(th.Subtle).Render(fmt.Sprintf("  +%d more", len(m.rooms)-4)) + "\n")
-				break
-			}
-			line := ansi.Truncate(rm.Topic, cw-24, "…") + fg(th.Subtle).Render(fmt.Sprintf("  %d events · %s", rm.Events, shortTime(rm.Updated)))
-			if i == m.roomCur && m.focus == 2 {
-				b.WriteString(fg(th.Accent2).Render("▌ ") + fg(th.Accent2).Bold(true).Render(line) + "\n")
-			} else {
-				b.WriteString(fg(th.Subtle).Render("│ ") + fg(th.Text).Render(line) + "\n")
-			}
-		}
-	}
 	b.WriteString(fg(th.Subtle).Render("repo "+repo) + "\n")
 	if m.err != "" {
 		b.WriteString(fg(th.Err).Render("✗ "+m.err) + "\n")
@@ -358,7 +294,7 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		b.WriteString("\n")
 	}
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
-	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("ctrl+r", "council/room"), k("ctrl+a", "customize"), k("ctrl+c", "quit")}
+	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("ctrl+a", "customize"), k("ctrl+c", "quit")}
 	sep := fg(th.Subtle).Render(" · ")
 	for len(hints) > 1 && lipgloss.Width(strings.Join(hints, sep)) > cw {
 		hints = hints[:len(hints)-1]
@@ -383,12 +319,4 @@ func protocolLabel(p string) string {
 		return "delphi"
 	}
 	return p
-}
-
-// shortTime turns an ISO timestamp into "2026-10-30 14:05".
-func shortTime(iso string) string {
-	if len(iso) < 16 {
-		return iso
-	}
-	return strings.Replace(iso[:16], "T", " ", 1)
 }

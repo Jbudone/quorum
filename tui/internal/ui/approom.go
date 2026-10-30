@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
@@ -21,19 +22,20 @@ type roomUI struct {
 	assistIn   textarea.Model
 	feedFollow bool
 	asstFollow bool
-	opening    string // what we're waiting for: "starting" or "reopening", "" once the room is here
+	opening    string // what we're waiting for ("opening", "starting", "reopening"); "" once the room is here
+	err        string // why the room couldn't be opened
+	listing    bool   // a rooms.list is for the /rooms overlay
 }
 
 const (
-	roomWideMin   = 100 // below this the two panes become tabs
+	roomSideMin   = 64 // below this the assistant sits under the feed instead of beside it
 	roomInputRows = 2
 )
 
 func (a *App) newRoomUI(opening string) {
 	in := newInput(a.th, roomInputRows)
-	in.Placeholder = "Say something to the room, @name for one member, /help for commands"
 	as := newInput(a.th, roomInputRows)
-	as.Placeholder = "Ask your assistant…"
+	as.Placeholder = "Ask your assistant anything…"
 	a.rm = &roomUI{
 		feedVP: viewport.New(), assistVP: viewport.New(), overlayVP: viewport.New(),
 		roomIn: in, assistIn: as, feedFollow: true, asstFollow: true, opening: opening,
@@ -44,9 +46,12 @@ func (a *App) newRoomUI(opening string) {
 	a.screen = screenRoom
 }
 
-// startRoom sends room.start with the start screen's choices.
-func (a *App) startRoom(params map[string]any) {
+func (a *App) startRoom() {
 	a.newRoomUI("starting")
+	params := map[string]any{"repo": a.opts.Repo}
+	if a.opts.Mock {
+		params["mock"] = true
+	}
 	a.call("room.start", params)
 }
 
@@ -55,59 +60,86 @@ func (a *App) openRoom(id string) {
 	a.call("room.open", map[string]any{"repo": a.opts.Repo, "id": id})
 }
 
-// handleRoomResponse handles answers to room.* requests. It reports whether it took the method.
+// handleRoomResponse handles answers to room requests. It reports whether it took the method.
 func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
-	if method == "rooms.list" {
-		var l []rpc.RoomListItem
-		if r.Err == "" && rpc.DecodeResult(r.Result, &l) == nil {
-			a.start.rooms = l
-			a.start.roomCur = min(a.start.roomCur, max(len(l)-1, 0))
-		}
-		return true
-	}
-	if !strings.HasPrefix(method, "room.") {
+	if method != "rooms.list" && !strings.HasPrefix(method, "room.") {
 		return false
 	}
 	u := a.rm
-	if r.Err != "" {
-		if (method == "room.start" || method == "room.open") && u != nil && u.room == nil {
-			// Nothing opened, so go back and let the user adjust.
-			a.rm, a.screen = nil, screenStart
-			a.start.err = r.Err
-			return true
-		}
-		if u != nil && u.room != nil {
-			u.room.asides = append(u.room.asides, noteItem{kind: "error", text: r.Err})
-			if method == "room.ask" {
-				u.room.asking = false
-			}
-		} else {
-			a.fail(r.Err)
-		}
-		return true
-	}
 	if u == nil {
 		return true
 	}
+	if r.Err != "" {
+		switch {
+		case u.room == nil:
+			u.err, u.opening = r.Err, ""
+		case method == "room.ask":
+			u.room.asides = append(u.room.asides, noteItem{kind: "error", text: r.Err})
+			u.room.asking = false
+		default:
+			u.room.asides = append(u.room.asides, noteItem{kind: "error", text: r.Err})
+		}
+		return true
+	}
 	switch method {
+	case "rooms.list":
+		var l []rpc.RoomListItem
+		if err := rpc.DecodeResult(r.Result, &l); err != nil {
+			u.err = "bad room list from engine: " + err.Error()
+			return true
+		}
+		if u.listing && u.room != nil {
+			u.listing = false
+			o := &docOverlay{title: "Rooms in this project", list: []docRef{}, rooms: true}
+			for _, it := range l {
+				label := it.Topic
+				if label == "" {
+					label = "(empty room)"
+				}
+				label = ansiCut(firstLine(label), 60) + "  " + shortTime(it.Updated)
+				if it.ID == u.room.id {
+					label += "  · this room"
+				}
+				o.list = append(o.list, docRef{name: it.ID, label: label})
+			}
+			u.room.overlay = o
+			return true
+		}
+		if u.room == nil {
+			// Opening the app: pick up the latest room here, or start a fresh one.
+			if len(l) == 0 {
+				a.startRoom()
+			} else {
+				a.openRoom(l[0].ID)
+			}
+		}
 	case "room.start", "room.open":
 		var s rpc.RoomSnapshot
 		if err := rpc.DecodeResult(r.Result, &s); err != nil {
-			a.rm, a.screen = nil, screenStart
-			a.start.err = "bad room from engine: " + err.Error()
+			u.err = "bad room from engine: " + err.Error()
 			return true
 		}
 		u.room = newRoom(s, a.opts.Calm)
 		u.room.frame = a.frame
+		u.opening = ""
 		for _, sub := range s.Substitutions {
 			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: sub.Agent + " uses " + sub.To + " instead of " + sub.From + " (" + sub.From + " is unavailable)."})
 		}
-		if method == "room.start" {
+		switch {
+		case method == "room.start":
 			a.call("room.resume", map[string]any{})
-		} else {
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Room reopened and paused. Press ctrl+p to carry on, or ask me /catchup for a recap first."})
+		case u.room.resumesOnOpen():
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Picked up where you left off. ctrl+p pauses."})
+			a.call("room.resume", map[string]any{})
+		case len(u.room.agents) == 0:
+			a.call("room.resume", map[string]any{})
+		default:
+			why := u.room.lastPause
+			if why == "" {
+				why = "paused"
+			}
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "This room is paused (" + why + "). ctrl+p carries on; ask me /catchup for a recap first."})
 		}
-		u.opening = ""
 	case "room.doc":
 		var d rpc.RoomDocText
 		if rpc.DecodeResult(r.Result, &d) == nil && u.room != nil {
@@ -121,15 +153,24 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
 			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Filed: " + res.URL})
 		}
-	case "room.add", "room.rejoin":
-		var res struct {
-			ID string `json:"id"`
-		}
-		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: res.ID + " joined the room."})
-		}
 	}
 	return true
+}
+
+// shortTime turns a log timestamp into local "Jan 2 15:04".
+func shortTime(iso string) string {
+	t, err := time.Parse(time.RFC3339Nano, iso)
+	if err != nil {
+		return iso
+	}
+	return t.Local().Format("Jan 2 15:04")
+}
+
+func ansiCut(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s
 }
 
 func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
@@ -162,7 +203,15 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			u.overlayVP.HalfPageDown()
 		case "enter":
 			if o.list != nil && o.cur < len(o.list) {
-				a.call("room.doc", map[string]any{"name": o.list[o.cur].name})
+				pick := o.list[o.cur].name
+				switch {
+				case o.rooms && pick == r.id:
+					r.overlay = nil
+				case o.rooms:
+					a.openRoom(pick)
+				default:
+					a.call("room.doc", map[string]any{"name": pick})
+				}
 			}
 		}
 		return nil
@@ -248,6 +297,7 @@ func (a *App) submitRoom() tea.Cmd {
 	cmd := r.parseRoomInput(u.roomIn.Value())
 	if cmd.err != "" {
 		r.asides = append(r.asides, noteItem{kind: "error", text: cmd.err})
+		u.asstFollow = true
 		return nil
 	}
 	u.roomIn.Reset()
@@ -261,12 +311,12 @@ func (a *App) submitRoom() tea.Cmd {
 	case "topics":
 		r.asides = append(r.asides, noteItem{kind: "system", text: renderTopics(r)})
 		return nil
-	case "leave":
-		a.call("room.pause", map[string]any{"reason": "left the room"})
-		a.rm = nil
-		a.screen = screenStart
-		a.start.focus = 0
+	case "rooms":
+		u.listing = true
 		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
+		return nil
+	case "new":
+		a.startRoom()
 		return nil
 	}
 	if cmd.method == "" {
@@ -282,17 +332,21 @@ func (a *App) submitRoom() tea.Cmd {
 
 // ---- layout ----
 
-func (a *App) roomWide() bool { return a.w >= roomWideMin }
+// roomSide reports whether the assistant sits beside the feed (wide enough) or under it.
+func (a *App) roomSide() bool { return a.w >= roomSideMin }
 
 func (a *App) assistW() int {
-	if !a.roomWide() {
+	if !a.roomSide() {
 		return a.w
 	}
-	return max(36, a.w*34/100)
+	if a.w >= 100 {
+		return min(max(34, a.w*36/100), 64)
+	}
+	return max(26, a.w*40/100)
 }
 
 func (a *App) feedW() int {
-	if !a.roomWide() {
+	if !a.roomSide() {
 		return a.w
 	}
 	return a.w - a.assistW() - 1
@@ -300,7 +354,35 @@ func (a *App) feedW() int {
 
 func (a *App) roomBodyH() int {
 	// header, spacer, roster line, input boxes (rows + border), footer
-	return max(a.h-1-1-1-(roomInputRows+2)-1, 3)
+	return max(a.h-1-1-1-(roomInputRows+2)-1, 6)
+}
+
+// paneHeights splits the body when the assistant sits under the feed.
+func (a *App) paneHeights() (feed, assist int) {
+	bh := a.roomBodyH()
+	if a.roomSide() {
+		return bh, bh
+	}
+	feed = max(bh*55/100, 3)
+	return feed, max(bh-feed-1, 3)
+}
+
+// assistantColumn lays out the assistant pane top to bottom: pinned digest, conversation, suggestions.
+func (a *App) assistantColumn(width, height int) (digest, sug string, vpH int) {
+	r := a.rm.room
+	sug = renderSuggestions(r, a.th, width, r.pane == paneAssistant, false)
+	if lipgloss.Height(sug) > height/2 {
+		sug = renderSuggestions(r, a.th, width, r.pane == paneAssistant, true)
+	}
+	digest = renderDigest(r, a.th, width, max(height/3, 3))
+	used := 0
+	if digest != "" {
+		used += lipgloss.Height(digest) + 1
+	}
+	if sug != "" {
+		used += lipgloss.Height(sug) + 1
+	}
+	return digest, sug, max(height-used, 3)
 }
 
 func (a *App) refreshRoom() {
@@ -310,47 +392,50 @@ func (a *App) refreshRoom() {
 	}
 	r := u.room
 	spin := a.spin.View()
-	fw, aw, bh := a.feedW(), a.assistW(), a.roomBodyH()
+	fw, aw := a.feedW(), a.assistW()
+	fh, ah := a.paneHeights()
 	u.feedVP.SetWidth(fw)
-	u.feedVP.SetHeight(bh)
+	u.feedVP.SetHeight(fh)
 	u.feedVP.SetContent(renderFeed(r, a.th, fw-1, spin))
 	if u.feedFollow {
 		u.feedVP.GotoBottom()
 	}
-	sug := renderSuggestions(r, a.th, aw-2, r.pane == paneAssistant)
-	ah := bh
-	if sug != "" {
-		ah = max(bh-lipgloss.Height(sug)-1, 3)
-	}
-	u.assistVP.SetWidth(aw - 1)
-	u.assistVP.SetHeight(ah)
-	u.assistVP.SetContent(renderAssistant(r, a.th, aw-2, spin, r.pane == paneAssistant))
+	inner := aw - 2
+	_, _, vpH := a.assistantColumn(inner, ah)
+	u.assistVP.SetWidth(inner)
+	u.assistVP.SetHeight(vpH)
+	u.assistVP.SetContent(renderAssistant(r, a.th, inner, spin))
 	if u.asstFollow {
 		u.assistVP.GotoBottom()
 	}
 	if r.overlay != nil {
 		u.overlayVP.SetWidth(a.w - 4)
-		u.overlayVP.SetHeight(bh)
+		u.overlayVP.SetHeight(a.roomBodyH())
 		u.overlayVP.SetContent(renderOverlay(r.overlay, a.th, a.w-4))
 	}
-	boxW := fw - 4
-	if !a.roomWide() {
-		boxW = a.w - 4
+	roomBox, assistBox := fw-4, aw-4
+	if !a.roomSide() {
+		roomBox, assistBox = a.w-4, a.w-4
 	}
-	u.roomIn.SetWidth(boxW)
-	u.assistIn.SetWidth(max(aw-4, 10))
-	u.roomIn.SetPromptFunc(10, func(pi textarea.PromptInfo) string {
+	u.roomIn.SetWidth(roomBox)
+	u.assistIn.SetWidth(max(assistBox, 10))
+	switch {
+	case len(r.agents) == 0:
+		u.roomIn.Placeholder = "Describe the problem you want worked out…"
+	default:
+		u.roomIn.Placeholder = "Say something to the room · @name to ask one member · /help"
+	}
+	u.roomIn.SetPromptFunc(6, func(pi textarea.PromptInfo) string {
 		if pi.LineNumber != 0 {
-			return strings.Repeat(" ", 10)
+			return strings.Repeat(" ", 6)
 		}
 		target, c := "room", a.th.Accent2
-		if v := u.roomIn.Value(); strings.HasPrefix(v, "@") {
-			target = strings.ToLower(strings.TrimPrefix(strings.Fields(v + " ")[0], "@"))
-			c = r.colorOf(a.th, target)
+		if v := u.roomIn.Value(); strings.HasPrefix(v, "/dm ") {
+			target, c = "dm", a.th.Warn
 		} else if strings.HasPrefix(v, "/") {
 			target, c = "cmd", a.th.Muted
 		}
-		return fg(c).Bold(true).Render(padRight(target, 8)) + fg(a.th.Subtle).Render("▸ ")
+		return fg(c).Bold(true).Render(padRight(target, 4)) + fg(a.th.Subtle).Render("▸ ")
 	})
 	u.assistIn.SetPromptFunc(5, func(pi textarea.PromptInfo) string {
 		if pi.LineNumber != 0 {
@@ -399,8 +484,10 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 		}
 		return
 	}
+	fh, _ := a.paneHeights()
+	inAssist := a.roomSide() && m.Mouse().X > a.feedW() || !a.roomSide() && m.Mouse().Y > 2+fh
 	vp, follow := &u.feedVP, &u.feedFollow
-	if a.roomWide() && m.Mouse().X > a.feedW() || !a.roomWide() && u.room.pane == paneAssistant {
+	if inAssist {
 		vp, follow = &u.assistVP, &u.asstFollow
 	}
 	if m.Mouse().Button == tea.MouseWheelUp {
@@ -415,49 +502,59 @@ func (a *App) roomView() string {
 	u := a.rm
 	spin := a.spin.View()
 	if u.room == nil {
-		msg := spin + " " + u.opening + " the room…"
-		return lipgloss.Place(a.w, a.h, lipgloss.Center, lipgloss.Center, renderLogo(a.th, a.frame)+"\n\n"+fg(a.th.Muted).Italic(true).Render(msg))
+		msg := fg(a.th.Muted).Italic(true).Render(spin + " " + u.opening + " the room…")
+		if u.err != "" {
+			msg = fg(a.th.Err).Render("✗ "+u.err) + "\n\n" + fg(a.th.Muted).Render("ctrl+c to quit")
+		}
+		return lipgloss.Place(a.w, a.h, lipgloss.Center, lipgloss.Center, renderLogo(a.th, a.frame)+"\n\n"+msg)
 	}
 	r := u.room
 	header := renderRoomHeader(r, a.th, a.w, spin)
 	bh := a.roomBodyH()
-	sep := lipgloss.NewStyle().Foreground(a.th.Subtle).Render(strings.TrimRight(strings.Repeat("│\n", bh), "\n"))
-	feed := lipgloss.NewStyle().Width(a.feedW()).Height(bh).Render(u.feedVP.View())
-	assist := u.assistVP.View()
-	if sug := renderSuggestions(r, a.th, a.assistW()-2, r.pane == paneAssistant); sug != "" {
-		assist += "\n" + sug
+	fh, ah := a.paneHeights()
+	fw, aw := a.feedW(), a.assistW()
+
+	feed := lipgloss.NewStyle().Width(fw).Height(fh).Render(u.feedVP.View())
+	digest, sug, _ := a.assistantColumn(aw-2, ah)
+	parts := []string{}
+	if digest != "" {
+		parts = append(parts, digest, "")
 	}
-	assist = lipgloss.NewStyle().Width(a.assistW()).Height(bh).PaddingLeft(1).Render(assist)
+	parts = append(parts, u.assistVP.View())
+	assistBody := lipgloss.NewStyle().Height(ah - lipgloss.Height(sug) - 1).MaxHeight(ah).Render(strings.Join(parts, "\n"))
+	if sug != "" {
+		assistBody = lipgloss.JoinVertical(lipgloss.Left, assistBody, "", sug)
+	}
+	assist := lipgloss.NewStyle().Width(aw).Height(ah).MaxHeight(ah).PaddingLeft(1).Render(assistBody)
 
 	var body string
 	switch {
 	case r.overlay != nil:
 		body = lipgloss.NewStyle().Width(a.w).Height(bh).Padding(0, 2).Render(u.overlayVP.View())
-	case a.roomWide():
+	case a.roomSide():
+		sep := lipgloss.NewStyle().Foreground(a.th.Subtle).Render(strings.TrimRight(strings.Repeat("│\n", bh), "\n"))
 		body = lipgloss.JoinHorizontal(lipgloss.Top, feed, sep, assist)
-	case r.pane == paneAssistant:
-		body = assist
 	default:
-		body = feed
+		rule := fg(a.th.Subtle).Render(strings.Repeat("─", a.w))
+		body = lipgloss.JoinVertical(lipgloss.Left, feed, rule, assist)
 	}
 
 	box := func(in textarea.Model, focused bool, w int) string {
-		c := a.th.Border
 		st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Width(w)
 		if focused {
-			c = a.th.Accent
 			st = st.BorderForegroundBlend(a.th.Accent2, a.th.Accent, a.th.Info, a.th.Speaker(2)).BorderForegroundBlendOffset(a.frame)
 		} else {
-			st = st.BorderForeground(c)
+			st = st.BorderForeground(a.th.Border)
 		}
 		return st.Render(in.View())
 	}
 	var inputs string
-	if a.roomWide() {
-		inputs = lipgloss.JoinHorizontal(lipgloss.Top, box(u.roomIn, r.pane == paneRoom, a.feedW()), " ", box(u.assistIn, r.pane == paneAssistant, a.assistW()))
-	} else if r.pane == paneAssistant {
+	switch {
+	case a.roomSide():
+		inputs = lipgloss.JoinHorizontal(lipgloss.Top, box(u.roomIn, r.pane == paneRoom, fw), " ", box(u.assistIn, r.pane == paneAssistant, aw))
+	case r.pane == paneAssistant:
 		inputs = box(u.assistIn, true, a.w)
-	} else {
+	default:
 		inputs = box(u.roomIn, true, a.w)
 	}
 	roster := renderRoomRoster(r, a.th, a.w, spin)

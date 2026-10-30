@@ -19,13 +19,13 @@ const (
 	paneAssistant
 )
 
-// liveTurn is a member mid-turn: what it has streamed so far and the tool it last called.
+// liveTurn is a member mid-turn: what it has said so far and the side action it is taking.
 type liveTurn struct {
 	text string
 	tool string
 }
 
-// feedItem is one rendered log entry in the room feed, cached per width.
+// feedItem is one log entry shown in the room feed, cached per width.
 type feedItem struct {
 	ev     rpc.RoomEvent
 	cache  string
@@ -38,12 +38,13 @@ type noteItem struct {
 	text string
 }
 
-// docOverlay shows a document or the documents list over the room.
+// docOverlay shows a document, the documents list, or the saved rooms over the room.
 type docOverlay struct {
 	title string
 	text  string
-	list  []docRef // non-nil for the list view
+	list  []docRef // non-nil for a list view
 	cur   int
+	rooms bool // the list is saved rooms: enter opens one
 }
 
 type docRef struct {
@@ -51,7 +52,7 @@ type docRef struct {
 	label string
 }
 
-// roomModel is the client-side view of a running room, rebuilt from the snapshot and kept current by events.
+// roomModel is the client-side view of a room, rebuilt from the snapshot and kept current by events.
 type roomModel struct {
 	id, dir, topic string
 	state, reason  string
@@ -62,8 +63,11 @@ type roomModel struct {
 	topics         []rpc.RoomTopic
 	docs           []rpc.RoomDoc
 	notes          []string // shared notes the scribe has written
+	digest         string   // the assistant's pinned summary of where the room stands
+	lastPause      string   // why the room last paused, from the log
 
 	feed    []*feedItem
+	authors map[int]string // message seq → who wrote it, for reply references
 	live    map[string]*liveTurn
 	colors  map[string]int
 	pending []rpc.RoomEvent
@@ -81,8 +85,8 @@ type roomModel struct {
 func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 	r := &roomModel{
 		id: s.ID, dir: s.Dir, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
-		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending,
-		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
+		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
+		authors: map[int]string{}, live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -138,10 +142,12 @@ func (r *roomModel) apply(ev rpc.Event) {
 	case rpc.RoomTurnDelta:
 		if t := r.live[v.Agent]; t != nil {
 			t.text += v.Delta
+			t.tool = ""
 		}
 	case rpc.RoomTurnTool:
+		// What a member wrote before a tool call was thinking aloud; the engine drops it too.
 		if t := r.live[v.Agent]; t != nil {
-			t.tool = strings.TrimPrefix(v.Name, "mcp__quorum__")
+			t.text, t.tool = "", strings.TrimPrefix(v.Name, "mcp__quorum__")
 		}
 	case rpc.RoomUsage:
 		if v.QuotaUtilization != nil {
@@ -155,18 +161,19 @@ func (r *roomModel) apply(ev rpc.Event) {
 	}
 }
 
-// record folds one log entry into the room's derived state and the feed or assistant pane.
+// record folds one log entry into the room's derived state, and the feed or assistant pane.
 func (r *roomModel) record(e rpc.RoomEvent) {
 	switch e.Type {
 	case "aside":
-		if e.From == "human" {
+		switch {
+		case e.From == "human":
 			r.asides = append(r.asides, noteItem{kind: "you", text: e.Text})
-			return
-		}
-		if e.Kind == "answer" {
+		case e.Kind == "digest":
+			r.digest = e.Text
+		case e.Kind == "answer":
 			r.asides = append(r.asides, noteItem{kind: "answer", text: e.Text})
 			r.asking, r.answer = false, ""
-		} else {
+		default:
 			// A note can land while an answer is still streaming; that answer keeps going.
 			r.asides = append(r.asides, noteItem{kind: "note", text: e.Text})
 		}
@@ -194,6 +201,13 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		}
 		r.sugCur = min(r.sugCur, max(len(r.pending)-1, 0))
 		return
+	case "budget":
+		r.asides = append(r.asides, noteItem{kind: "system", text: "Budget " + e.Level + ": " + e.Detail})
+	case "message":
+		r.authors[e.Seq] = e.From
+		if e.From == "human" && e.To == "room" && r.topic == "" {
+			r.topic = e.Text
+		}
 	case "topic.raised":
 		r.setTopic(rpc.RoomTopic{Slug: e.Slug, Title: e.Title})
 	case "topic.focus":
@@ -227,6 +241,7 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 				r.notes = append(r.notes, name)
 			}
 		}
+		return
 	case "agent.joined":
 		r.color(e.Agent)
 		r.left = without(r.left, e.Agent)
@@ -241,8 +256,10 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		}
 		r.agents = without(r.agents, e.Agent)
 		delete(r.live, e.Agent)
-	case "budget":
-		r.asides = append(r.asides, noteItem{kind: "system", text: "Budget " + e.Level + ": " + e.Detail})
+	case "paused":
+		r.lastPause = e.Reason
+	case "pass", "floor", "resumed":
+		return // bookkeeping; the feed reads as a conversation
 	}
 	r.feed = append(r.feed, &feedItem{ev: e})
 }
@@ -281,6 +298,9 @@ func (r *roomModel) animating() bool {
 	return r.state == "running" || len(r.live) > 0 || r.asking
 }
 
+// empty is a room nobody has spoken in yet.
+func (r *roomModel) empty() bool { return len(r.authors) == 0 && len(r.agents) == 0 }
+
 func (r *roomModel) focusTitle() string {
 	for _, t := range r.topics {
 		if t.Slug == r.focus {
@@ -288,6 +308,12 @@ func (r *roomModel) focusTitle() string {
 		}
 	}
 	return r.focus
+}
+
+// resumesOnOpen reports whether a reopened room should carry on by itself: it was paused only
+// because the interface closed, not by the human, the assistant, a milestone or the budget.
+func (r *roomModel) resumesOnOpen() bool {
+	return len(r.agents) > 0 && (r.lastPause == "closed" || r.lastPause == "interrupted")
 }
 
 var reAction = regexp.MustCompile(`(?m)^\s*>>.*$\n?`)
@@ -303,9 +329,13 @@ func suggestionLabel(s rpc.RoomEvent) string {
 	case "steer":
 		return "steer the room: “" + args + "”"
 	case "add":
-		return "add a member: " + args
+		label := "bring in " + s.Args[0]
+		if len(s.Args) > 1 {
+			label += " on " + strings.Join(s.Args[1:], " ")
+		}
+		return label
 	case "remove":
-		return "remove " + args
+		return "ask " + args + " to leave"
 	case "focus":
 		return "focus on " + args
 	case "close":
@@ -320,23 +350,28 @@ func suggestionLabel(s rpc.RoomEvent) string {
 type roomCommand struct {
 	method string
 	params map[string]any
-	local  string // handled in the TUI: help | docs | topics | leave | catchup
+	local  string // handled in the TUI: help | docs | topics | rooms | new
 	err    string
 	echo   string // a short confirmation for the assistant pane
 }
 
-const roomHelp = `Room commands (left box):
-  text              say it to the whole room
-  @member text      a private message to one member
-  /pause [reason]   pause the room (ctrl+p toggles)   /resume
-  /focus <topic>    move the focus   /close <topic>   /raise <title>
-  /topics           list topics      /docs            browse documents and notes
-  /doc <name>       open a document  /export <issue>  file an issue doc with gh
+const roomHelp = `Talking (left box):
+  text              say it to the room; whoever has something to add answers
+  @member text      ask one member directly, in the open room
+  /dm member text   a private message only that member (and your assistant) sees
+
+Your assistant (right box):
+  ask it anything about the discussion; /catchup for a recap
+  with its box empty: ↑↓ pick a suggestion, y approve, n decline
+
+Room:
+  ctrl+p            pause / resume           ctrl+o   documents and notes
+  /focus <topic>    move the focus           /close <topic>   /raise <title>
+  /topics           list topics              /doc <name>      open a document
   /add <persona> <cli> [model]   /remove <member>   /rejoin <member>
-  /parallel N       members speaking at once   /turns N   turn cap per CLI
-  /leave            pause and go back to the start screen
-Assistant (right box): ask anything; /catchup for a recap. With the box empty,
-↑↓ picks a suggestion, y approves it, n declines it.`
+  /parallel N       most members talking at once      /turns N   turn cap per CLI
+  /export <issue>   file an issue document with gh
+  /new              start a fresh room       /rooms   switch to a saved room`
 
 func (r *roomModel) parseRoomInput(in string) roomCommand {
 	in = strings.TrimSpace(in)
@@ -348,9 +383,19 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		}
 		return roomCommand{method: "room.configure", params: map[string]any{name: n}, echo: fmt.Sprintf("%s set to %d", name, n)}
 	}
-	needs := func(prefix, what string) (string, bool) {
+	needs := func(prefix string) (string, bool) {
 		v := word(prefix)
 		return v, v != ""
+	}
+	member := func(name string) (string, string) {
+		name = strings.ToLower(strings.TrimPrefix(name, "@"))
+		if !r.isMember(name) {
+			if len(r.agents) == 0 {
+				return "", fmt.Sprintf("nobody called %q here; the room has no members yet", name)
+			}
+			return "", fmt.Sprintf("nobody called %q here (members: %s)", name, strings.Join(r.memberIDs(), ", "))
+		}
+		return name, ""
 	}
 	switch {
 	case in == "":
@@ -361,8 +406,10 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{local: "docs"}
 	case in == "/topics":
 		return roomCommand{local: "topics"}
-	case in == "/leave":
-		return roomCommand{local: "leave"}
+	case in == "/rooms":
+		return roomCommand{local: "rooms"}
+	case in == "/new":
+		return roomCommand{local: "new"}
 	case in == "/resume":
 		return roomCommand{method: "room.resume", params: map[string]any{}}
 	case strings.HasPrefix(in, "/pause"):
@@ -376,24 +423,24 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 	case strings.HasPrefix(in, "/turns"):
 		return num("/turns", "turnCap")
 	case strings.HasPrefix(in, "/focus"):
-		if v, ok := needs("/focus", "topic"); ok {
+		if v, ok := needs("/focus"); ok {
 			return roomCommand{method: "room.focus", params: map[string]any{"slug": v}}
 		}
-		return roomCommand{err: "/focus takes a topic, e.g. /focus " + r.focus}
+		return roomCommand{err: "/focus takes a topic (see /topics)"}
 	case strings.HasPrefix(in, "/close"):
-		if v, ok := needs("/close", "topic"); ok {
+		if v, ok := needs("/close"); ok {
 			return roomCommand{method: "room.closeTopic", params: map[string]any{"slug": v}}
 		}
 		return roomCommand{err: "/close takes a topic"}
 	case strings.HasPrefix(in, "/raise"):
-		if v, ok := needs("/raise", "title"); ok {
+		if v, ok := needs("/raise"); ok {
 			return roomCommand{method: "room.raise", params: map[string]any{"title": v}, echo: "Raised “" + v + "”"}
 		}
 		return roomCommand{err: "/raise takes a title for the new topic"}
 	case strings.HasPrefix(in, "/doc "):
 		return roomCommand{method: "room.doc", params: map[string]any{"name": word("/doc")}}
 	case strings.HasPrefix(in, "/export"):
-		if v, ok := needs("/export", "doc"); ok {
+		if v, ok := needs("/export"); ok {
 			return roomCommand{method: "room.export", params: map[string]any{"slug": v}}
 		}
 		return roomCommand{err: "/export takes an issue document's name"}
@@ -408,27 +455,36 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		}
 		return roomCommand{method: "room.add", params: p}
 	case strings.HasPrefix(in, "/remove"):
-		if v, ok := needs("/remove", "member"); ok {
+		if v, ok := needs("/remove"); ok {
 			return roomCommand{method: "room.remove", params: map[string]any{"id": v}, echo: v + " is writing an exit memo before leaving…"}
 		}
 		return roomCommand{err: "/remove takes a member"}
 	case strings.HasPrefix(in, "/rejoin"):
-		if v, ok := needs("/rejoin", "member"); ok {
+		if v, ok := needs("/rejoin"); ok {
 			return roomCommand{method: "room.rejoin", params: map[string]any{"id": v}}
 		}
 		return roomCommand{err: "/rejoin takes a member who left"}
+	case strings.HasPrefix(in, "/dm"):
+		parts := strings.SplitN(word("/dm"), " ", 2)
+		name, err := member(parts[0])
+		if err != "" {
+			return roomCommand{err: err}
+		}
+		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+			return roomCommand{err: "/dm takes a member and a message, e.g. /dm " + name + " what worries you?"}
+		}
+		return roomCommand{method: "room.post", params: map[string]any{"text": strings.TrimSpace(parts[1]), "to": name}}
 	case strings.HasPrefix(in, "/"):
 		return roomCommand{err: "unknown command " + strings.Fields(in)[0] + " (try /help)"}
 	case strings.HasPrefix(in, "@"):
-		parts := strings.SplitN(in[1:], " ", 2)
-		name := strings.ToLower(parts[0])
-		if !r.isMember(name) {
-			return roomCommand{err: fmt.Sprintf("nobody called %q here (members: %s)", name, strings.Join(r.memberIDs(), ", "))}
+		// An @mention is said in the open room; the engine gives that member the floor.
+		parts := strings.SplitN(in, " ", 2)
+		if _, err := member(parts[0]); err != "" {
+			return roomCommand{err: err}
 		}
 		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-			return roomCommand{err: fmt.Sprintf("say something to @%s after their name", name)}
+			return roomCommand{err: fmt.Sprintf("say something to %s after their name", parts[0])}
 		}
-		return roomCommand{method: "room.post", params: map[string]any{"text": strings.TrimSpace(parts[1]), "to": name}}
 	}
 	return roomCommand{method: "room.post", params: map[string]any{"text": in}}
 }

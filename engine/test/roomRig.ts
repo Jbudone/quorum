@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSpec } from "../src/config.js";
+import type { FloorContext, FloorPick, FloorPolicy } from "../src/room/floor.js";
 import { Room, SUPPORT_ROLES, type NewRoom, type TransportFactory } from "../src/room/room.js";
 import type { AgentEvent, AgentTransport, McpServerSpec, SendOptions } from "../src/transports/index.js";
 
@@ -13,8 +14,15 @@ export const AGENTS: AgentSpec[] = [
 
 export type ToolCall = [name: string, args?: Record<string, unknown>];
 
-/** What a scripted member does on a turn: reply with text, or call tools (then its text is scratch). */
-export type MemberScript = (agent: string, turn: number, prompt: string) => string | ToolCall[];
+/** What a scripted member does on a turn: reply with text, or call tools and then (optionally) say something. */
+export type MemberScript = (agent: string, turn: number, prompt: string) => string | { tools: ToolCall[]; say?: string };
+
+/** Who the scripted floor picks. The default: every member but the latest speaker, answering it. */
+export type FloorScript = (c: FloorContext) => FloorPick[];
+export const everyoneElse: FloorScript = (c) => {
+  const last = c.fresh.at(-1)!;
+  return c.members.filter((m) => last.type !== "message" || m.id !== last.from).map((m) => ({ agent: m.id, replyTo: last.seq, why: "has a view" }));
+};
 
 export interface Call {
   agent: string;
@@ -28,6 +36,7 @@ export interface RigOptions {
   chair?: string[];
   scribe?: string[];
   assistant?: string[];
+  floor?: FloorScript;
   /** Extra events after each member reply (e.g. usage reports). */
   extra?: (agent: string, turn: number) => AgentEvent[];
   delayMs?: number;
@@ -48,6 +57,10 @@ export function rig(o: RigOptions = {}) {
   const repo = mkdtempSync(join(tmpdir(), "quorum-room-"));
   const calls: Call[] = [];
   const results: Record<string, { text?: string; error?: string }[]> = {};
+  const decisions: FloorContext[] = [];
+  const floor: FloorPolicy = {
+    decide: async (c) => (decisions.push(c), (o.floor ?? everyoneElse)(c)),
+  };
   const turns: Record<string, number> = {};
   const member = o.member ?? ((agent) => `${agent} has a thought`);
   const support: Record<string, string[]> = {
@@ -73,8 +86,12 @@ export function rig(o: RigOptions = {}) {
         const out = /You are leaving this Quorum room/.test(prompt) ? `- ${spec.id} memo` : member(spec.id, n, prompt);
         if (typeof out === "string") yield { type: "text", delta: out };
         else {
-          for (const [name, args] of out) (results[spec.id] ??= []).push(await callTool(opts!.mcp!, name, args));
-          yield { type: "text", delta: "scratch notes" };
+          yield { type: "text", delta: "thinking aloud" };
+          for (const [name, args] of out.tools) {
+            yield { type: "tool", name: `mcp__quorum__${name}` };
+            (results[spec.id] ??= []).push(await callTool(opts!.mcp!, name, args));
+          }
+          yield { type: "text", delta: out.say ?? "PASS" };
         }
         yield* o.extra?.(spec.id, n) ?? [];
       }
@@ -83,13 +100,18 @@ export function rig(o: RigOptions = {}) {
   });
   const rooms: Room[] = [];
   const create = (extra: Partial<NewRoom> = {}) => {
-    const room = Room.create({ repo, transports, topic: "pick a cache", agents: AGENTS.slice(0, 2), head: () => "abc123", ...extra });
+    const room = Room.create({ repo, transports, floor, topic: "pick a cache", agents: AGENTS.slice(0, 2), head: () => "abc123", ...extra });
     rooms.push(room);
     return room;
   };
   const memberCalls = () => calls.filter((c) => !SUPPORT_ROLES.includes(c.agent as never));
   const closeAll = () => Promise.all(rooms.splice(0).map((r) => r.close()));
-  return { repo, calls, memberCalls, results, transports, create, closeAll };
+  const open = (id: string, extra: Partial<NewRoom> = {}) => {
+    const room = Room.open(id, { repo, transports, floor, head: () => "abc123", ...extra });
+    rooms.push(room);
+    return room;
+  };
+  return { repo, calls, memberCalls, results, decisions, transports, floor, create, open, closeAll };
 }
 
 export const types = (r: Room) => r.store.events().map((e) => e.type);

@@ -124,7 +124,8 @@ async function room(argv: string[]): Promise<void> {
       transports: roomTransports((id) => agents.find((a) => a.id === id)?.persona ?? id, 0),
       topic: values.topic,
       agents,
-      support: supportFor(config, usable),
+      support: supportFor(usable),
+      clis: usable,
       ...tuning,
     });
   }

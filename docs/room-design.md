@@ -4,16 +4,33 @@ A long-running discussion where agents work in parallel on a problem, with the h
 personal assistant beside them. It runs until the human or the assistant pauses it, and can be resumed
 days later.
 
-Status: built (engine, RPC and TUI). See the README's "Rooms" section for how to use it.
+Status: built (engine, RPC and TUI). See the README's "The room" section for how to use it.
 
-Implementation notes that differ from or add to the decisions below:
+### Revision 2 (after the first review)
+
+The first build woke every member on every new message, two at a time, so each one replied or passed in
+turn: a round robin with extra steps. It also hid the room behind a toggle on the council's start screen.
+The human's calls on the rework:
+
+| Area | Decision |
+| --- | --- |
+| Placement | The room is the app. `quorum` opens this repo's latest room, or an empty one; `--council` keeps the round-based flow. |
+| First launch | An empty room: the human and the assistant. The human's first message becomes the topic, and the assistant proposes members (`>> add:` lines) for one-key approval. |
+| Turn-taking | Relevance-driven, behind a swappable `FloorPolicy` (a Chair-moderated policy can replace it later). After new messages one cheap call (`[floor]` in settings) names who, if anyone, should speak, and why. Silence is normal. A DM, or an `@name` from the human or the Chair, always gets an answer; between members `@name` is a hint to the floor (otherwise members ping-pong). Nobody answers their own message. |
+| Speech | Members speak in their reply text, streamed live into the feed. Tools are side actions only (`dm`, `raise_topic`, `doc_draft`, `read_doc`, `read_room`, `notebook_*`); text written before a tool call is dropped as thinking aloud. A reply to a DM goes back privately. `PASS` says nothing. |
+| Feed | Live chat: name, reply arrow, time and number above each message; members' words appear as they type; passes, floor decisions and scribe updates stay out of the feed. |
+| Assistant | Always on screen (beside the feed, or under it below 64 columns). A pinned digest ("where we are") rewritten at each check-in, plus a note only when something shifts. |
+| Reopening | A room paused only because the app closed carries on by itself; one paused by the human, the assistant, a milestone or the budget waits for `ctrl+p`. |
+
+Implementation notes:
 - Support roles (assistant, Chair) act through `>> verb: args | why` lines at the end of their replies rather than
   tools, so they work on every CLI. The scribe answers with whole files (`=== decisions.md ===`).
-- Notes on a parked topic, and a member's own messages, wake nobody; human and Chair messages wake everyone.
+- Owed turns (the floor picked a member, but the room paused first) are saved, so a restart keeps them.
 - Accepting a document (the Chair's call) pauses the room as a milestone; the assistant then explains why.
-- The TUI lists saved rooms only in room mode (`ctrl+r` on the start screen).
+- Verified live (Claude Haiku, Codex, opencode, with an opencode floor): the first message lands in about 15 s,
+  members cite code and concede points, and a 3-turn-per-CLI room settles in under two minutes.
 
-## Decisions
+## Decisions (first build; revision 2 above takes precedence)
 
 | Area | Decision |
 | --- | --- |
@@ -56,9 +73,9 @@ Implementation notes that differ from or add to the decisions below:
 
 Each turn gets a fresh token. The engine serves the room tools on a localhost port, and the CLI launches
 `engine/bin/quorum-room-mcp.mjs`, a dependency-free stdio MCP bridge that forwards calls with the token, so
-a member can only speak as itself and only during its own turn. Tools: `post` (with `reply_to`), `dm`,
-`pass`, `read_room`; at most 4 messages per turn. A member who used the tools has its final reply treated
-as private scratch. Injection, verified live: Claude `--mcp-config` + `--allowedTools mcp__quorum`; Codex
+a member can only act as itself and only during its own turn. Since revision 2 the tools are side actions
+(`dm`, `raise_topic`, `doc_draft`, `read_doc`, `read_room`, `notebook_*`); what a member says is its reply
+text. Injection, verified live: Claude `--mcp-config` + `--allowedTools mcp__quorum`; Codex
 `-c mcp_servers.quorum.*` with `default_tools_approval_mode="approve"`; opencode's inline config, run with
 `--standalone` in the repo directory.
 
@@ -78,9 +95,11 @@ Each step ends with something runnable, mostly against the mock transport.
 
 ## Open for implementation
 
-- Exact wake rules (how much topic activity wakes a non-addressed agent) and per-agent cooldowns.
+- The floor sees recent public messages only, so an objection older than its window can be dropped silently
+  (a live room found this one itself). Candidates: give the floor `decisions.md` behind a flag, log empty
+  floor decisions, and a replay test with an old open blocker.
 - Thresholds for the hybrid context switch and the staleness metric; tune on real runs.
-- Gemini and agy have no per-run way to add an MCP server, so they still speak through their final reply text (exactly `PASS` to pass). Revisit if either gains a flag.
+- Gemini and agy have no per-run way to add an MCP server, so they speak but can't take side actions. Revisit if either gains a flag.
 
 ## Future
 

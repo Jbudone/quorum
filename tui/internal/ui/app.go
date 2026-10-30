@@ -32,6 +32,8 @@ type Options struct {
 	Repo     string
 	Mock     bool
 	Calm     bool // no animation: diagrams show their final frame
+	// Council opens the round-based council instead of the room (quorum --council).
+	Council bool
 }
 
 type screen int
@@ -136,9 +138,15 @@ func New(o Options) *App {
 }
 
 func (a *App) Init() tea.Cmd {
-	a.call("presets.list", map[string]any{})
-	a.call("personas.list", map[string]any{})
-	a.call("clis.list", map[string]any{})
+	if a.opts.Council {
+		a.call("presets.list", map[string]any{})
+		a.call("personas.list", map[string]any{})
+		a.call("clis.list", map[string]any{})
+	} else {
+		// The room is the app: reopen this repo's latest room, or start an empty one.
+		a.newRoomUI("opening")
+		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
+	}
 	return tea.Batch(a.listen(), a.tick())
 }
 
@@ -522,26 +530,11 @@ func (a *App) handleStartKey(k tea.KeyPressMsg) tea.Cmd {
 		a.call("council.design", params)
 		return c
 	}
-	if a.start.listReq {
-		a.start.listReq = false
-		a.call("rooms.list", map[string]any{"repo": a.opts.Repo})
-	}
-	if id := a.start.openReq; id != "" {
-		a.start.openReq = ""
-		a.openRoom(id)
-		return nil
-	}
 	if !start {
 		return c
 	}
-	p, _ := a.start.selected()
 	params := a.start.startParams(a.opts.Repo)
-	if a.start.roomMode {
-		delete(a.start.drafts, "auto") // a designed council is for this topic only
-		a.startRoom(params)
-		return nil
-	}
-	p = a.start.effective()
+	p := a.start.effective()
 	a.sess = newSession(p, a.opts.Repo, params["topic"].(string), 0)
 	a.sess.calm = a.opts.Calm
 	delete(a.start.drafts, "auto") // a designed council is for this topic only

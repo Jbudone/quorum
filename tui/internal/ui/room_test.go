@@ -3,7 +3,6 @@ package ui
 import (
 	"bufio"
 	"os"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,6 +17,7 @@ type roomHarness struct {
 	recorded map[int]rpc.Response
 }
 
+// newRoomHarness launches the app the way `quorum` does: straight into the room.
 func newRoomHarness(t *testing.T, w, h int) *roomHarness {
 	t.Helper()
 	f, err := os.Open("../rpc/testdata/room.ndjson")
@@ -43,9 +43,6 @@ func newRoomHarness(t *testing.T, w, h int) *roomHarness {
 	rh.app = New(Options{Client: rh.fc, Repo: "/work/proj", Mock: true})
 	rh.send(tea.WindowSizeMsg{Width: w, Height: h})
 	rh.app.Init()
-	for _, c := range rh.fc.calls { // presets.list, personas.list, clis.list: ids 1-3 in both
-		rh.answer(c.id, c.id)
-	}
 	return rh
 }
 
@@ -70,23 +67,25 @@ func (h *roomHarness) event(e rpc.RoomEvent) {
 	h.send(engineMsg{rpc.Event{Name: "room.event", Data: e}})
 }
 
-// open starts a room from the start screen and replays the whole recording into it.
+// open answers the launch: no saved rooms, so the app starts an empty room and resumes it.
 func (h *roomHarness) open() {
 	h.t.Helper()
-	h.press("ctrl+r")
-	h.answer(h.expectCall("rooms.list").id, 10)
-	contains(h.t, h.screen(), "WHO'S IN THE ROOM")
-	contains(h.t, h.screen(), "OR REOPEN A ROOM")
-	h.press("tab")
-	h.typ("Should we add a cache to the product API?")
-	h.press("enter")
+	list := h.expectCall("rooms.list")
+	if list.params["repo"] != "/work/proj" {
+		h.t.Fatalf("rooms.list params: %v", list.params)
+	}
+	h.answer(list.id, 1)
 	start := h.expectCall("room.start")
-	if start.params["topic"] != "Should we add a cache to the product API?" || start.params["mock"] != true {
+	if start.params["repo"] != "/work/proj" || start.params["mock"] != true || start.params["preset"] != nil {
 		h.t.Fatalf("room.start params: %v", start.params)
 	}
 	contains(h.t, h.screen(), "starting the room")
-	h.answer(start.id, 4)
-	h.expectCall("room.resume")
+	h.answer(start.id, 2)
+	h.answer(h.expectCall("room.resume").id, 3)
+}
+
+// replay delivers every recorded event: the room is staffed, talks, and pauses at a milestone.
+func (h *roomHarness) replay() {
 	for _, ev := range h.events {
 		h.send(engineMsg{ev})
 	}
@@ -96,47 +95,66 @@ func TestRoomJourney(t *testing.T) {
 	h := newRoomHarness(t, 150, 44)
 	h.open()
 	s := h.screen()
-	contains(t, s, "// room // should-we-add-a-cache")
-	contains(t, s, "Starting point: an in-process LRU") // a member's message in the feed
-	contains(t, s, "architect wrote plan v1")           // a document revision
-	contains(t, s, "PAUSED")                            // the recording ends paused
-	contains(t, s, "where are we?")                     // the human's question in the assistant pane
-	contains(t, s, "they agree on a simple")
-	contains(t, s, "assistant") // the recorded answer is labeled as the assistant's answer, not a note
-	contains(t, s, "You approved: steer the room")
-	lacks(t, s, ">> steer") // action lines never show as prose
+	contains(t, s, "This room is empty")
+	contains(t, s, "nobody in the room yet")
+	contains(t, s, "I'm your assistant") // the assistant is on screen from the start
+	contains(t, s, "Describe the problem you want worked out…")
 
-	// A new suggestion appears under the assistant and is approved with y once that box has focus.
+	h.typ("Should we add a cache to the product API?")
+	h.press("enter")
+	if c := h.expectCall("room.post"); c.params["text"] != "Should we add a cache to the product API?" || c.params["to"] != nil {
+		t.Fatalf("post params: %v", c.params)
+	}
+
+	h.replay()
+	s = h.screen()
+	contains(t, s, "Should we add a cache to the product API?") // the header names the topic
+	contains(t, s, "Plan v2 answers every objection")           // the Chair's message in the feed
+	contains(t, s, "accepted by the chair")
+	contains(t, s, "PAUSED")
+	contains(t, s, "WHERE WE ARE") // the assistant's pinned digest
+	contains(t, s, "Plan is at v2.")
+	contains(t, s, "You approved: bring in architect on mock")
+	contains(t, s, "↩ skeptic") // replies name who they answer
+	lacks(t, s, ">> ")          // action lines never show as prose
+	lacks(t, s, "PASS")
+	lacks(t, s, "passed")
+
+	// A suggestion is approved with y once the assistant's box has the keyboard.
 	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "add", Args: []string{"security", "claude"}, Why: "nobody covers abuse"})
-	contains(t, h.screen(), "add a member: security claude")
-	contains(t, h.screen(), "1 SUGGESTION")
-	h.press("tab", "y")
+	contains(t, h.screen(), "bring in security on claude")
+	contains(t, h.screen(), "NEEDS YOUR OK · 2") // the recorded steer is still waiting too
+	h.press("tab", "down", "y")
 	if c := h.expectCall("room.resolve"); c.params["id"] != 9 || c.params["accept"] != true {
 		t.Fatalf("resolve params: %v", c.params)
 	}
 	h.event(rpc.RoomEvent{Type: "suggestion.resolved", Seq: 91, ID: 9, Accepted: true})
-	contains(t, h.screen(), "You approved: add a member: security claude")
+	contains(t, h.screen(), "You approved: bring in security on claude")
 
 	// Asking the assistant streams its answer, hiding action lines as they arrive.
 	h.typ("what is the risk?")
 	h.press("enter")
-	ask := h.expectCall("room.ask")
-	if ask.params["text"] != "what is the risk?" {
-		t.Fatalf("ask params: %v", ask.params)
+	if c := h.expectCall("room.ask"); c.params["text"] != "what is the risk?" {
+		t.Fatalf("ask params: %v", c.params)
 	}
 	h.send(engineMsg{rpc.Event{Name: "room.assistant.delta", Data: rpc.AssistantDelta{Delta: "Stale reads (#8).\n>> pause: look"}}})
 	contains(t, h.screen(), "Stale reads (#8).")
 	lacks(t, h.screen(), ">> pause")
 	h.press("tab")
 
-	// The room box: DMs, commands, and errors that explain themselves.
+	// The room box: open mentions, private messages, commands, and errors that explain themselves.
 	h.typ("@nobody hi")
 	h.press("enter")
 	contains(t, h.screen(), `nobody called "nobody" here`)
 	h.app.rm.roomIn.Reset() // the bad line stays in the box for fixing; clear it
 	h.typ("@skeptic what number would you accept?")
 	h.press("enter")
-	if c := h.expectCall("room.post"); c.params["to"] != "skeptic" {
+	if c := h.expectCall("room.post"); c.params["to"] != nil || c.params["text"] != "@skeptic what number would you accept?" {
+		t.Fatalf("mention params: %v", c.params)
+	}
+	h.typ("/dm skeptic between us")
+	h.press("enter")
+	if c := h.expectCall("room.post"); c.params["to"] != "skeptic" || c.params["text"] != "between us" {
 		t.Fatalf("dm params: %v", c.params)
 	}
 	h.typ("/parallel 3")
@@ -144,64 +162,77 @@ func TestRoomJourney(t *testing.T) {
 	if c := h.expectCall("room.configure"); c.params["parallel"] != 3 {
 		t.Fatalf("configure params: %v", c.params)
 	}
+
+	// Resuming, a member streams its words into the feed as it writes them.
 	h.press("ctrl+p")
-	h.expectCall("room.resume") // paused, so ctrl+p resumes
+	h.expectCall("room.resume")
 	h.send(engineMsg{rpc.Event{Name: "room.state", Data: rpc.RoomStateEvent{State: "running"}}})
 	h.send(engineMsg{rpc.Event{Name: "room.turn.start", Data: rpc.RoomTurn{Agent: "skeptic"}}})
-	h.send(engineMsg{rpc.Event{Name: "room.turn.tool", Data: rpc.RoomTurnTool{Agent: "skeptic", Name: "mcp__quorum__post"}}})
-	contains(t, h.screen(), "skeptic is thinking · post")
-	contains(t, h.screen(), "IN SESSION")
+	h.send(engineMsg{rpc.Event{Name: "room.turn.delta", Data: rpc.RoomTurnDelta{Agent: "skeptic", Delta: "Let me check first."}}})
+	h.send(engineMsg{rpc.Event{Name: "room.turn.tool", Data: rpc.RoomTurnTool{Agent: "skeptic", Name: "mcp__quorum__doc_draft"}}})
+	contains(t, h.screen(), "skeptic drafting a document")
+	lacks(t, h.screen(), "Let me check first.") // thinking aloud before a tool call is dropped
+	h.send(engineMsg{rpc.Event{Name: "room.turn.delta", Data: rpc.RoomTurnDelta{Agent: "skeptic", Delta: "Sixty seconds, no more."}}})
+	contains(t, h.screen(), "Sixty seconds, no more.▌")
+	contains(t, h.screen(), "skeptic typing")
+	contains(t, h.screen(), "TALKING")
 
 	// Documents: the list, then one document.
 	h.press("ctrl+o")
-	contains(t, h.screen(), "plan  plan v1")
+	contains(t, h.screen(), "plan  plan v2  ✓ v2 accepted")
 	h.press("enter")
-	h.answer(h.expectCall("room.doc").id, 8)
+	h.answer(h.expectCall("room.doc").id, 9)
 	contains(t, h.screen(), "cache layer for the product API")
 	h.press("esc")
 	lacks(t, h.screen(), "esc close")
 
-	h.typ("/leave")
+	// Other rooms in this project.
+	h.typ("/rooms")
 	h.press("enter")
-	h.expectCall("rooms.list")
-	contains(t, h.screen(), "WHO'S IN THE ROOM")
+	h.answer(h.expectCall("rooms.list").id, 11)
+	contains(t, h.screen(), "ROOMS IN THIS PROJECT")
+	contains(t, h.screen(), "· this room")
+	h.press("enter") // this room: just closes the list
+	lacks(t, h.screen(), "ROOMS IN THIS PROJECT")
 }
 
-func TestRoomNarrowUsesTabs(t *testing.T) {
-	h := newRoomHarness(t, 80, 40)
+func TestRoomNarrowKeepsTheAssistantOnScreen(t *testing.T) {
+	h := newRoomHarness(t, 56, 40)
 	h.open()
+	h.replay()
 	s := h.screen()
-	contains(t, s, "Starting point: an in-process LRU")
-	lacks(t, s, "where are we?")
-	h.press("tab")
-	s = h.screen()
-	contains(t, s, "where are we?")
-	lacks(t, s, "Starting point: an in-process LRU")
+	contains(t, s, "Plan v2 answers every objection")
+	contains(t, s, "WHERE WE ARE")
 }
 
-func TestRoomReopenAndStartErrors(t *testing.T) {
+func TestRoomReopensTheLatestRoom(t *testing.T) {
 	h := newRoomHarness(t, 150, 44)
-	h.press("ctrl+r")
-	h.answer(h.expectCall("rooms.list").id, 10)
-	h.press("tab", "tab", "enter") // presets → topic → saved rooms, open the first
+	h.answer(h.expectCall("rooms.list").id, 11)
 	open := h.expectCall("room.open")
 	if open.params["repo"] != "/work/proj" || open.params["id"] == "" {
 		t.Fatalf("open params: %v", open.params)
 	}
-	h.answer(open.id, 11)
-	contains(t, h.screen(), "Room reopened and paused")
-
-	// A failed start goes back to the start screen with the reason.
-	h2 := newRoomHarness(t, 150, 44)
-	h2.press("ctrl+r", "tab")
-	h2.typ("x")
-	h2.press("enter")
-	h2.send(engineMsg{rpcResponseErr(h2.expectCall("room.start").id, "no usable CLIs")})
-	s := h2.screen()
-	contains(t, s, "no usable CLIs")
-	if !strings.Contains(s, "WHO'S IN THE ROOM") {
-		t.Fatalf("expected the start screen:\n%s", s)
+	h.answer(open.id, 12)
+	s := h.screen()
+	// It paused for a milestone, so it waits for the human instead of carrying on by itself.
+	contains(t, s, "This room is paused (milestone: plan v2 accepted)")
+	contains(t, s, "WHERE WE ARE")
+	if h.fc.last().method == "room.resume" {
+		t.Fatal("a room paused at a milestone should not resume by itself")
 	}
+
+	// A room that paused only because the app closed picks up where it left off.
+	r := newRoom(rpc.RoomSnapshot{Agents: []rpc.PresetAgent{{ID: "arch"}}, Events: []rpc.RoomEvent{{Type: "paused", Seq: 9, Reason: "closed"}}}, true)
+	if !r.resumesOnOpen() {
+		t.Fatal("a room closed with the app should resume on open")
+	}
+}
+
+func TestRoomStartError(t *testing.T) {
+	h := newRoomHarness(t, 150, 44)
+	h.answer(h.expectCall("rooms.list").id, 1)
+	h.send(engineMsg{rpcResponseErr(h.expectCall("room.start").id, "no usable CLIs")})
+	contains(t, h.screen(), "✗ no usable CLIs")
 }
 
 func TestParseRoomInput(t *testing.T) {
@@ -209,6 +240,7 @@ func TestParseRoomInput(t *testing.T) {
 	cases := map[string]string{
 		"hello":                       "room.post",
 		"@arch hi":                    "room.post",
+		"/dm arch hi":                 "room.post",
 		"/pause tea":                  "room.pause",
 		"/resume":                     "room.resume",
 		"/turns 5":                    "room.configure",
@@ -226,10 +258,18 @@ func TestParseRoomInput(t *testing.T) {
 			t.Errorf("%q → %+v, want %s", in, got, want)
 		}
 	}
-	for _, bad := range []string{"/parallel x", "/add security", "/focus", "/nope", "@arch", "@zed hi"} {
+	for in, want := range map[string]string{"/new": "new", "/rooms": "rooms", "/docs": "docs", "/help": "help"} {
+		if got := r.parseRoomInput(in); got.local != want {
+			t.Errorf("%q → %+v, want local %s", in, got, want)
+		}
+	}
+	for _, bad := range []string{"/parallel x", "/add security", "/focus", "/nope", "@arch", "@zed hi", "/dm arch", "/dm zed hi", "/leave"} {
 		if got := r.parseRoomInput(bad); got.err == "" {
 			t.Errorf("%q should be an error, got %+v", bad, got)
 		}
+	}
+	if got := r.parseRoomInput("@arch hi"); got.params["to"] != nil {
+		t.Errorf("an @mention is said to the room: %+v", got)
 	}
 	if got := r.parseRoomInput("/add security claude sonnet"); got.params["model"] != "sonnet" {
 		t.Errorf("model not passed: %+v", got)

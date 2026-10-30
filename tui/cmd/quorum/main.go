@@ -1,4 +1,4 @@
-// Command quorum is the terminal interface for a council of AI agents.
+// Command quorum is the terminal interface for a room of AI agents (or, with --council, a round-based council).
 package main
 
 import (
@@ -16,8 +16,9 @@ import (
 )
 
 func main() {
-	repo := flag.String("repo", "", "project the council should ground itself in (default: current directory)")
+	repo := flag.String("repo", "", "project the room (or council) works in (default: current directory)")
 	mock := flag.Bool("mock", false, "start with scripted mock agents (no tokens spent)")
+	council := flag.Bool("council", false, "run a round-based council instead of opening the room")
 	engine := flag.String("engine", os.Getenv("QUORUM_ENGINE"), "engine command (default: auto-detected)")
 	calm := flag.Bool("calm", os.Getenv("QUORUM_CALM") != "", "no animation: diagrams show their final frame")
 	flag.Parse()
@@ -57,7 +58,7 @@ func main() {
 	}
 	defer client.Close()
 
-	if err := ui.Run(ui.Options{Client: client, Messages: client.Messages(), Repo: dir, Mock: *mock, Calm: *calm}); err != nil {
+	if err := ui.Run(ui.Options{Client: client, Messages: client.Messages(), Repo: dir, Mock: *mock, Calm: *calm, Council: *council}); err != nil {
 		fmt.Fprintln(os.Stderr, "quorum:", err)
 		fmt.Fprintln(os.Stderr, "engine log:", logPath)
 		os.Exit(1)

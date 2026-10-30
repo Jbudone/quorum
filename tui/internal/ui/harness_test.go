@@ -67,7 +67,7 @@ func newHarness(t *testing.T, w, h int) *harness {
 			hs.responses[v.ID] = v
 		}
 	}
-	hs.app = New(Options{Client: hs.fc, Repo: "/work/proj", Mock: true})
+	hs.app = New(Options{Client: hs.fc, Repo: "/work/proj", Mock: true, Council: true})
 	hs.send(tea.WindowSizeMsg{Width: w, Height: h})
 	hs.app.Init()
 	for _, c := range hs.fc.calls { // presets.list, personas.list, clis.list

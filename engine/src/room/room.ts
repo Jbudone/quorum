@@ -1,9 +1,11 @@
 import { execFileSync, spawn } from "node:child_process";
-import { loadPersona, type AgentSpec, type CliName, type Persona } from "../config.js";
+import { listPersonas, loadPersona, type AgentSpec, type CliName, type Persona } from "../config.js";
 import type { AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
+import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
+  assistantActions,
   assistantAsk,
   assistantContext,
   assistantWatch,
@@ -12,9 +14,11 @@ import {
   EXIT_MEMO,
   memberFresh,
   memberIncremental,
+  parseWatch,
   renderEvents,
   SCRIBE_SYSTEM,
   scribePrompt,
+  type FloorReason,
   type RoomView,
 } from "./prompts.js";
 import { computeSignals, describeSignals, looksStuck } from "./signals.js";
@@ -48,8 +52,8 @@ export type RoomEmit =
 /** paused: nobody is woken. running: turns underway. idle: running, but nobody has anything new to answer. */
 export type RoomState = "paused" | "running" | "idle";
 
-export type SupportRole = "assistant" | "chair" | "scribe";
-export const SUPPORT_ROLES: SupportRole[] = ["assistant", "chair", "scribe"];
+export type SupportRole = "assistant" | "chair" | "scribe" | "floor";
+export const SUPPORT_ROLES: SupportRole[] = ["assistant", "chair", "scribe", "floor"];
 
 /** Builds the transport for a member or support role. */
 export type TransportFactory = (spec: { id: string; cli: CliName; model?: string }) => AgentTransport;
@@ -64,50 +68,62 @@ export interface RoomOptions {
   head?: () => string | undefined;
   /** Files an issue and returns its URL. Defaults to `gh issue create`. */
   fileIssue?: (title: string, body: string) => Promise<string>;
+  /** Decides who speaks next. Defaults to relevance bidding on the room's floor model. */
+  floor?: FloorPolicy;
+  /** CLIs the assistant may propose for new members. */
+  clis?: string[];
 }
 
 export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
-  topic: string;
-  agents: AgentSpec[];
+  /** The opening question. An empty room starts without one; the human's first message becomes it. */
+  topic?: string;
+  agents?: AgentSpec[];
   /** Defaults to each role running on the first member's CLI. */
   support?: Partial<RoomConfig["support"]>;
 }
 
 /** How many recent events a member without a live vendor session is shown. */
 const RECENT = 40;
-/** A reply that is exactly this means "nothing new to add" and wakes nobody. */
+/** A reply that is exactly this means "nothing new to add"; nobody sees it. */
 const PASS = "PASS";
-/** Messages one turn may send through the tools, so a member can't flood the room. */
-const MAX_SPOKEN = 4;
 /** Turns on one vendor session before it is dropped and the member's context rebuilt from files. */
 const REFRESH = 12;
+/** Unread events past which a member's vendor session is dropped and its context rebuilt instead. */
+const CATCHUP = 60;
 /** Member messages between runs of each support role. */
-const EVERY = { scribe: 8, chair: 10, watch: 12 };
+const EVERY = { scribe: 8, chair: 10, watch: 8 };
 
 /** A turn in progress that may call the room tools. */
 interface LiveTurn {
   agent: string;
   ctrl: AbortController;
-  spoke: number;
-  passed: boolean;
 }
 
 /** Log events members aren't shown: bookkeeping that would only distract them. */
 const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.failed", "paused", "resumed"]);
 
+const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode"];
+
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
 const ASSISTANT_VERBS = ["steer", "add", "remove", "focus", "close", "parallel", "pause"] as const;
 
 /**
- * A long-running discussion. Members are not processes: each is an identity with persisted state,
- * and the scheduler runs a turn for it whenever something it can see arrives that it hasn't read.
- * That makes pause, resume after a restart, and changing the roster all the same operation:
- * deciding whom to wake next. Three support roles run beside the members: the Chair moderates,
- * the scribe keeps the shared notes, and the assistant works for the human.
+ * A long-running discussion. Members are not processes: each is an identity with persisted state.
+ * Nobody takes turns in order: after new messages the floor decides who has something to add
+ * (whoever was addressed directly, plus whoever the floor policy picks), and those members speak,
+ * several at once. A quiet room is normal. Pause, resume after a restart, and roster changes all
+ * come down to the same question of whom to run next. Support roles run beside the members: the
+ * floor picks speakers, the Chair moderates, the scribe keeps the shared notes, and the assistant
+ * works for the human.
  */
 export class Room {
   private readonly personas = new Map<string, Persona>();
-  private readonly running = new Map<string, AbortController>();
+  private readonly running = new Map<string, { ctrl: AbortController; why: FloorReason }>();
+  /** Members the floor gave a turn to that haven't started it yet. Saved, so a restart keeps them. */
+  private readonly wants = new Map<string, FloorReason>();
+  private deciding = false;
+  private floorDirty = false;
+  private readonly floorPolicy: FloorPolicy;
   /** Members writing an exit memo; never woken. */
   private readonly leaving = new Set<string>();
   /** Turns that can call the room tools, keyed by their token. */
@@ -128,26 +144,31 @@ export class Room {
     private readonly o: RoomOptions,
   ) {
     for (const a of store.config().agents) this.personas.set(a.id, loadPersona(a.persona, o.assetsDir));
+    try {
+      for (const [agent, why] of JSON.parse(String(store.meta().wants ?? "[]")) as [string, FloorReason][]) this.wants.set(agent, why);
+    } catch {}
+    this.floorPolicy = o.floor ?? new BidFloor((prompt, system, signal) => this.oneShot("floor", prompt, system, undefined, undefined, signal));
   }
 
-  /** Creates a paused room whose first message is the topic; call resume() to start it. */
+  /** Creates a paused room; with a topic, it is the room's first message. Call resume() to start it. */
   static create(o: NewRoom): Room {
-    const first: SupportSpec = { cli: o.agents[0]?.cli ?? "mock" };
+    const agents = o.agents ?? [];
+    const topic = o.topic?.trim() ?? "";
+    const first: SupportSpec = { cli: agents[0]?.cli ?? "mock" };
     const store = RoomStore.create(o.repo, {
-      topic: o.topic,
-      agents: o.agents,
+      topic,
+      agents,
       left: [],
-      support: { assistant: first, chair: first, scribe: first, ...o.support },
+      support: { assistant: first, chair: first, scribe: first, floor: first, ...o.support },
       parallel: o.parallel ?? 2,
       turnCap: o.turnCap ?? 40,
       quotaWarn: o.quotaWarn ?? 0.75,
       quotaStop: o.quotaStop ?? 0.9,
     });
-    const title = o.topic.split("\n")[0].slice(0, 80);
-    const slug = slugify(title.split(/\s+/).slice(0, 5).join(" "));
-    store.append({ type: "topic.raised", slug, title, by: "human" });
-    store.append({ type: "topic.focus", slug, by: "human" });
-    store.append({ type: "message", from: "human", to: "room", text: o.topic });
+    if (topic) {
+      openingTopic(store, topic);
+      store.append({ type: "message", from: "human", to: "room", text: topic });
+    }
     return new Room(store, o);
   }
 
@@ -240,7 +261,8 @@ export class Room {
 
   private spec(id: string): { id: string; cli: CliName; model?: string } {
     const c = this.store.config();
-    if ((SUPPORT_ROLES as string[]).includes(id)) return { id, ...c.support[id as SupportRole] };
+    if (id === "floor") return { id, ...(c.support.floor ?? c.support.scribe) };
+    if ((SUPPORT_ROLES as string[]).includes(id)) return { id, ...c.support[id as Exclude<SupportRole, "floor">] };
     const a = [...c.agents, ...(c.left ?? [])].find((x) => x.id === id);
     if (!a) throw new Error(`unknown member "${id}"`);
     return { id, cli: a.cli, model: a.model };
@@ -255,7 +277,7 @@ export class Room {
     this.supportAbort = new AbortController();
     this.log({ type: "resumed" });
     this.setState("running");
-    this.kick();
+    this.floorCheck();
   }
 
   /** Stops waking members and aborts turns underway; aborted turns are redone after resume(). */
@@ -263,7 +285,7 @@ export class Room {
     if (this._state === "paused") return;
     this.setState("paused", reason);
     this.log({ type: "paused", reason });
-    for (const c of this.running.values()) c.abort();
+    for (const t of this.running.values()) t.ctrl.abort();
     this.supportAbort.abort();
     this.settle();
   }
@@ -283,12 +305,18 @@ export class Room {
     return { parallel, turnCap, quotaWarn, quotaStop };
   }
 
-  /** The human speaks: to the whole room, or privately to one member. */
+  /** The human speaks: to the whole room, or privately to one member. The first room message sets the topic. */
   post(text: string, to: Recipient = "room"): RoomEvent {
     if (!text.trim()) throw new Error("say something first");
     if (to !== "room" && !this.personas.has(to)) throw new Error(`unknown member "${to}"`);
+    if (to === "room" && !this.store.config().topic) {
+      this.store.setTopic(text.trim());
+      for (const b of openingTopic(this.store, text.trim())) this.emit({ event: "room.event", data: b });
+    }
     const e = this.log({ type: "message", from: "human", to, text: text.trim() });
-    this.kick();
+    // Nobody to hear it yet: the assistant proposes who to bring in.
+    if (!this.members().length && to === "room") void this.watch("the human described the problem in an empty room; propose who should join");
+    this.floorCheck();
     return e;
   }
 
@@ -335,8 +363,16 @@ export class Room {
     this.store.setRoster([...c.agents, spec], c.left ?? []);
     this.personas.set(id, persona);
     this.log({ type: "agent.joined", agent: id, persona: o.persona, cli: o.cli, ...(o.model ? { model: o.model } : {}) });
-    this.kick();
+    this.welcome(id);
     return id;
+  }
+
+  /** A member who joins a conversation already under way gets the floor to bring its view. */
+  private welcome(id: string): void {
+    if (this.store.events().some((e) => e.type === "message" && e.to === "room")) {
+      this.want({ agent: id, why: "you just joined; catch up on where things stand and bring your angle" });
+    }
+    this.kick();
   }
 
   /** Brings back a member who left, with its notebook; it rebuilds its context on its next turn. */
@@ -350,7 +386,7 @@ export class Room {
     this.store.saveAgentState(id, { ...st, sessionId: undefined, sessionTurns: 0 });
     this.personas.set(id, loadPersona(spec.persona, this.o.assetsDir));
     this.log({ type: "agent.joined", agent: id, persona: spec.persona, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}) });
-    this.kick();
+    this.welcome(id);
     return id;
   }
 
@@ -358,7 +394,8 @@ export class Room {
   async removeMember(id: string, memo = true): Promise<void> {
     if (!this.personas.has(id)) throw new Error(`no member "${id}"`);
     this.leaving.add(id);
-    this.running.get(id)?.abort();
+    this.running.get(id)?.ctrl.abort();
+    this.wants.delete(id);
     let text: string | undefined;
     if (memo) {
       const st = this.store.agentState(id);
@@ -441,7 +478,7 @@ export class Room {
   }
 
   private settle(): void {
-    if (this.running.size || this.busy.size || this._state === "running") return;
+    if (this.running.size || this.busy.size || this.deciding || this._state === "running") return;
     const w = this.waiters;
     this.waiters = [];
     for (const r of w) r();
@@ -449,22 +486,78 @@ export class Room {
 
   // ---- scheduling ----
 
-  /** Whether an unread event should wake `agent`. Notes on parked topics wake nobody. */
-  private wakes(agent: string, e: RoomEvent, focus?: string): boolean {
-    if (e.type !== "message" || e.from === agent || !visibleTo(agent, e)) return false;
-    if (e.to === agent || e.from === "human" || e.from === "chair") return true;
-    return !e.topic || e.topic === focus;
+  private want(p: FloorPick | (FloorReason & { agent: string })): void {
+    if (!this.personas.has(p.agent) || this.leaving.has(p.agent)) return;
+    this.wants.set(p.agent, { why: p.why, ...(p.replyTo ? { replyTo: p.replyTo } : {}), ...(p.to ? { to: p.to } : {}) });
   }
 
-  /** Members not mid-turn with something unread that should wake them. */
-  private wakeable(): string[] {
-    const events = this.store.events();
-    const focus = this.focus();
-    return this.members().filter((agent) => {
-      if (this.running.has(agent) || this.leaving.has(agent)) return false;
-      // seq n is at index n - 1, so the unread events start at index lastRead.
-      return events.slice(this.store.agentState(agent).lastRead).some((e) => this.wakes(agent, e, focus));
-    });
+  private saveWants(): void {
+    this.store.setMeta({ wants: JSON.stringify([...this.wants]) });
+  }
+
+  /**
+   * After new messages: members addressed directly (a DM or an @mention) get the floor at once, and
+   * the floor policy decides who else, if anyone, has something to add to the public conversation.
+   */
+  private floorCheck(): void {
+    if (this._state === "paused") return;
+    if (this.deciding) {
+      this.floorDirty = true;
+      return;
+    }
+    const after = Number(this.store.meta().floorSeq ?? 0);
+    const fresh = this.store.events().slice(after).filter((e): e is MessageEvent => e.type === "message");
+    this.store.setMeta({ floorSeq: this.store.lastSeq });
+    const members = this.members().filter((m) => !this.leaving.has(m));
+    const direct: FloorPick[] = [];
+    for (const e of fresh) {
+      for (const m of mentioned(e, members)) {
+        direct.push(
+          e.to === m
+            ? { agent: m, replyTo: e.seq, why: `${e.from} wrote to you privately`, to: e.from }
+            : { agent: m, replyTo: e.seq, why: `${e.from} asked you directly` },
+        );
+      }
+    }
+    for (const p of direct) this.want(p);
+    const pub = fresh.filter((e) => e.to === "room");
+    if (!pub.length || !members.length) return this.kick();
+    const last = pub.at(-1)!;
+    const firstFresh = pub[0].seq;
+    this.deciding = true;
+    this.kick();
+    const recent = this.store
+      .events()
+      .slice(0, firstFresh - 1)
+      .filter((e) => e.type === "message" && e.to === "room")
+      .slice(-20);
+    void this.floorPolicy
+      .decide(
+        {
+          view: this.view(),
+          members: members.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
+          speaking: this.speaking,
+          fresh: pub,
+          recent,
+          max: this.store.config().parallel,
+        },
+        this.supportAbort.signal,
+      )
+      .catch((): FloorPick[] => [])
+      .then((picks) => {
+        if (this._state === "paused") return;
+        // Whoever spoke last doesn't get to answer itself unless someone asked it something.
+        const chosen = picks.filter((p) => p.agent !== last.from && !direct.some((d) => d.agent === p.agent));
+        for (const p of chosen) this.want(p);
+        if (chosen.length || direct.length) this.log({ type: "floor", picks: [...direct, ...chosen] });
+      })
+      .finally(() => {
+        this.deciding = false;
+        if (this.floorDirty) {
+          this.floorDirty = false;
+          this.floorCheck();
+        } else this.kick();
+      });
   }
 
   /** CLIs without a quota report are held to the turn cap per resume. */
@@ -472,29 +565,41 @@ export class Room {
     return !this.quota.has(cli) && (this.turnsByCli.get(cli) ?? 0) >= this.store.config().turnCap;
   }
 
-  /** Fills free slots with woken members; pauses when the turn cap stops work that's waiting. */
+  /** Starts turns for members who have the floor, up to the parallel cap; goes quiet when nobody does. */
   private kick(): void {
     if (this._state === "paused") return;
     const { parallel, turnCap } = this.store.config();
-    const waiting = this.wakeable();
-    for (const agent of waiting) {
+    const blocked: string[] = [];
+    for (const [agent, why] of [...this.wants]) {
       if (this.running.size >= parallel) break;
+      if (!this.personas.has(agent) || this.leaving.has(agent)) {
+        this.wants.delete(agent);
+        continue;
+      }
+      if (this.running.has(agent)) continue;
       const { cli } = this.spec(agent);
-      if (this.capped(cli)) continue;
+      if (this.capped(cli)) {
+        blocked.push(agent);
+        continue;
+      }
+      this.wants.delete(agent);
       this.turnsByCli.set(cli, (this.turnsByCli.get(cli) ?? 0) + 1);
       const ctrl = new AbortController();
-      this.running.set(agent, ctrl);
-      void this.turn(agent, ctrl);
+      this.running.set(agent, { ctrl, why });
+      void this.turn(agent, ctrl, why);
     }
-    if (this.running.size) return this.setState("running");
-    if (waiting.length) {
-      const clis = [...new Set(waiting.map((a) => this.spec(a).cli))];
+    this.saveWants();
+    if (this.running.size || this.deciding) return this.setState("running");
+    if (blocked.length) {
+      const clis = [...new Set(blocked.map((a) => this.spec(a).cli))];
       return this.pause(`turn cap reached (${turnCap} turns each for ${clis.join(", ")})`);
     }
     this.setState("idle");
-    // A quiet room is the Chair's cue, if anything happened since it last looked.
-    if (this.memberMessagesAfter(Number(this.store.meta().chairSeq ?? 0)) > 0) void this.runChair("everyone has had their say and the room went quiet");
-    if (this.memberMessagesAfter(Number(this.store.meta().scribeSeq ?? 0)) > 0) void this.runScribe();
+    // A quiet room is the support roles' cue, if anything happened since each last looked.
+    const m = this.store.meta();
+    if (this.memberMessagesAfter(Number(m.chairSeq ?? 0)) > 0) void this.runChair("the room went quiet");
+    if (this.memberMessagesAfter(Number(m.scribeSeq ?? 0)) > 0) void this.runScribe();
+    if (this.memberMessagesAfter(Number(m.watchSeq ?? 0)) > 0) void this.watch("the room went quiet");
     this.settle();
   }
 
@@ -508,23 +613,24 @@ export class Room {
     else if (this.memberMessagesAfter(Number(m.watchSeq ?? 0)) >= EVERY.watch) void this.watch("regular check-in");
   }
 
-  private async turn(agent: string, ctrl: AbortController): Promise<void> {
+  private async turn(agent: string, ctrl: AbortController, why: FloorReason): Promise<void> {
     let st = this.store.agentState(agent);
-    // Long vendor sessions get compacted unpredictably; past REFRESH turns, rebuild from files instead.
-    if (st.sessionId && (st.sessionTurns ?? 0) >= REFRESH) st = { ...st, sessionId: undefined, sessionTurns: 0 };
     const upTo = this.store.lastSeq;
+    // Long vendor sessions get compacted unpredictably, and a member that missed a lot reads better
+    // from a fresh summary; either way, rebuild its context from files.
+    const unread = this.store.events().slice(st.lastRead, upTo).filter((e) => visibleTo(agent, e)).length;
+    if (st.sessionId && ((st.sessionTurns ?? 0) >= REFRESH || unread > CATCHUP)) st = { ...st, sessionId: undefined, sessionTurns: 0 };
     const spec = this.spec(agent);
     const transport = this.o.transports(spec);
     const token = newToken();
-    const turn: LiveTurn = { agent, ctrl, spoke: 0, passed: false };
     let mcp: McpServerSpec | undefined;
     if (transport.supportsMcp) {
       this.tools ??= ToolServer.start(this.callTool);
       try {
         mcp = (await this.tools).spec(token);
-        this.live.set(token, turn);
+        this.live.set(token, { agent, ctrl });
       } catch {
-        // Without the tool server the member still speaks through its reply text.
+        // Without the tool server the member can still speak; it just can't take side actions.
         this.tools = undefined;
       }
     }
@@ -533,7 +639,7 @@ export class Room {
     let failed: string | undefined;
     let sessionId = st.sessionId;
     try {
-      for await (const e of transport.send(this.memberPrompt(agent, st, upTo, Boolean(mcp)), {
+      for await (const e of transport.send(this.memberPrompt(agent, st, upTo, Boolean(mcp), why), {
         cwd: this.o.repo,
         systemPrompt: this.personas.get(agent)?.body,
         readOnly: this.o.readOnly ?? true,
@@ -544,8 +650,11 @@ export class Room {
         if (e.type === "text") {
           text += e.delta;
           this.emit({ event: "room.turn.delta", data: { agent, delta: e.delta } });
-        } else if (e.type === "tool") this.emit({ event: "room.turn.tool", data: { agent, name: e.name } });
-        else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
+        } else if (e.type === "tool") {
+          // What a member writes before a tool call is thinking aloud; its message is what comes after the last one.
+          text = "";
+          this.emit({ event: "room.turn.tool", data: { agent, name: e.name } });
+        } else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
         else if (e.type === "done" && e.sessionId) sessionId = e.sessionId;
         else if (e.type === "error") failed = e.message;
       }
@@ -555,34 +664,32 @@ export class Room {
     this.running.delete(agent);
     this.live.delete(token);
     this.emit({ event: "room.turn.end", data: { agent } });
-    // An aborted turn leaves lastRead alone, so the member is woken for the same messages on resume.
+    // An aborted turn is owed: the member gets the floor back on resume.
     if (ctrl.signal.aborted) {
+      if (!this.leaving.has(agent) && this.personas.has(agent)) this.wants.set(agent, why);
+      this.saveWants();
       this.settle();
       return;
     }
     const reply = text.trim();
-    const usedTools = turn.spoke > 0 || turn.passed;
-    // A member who spoke through the tools used its final reply as scratch; nobody sees it.
-    if (failed && (usedTools || !reply)) {
-      if (!usedTools) this.log({ type: "turn.failed", agent, message: failed });
-      // A vendor session that broke the turn is dropped; the next wake rebuilds context from the log.
+    if (failed && !reply) {
+      this.log({ type: "turn.failed", agent, message: failed });
+      // A vendor session that broke the turn is dropped; the next turn rebuilds context from the log.
       sessionId = undefined;
-    } else if (!usedTools) {
-      if (reply === PASS) this.log({ type: "pass", from: agent });
-      else {
-        this.log({ type: "message", from: agent, to: "room", text: reply });
-        this.afterMessage();
-      }
+    } else if (reply && reply !== PASS) {
+      // A DM from a member who has since left goes to the room instead of nowhere.
+      const to = why.to && (why.to === "human" || this.personas.has(why.to)) ? why.to : "room";
+      this.log({ type: "message", from: agent, to, text: reply, ...(why.replyTo ? { replyTo: why.replyTo } : {}) });
+      if (to === "room") this.afterMessage();
     }
     const fresh = sessionId !== st.sessionId;
-    // Advancing lastRead even on failure keeps a broken member from being re-woken in a hot loop.
     this.store.saveAgentState(agent, {
       sessionId,
       sessionTurns: sessionId ? (fresh ? 1 : (st.sessionTurns ?? 0) + 1) : 0,
       lastRead: upTo,
       turns: st.turns + 1,
     });
-    this.kick();
+    this.floorCheck();
   }
 
   /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
@@ -606,12 +713,12 @@ export class Room {
     }
   }
 
-  private memberPrompt(agent: string, st: AgentState, upTo: number, tools: boolean): string {
+  private memberPrompt(agent: string, st: AgentState, upTo: number, tools: boolean, floor: FloorReason): string {
     const events = this.store.events().slice(0, upTo);
     const seen = events.filter((e) => visibleTo(agent, e) && !MEMBER_NOISE.has(e.type));
     const view = this.view();
     if (st.sessionId) {
-      return memberIncremental({ view, recent: seen.filter((e) => e.seq > st.lastRead), tools, maxSpoken: MAX_SPOKEN });
+      return memberIncremental({ view, recent: seen.filter((e) => e.seq > st.lastRead), tools, floor });
     }
     const notes: [string, string][] = [];
     for (const p of ["decisions.md", "open-questions.md", view.focus && `topics/${view.focus}.md`, "code-notes.md"]) {
@@ -627,7 +734,7 @@ export class Room {
       total: seen.length,
       joined: st.turns === 0 && events.some((e) => e.type === "agent.joined" && e.agent === agent),
       tools,
-      maxSpoken: MAX_SPOKEN,
+      floor,
     });
   }
 
@@ -648,41 +755,17 @@ export class Room {
     if (turn.ctrl.signal.aborted) throw new Error("the room is paused; nothing was sent");
     const { agent } = turn;
     const text = typeof args.text === "string" ? args.text.trim() : "";
-    const speak = () => {
-      if (turn.spoke >= MAX_SPOKEN) throw new Error(`at most ${MAX_SPOKEN} messages per turn; wait for replies`);
-      turn.spoke++;
-    };
     switch (name) {
-      case "post":
       case "dm": {
         if (!text) throw new Error("text is required");
-        const to = name === "dm" ? String(args.to ?? "") : "room";
-        if (name === "dm" && (to === agent || (to !== "human" && !this.personas.has(to))))
+        const to = String(args.to ?? "");
+        if (to === agent || (to !== "human" && !this.personas.has(to)))
           throw new Error(`no member "${to}"; members are ${["human", ...this.members()].filter((a) => a !== agent).join(", ")}`);
-        let replyTo: number | undefined;
-        if (name === "post" && args.reply_to !== undefined) {
-          replyTo = Number(args.reply_to);
-          const target = this.store.events()[replyTo - 1];
-          if (target?.type !== "message" || !visibleTo(agent, target)) throw new Error(`no message #${args.reply_to}`);
-        }
-        let topic: string | undefined;
-        if (name === "post" && args.topic !== undefined && args.topic !== this.focus()) {
-          topic = String(args.topic);
-          const t = this.topics().find((x) => x.slug === topic);
-          if (!t || t.closed) throw new Error(`no open topic "${topic}"; open topics are ${this.topics().filter((x) => !x.closed).map((x) => x.slug).join(", ")}`);
-        }
-        speak();
-        const e = this.log({ type: "message", from: agent, to, text, ...(replyTo ? { replyTo } : {}), ...(topic ? { topic } : {}) });
-        this.afterMessage();
-        this.kick();
-        return `Sent as #${e.seq}.`;
+        const e = this.log({ type: "message", from: agent, to, text });
+        this.floorCheck();
+        return `Sent privately to ${to} as #${e.seq}.`;
       }
-      case "pass":
-        if (!turn.spoke && !turn.passed) this.log({ type: "pass", from: agent });
-        turn.passed = true;
-        return "Passed. You will be woken when there is something new.";
       case "raise_topic": {
-        speak();
         const slug = this.raiseTopic(String(args.title ?? ""), agent, typeof args.why === "string" ? args.why : undefined);
         return `Raised as ${slug}. It is parked until the Chair and the human give it focus.`;
       }
@@ -690,7 +773,6 @@ export class Room {
         const slug = slugify(String(args.name ?? ""));
         if (!text) throw new Error("text is required: the whole document");
         const kind = (["plan", "issue", "decision", "other"].includes(String(args.kind)) ? args.kind : (this.docs().find((d) => d.slug === slug)?.kind ?? "other")) as DocKind;
-        speak();
         const version = this.store.writeOutput(slug, text);
         const note = typeof args.note === "string" && args.note.trim() ? args.note.trim() : undefined;
         this.log({ type: "doc.revised", slug, version, kind, by: agent, ...(note ? { note } : {}) });
@@ -810,7 +892,7 @@ export class Room {
       for (const d of directives) this.chairAction(d);
       if (prose && prose !== PASS) {
         this.log({ type: "message", from: "chair", to: "room", text: prose });
-        this.kick();
+        this.floorCheck();
       }
     });
   }
@@ -834,7 +916,7 @@ export class Room {
           const to = d.args[0];
           if (this.personas.has(to) && d.why) {
             this.log({ type: "message", from: "chair", to, text: d.why });
-            this.kick();
+            this.floorCheck();
           }
           return;
         }
@@ -868,14 +950,28 @@ export class Room {
     });
   }
 
+  /** The assistant's latest digest of where the room stands. */
+  digest(): string | undefined {
+    for (const e of [...this.store.events()].reverse()) if (e.type === "aside" && e.kind === "digest") return e.text;
+    return undefined;
+  }
+
   private assistantContext(): string {
     const pending = this.pending()
       .map((p) => `${p.id}. ${p.action} ${p.args.join(" ")} (from ${p.from}${p.why ? `: ${p.why}` : ""})`)
       .join("\n");
     const budget = [...this.quota].map(([cli, q]) => `${cli} at ${Math.round(q * 100)}% of its quota window`).join("; ");
     const notes = (["decisions.md", "open-questions.md"] as const).flatMap((p): [string, string][] => (this.store.readDoc(p).trim() ? [[p, this.store.readDoc(p)]] : []));
-    const recent = renderEvents(this.store.events().filter((e) => e.type !== "docs.updated").slice(-60), this.focus());
-    return assistantContext({ view: this.view(), signals: describeSignals(this.signals()), budget, notes, recent, pending });
+    const recent = renderEvents(
+      this.store.events().filter((e) => e.type !== "docs.updated" && !(e.type === "aside" && e.kind === "digest")).slice(-60),
+      this.focus(),
+    );
+    return assistantContext({ view: this.view(), signals: describeSignals(this.signals()), budget, notes, recent, pending, digest: this.digest() });
+  }
+
+  private actions(): string {
+    const personas = listPersonas(this.o.assetsDir).map((p) => p.key);
+    return assistantActions(this.o.clis ?? DEFAULT_CLIS, personas);
   }
 
   /** Applies the assistant's action lines: a pause at once, everything else as a suggestion. */
@@ -893,7 +989,7 @@ export class Room {
     const context = this.assistantContext();
     let answer = "";
     await this.job("assistant", async () => {
-      const reply = await this.oneShot("assistant", assistantAsk(context, question.trim()), ASSISTANT_SYSTEM, onDelta);
+      const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions(), !this.members().length), ASSISTANT_SYSTEM, onDelta);
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
       answer = prose;
@@ -903,17 +999,27 @@ export class Room {
     return answer;
   }
 
-  /** The assistant checks on the room by itself and leaves the human a note when there's something to say. */
+  /** The assistant checks on the room by itself: it rewrites its digest, and leaves a note when something shifted. */
   watch(reason: string): Promise<void> {
     return this.job("watch", async () => {
       this.store.setMeta({ watchSeq: this.store.lastSeq });
-      const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason), ASSISTANT_SYSTEM);
+      const empty = !this.members().length;
+      const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason, this.actions(), empty), ASSISTANT_SYSTEM);
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
-      if (prose && prose !== "NOTHING") this.log({ type: "aside", from: "assistant", text: prose, kind: "note" });
+      const { digest, note } = empty ? { digest: undefined, note: prose.trim() && prose.trim() !== "NOTHING" ? prose.trim() : undefined } : parseWatch(prose);
+      if (digest && digest !== this.digest()) this.log({ type: "aside", from: "assistant", text: digest, kind: "digest" });
+      if (note) this.log({ type: "aside", from: "assistant", text: note, kind: "note" });
       this.assistantActions(directives);
     });
   }
+}
+
+/** Raises the room's opening topic and puts it in focus. */
+function openingTopic(store: RoomStore, topic: string): RoomEvent[] {
+  const title = topic.split("\n")[0].slice(0, 80);
+  const slug = slugify(title.split(/\s+/).slice(0, 5).join(" "));
+  return [store.append({ type: "topic.raised", slug, title, by: "human" }), store.append({ type: "topic.focus", slug, by: "human" })];
 }
 
 const gitHead = (repo: string) => (): string | undefined => {

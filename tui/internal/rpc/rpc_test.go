@@ -191,32 +191,40 @@ func TestRecordedRoomDecodesStrictly(t *testing.T) {
 			}
 		case Response:
 			switch v.ID {
-			case 4, 11:
+			case 2: // an empty room, as the TUI starts one
 				var s RoomSnapshot
 				if err := DecodeResult(v.Result, &s); err != nil {
 					t.Fatalf("snapshot %d: %v", v.ID, err)
 				}
-				if s.ID == "" || len(s.Agents) != 3 || s.Focus == "" || len(s.Events) < 3 {
-					t.Fatalf("unexpected snapshot: %+v", s)
+				if s.ID == "" || len(s.Agents) != 0 || len(s.Events) != 0 || s.Support.Floor.CLI != "mock" {
+					t.Fatalf("unexpected empty room: %+v", s)
 				}
-			case 8:
+			case 12:
+				var s RoomSnapshot
+				if err := DecodeResult(v.Result, &s); err != nil {
+					t.Fatalf("snapshot %d: %v", v.ID, err)
+				}
+				if len(s.Agents) != 3 || s.Focus == "" || s.Digest == "" || len(s.Events) < 10 {
+					t.Fatalf("unexpected reopened room: %+v", s)
+				}
+			case 9:
 				var d RoomDocText
 				if err := DecodeResult(v.Result, &d); err != nil || !strings.Contains(d.Text, "# Plan") {
 					t.Fatalf("doc: %v %+v", err, d)
 				}
-			case 10:
+			case 11:
 				var l []RoomListItem
 				if err := DecodeResult(v.Result, &l); err != nil || len(l) != 1 {
 					t.Fatalf("rooms.list: %v %+v", err, l)
 				}
-			case 12:
+			case 13:
 				if v.Err == "" {
 					t.Fatal("focusing an unknown topic should fail")
 				}
 			}
 		}
 	}
-	for _, want := range []string{"room.state", "room.turn.start", "room.turn.delta", "room.turn.tool", "room.turn.end", "room.assistant.delta", "message", "aside", "suggestion", "suggestion.resolved", "doc.revised", "paused", "resumed"} {
+	for _, want := range []string{"room.state", "room.turn.start", "room.turn.delta", "room.turn.tool", "room.turn.end", "room.assistant.delta", "message", "aside", "suggestion", "suggestion.resolved", "doc.revised", "doc.accepted", "agent.joined", "floor", "paused", "resumed"} {
 		if types[want] == 0 {
 			t.Errorf("recording has no %s", want)
 		}
