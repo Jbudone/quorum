@@ -19,6 +19,7 @@ import (
 type roomUI struct {
 	room       *roomModel
 	setup      *setupModel
+	join       *joinModal         // the add-member modal, when open
 	channels   []rpc.RoomListItem // the workspace's channels, for the switcher
 	feedVP     viewport.Model
 	assistVP   viewport.Model
@@ -81,6 +82,9 @@ func (a *App) openRoom(id string) {
 
 // handleRoomResponse handles answers to workspace, setup and room requests. It reports whether it took the method.
 func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
+	if a.joinResponse(method, r) {
+		return true
+	}
 	if !strings.HasPrefix(method, "room.") && !strings.HasPrefix(method, "setup.") && method != "workspace.open" {
 		return false
 	}
@@ -298,6 +302,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	if u.room == nil {
 		return nil // still opening
 	}
+	if u.join != nil {
+		return a.handleJoinKey(k)
+	}
 	r := u.room
 	if r.overlay != nil {
 		o := r.overlay
@@ -353,7 +360,14 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			r.sugCur = min(r.sugCur+1, len(r.pending)-1)
 		case "y", "n":
 			if r.sugCur < len(r.pending) {
-				a.call("room.resolve", map[string]any{"id": r.pending[r.sugCur].ID, "accept": key == "y"})
+				s := r.pending[r.sugCur]
+				// Bringing someone in opens the add-member modal, filled in, so model and role can be tweaked first.
+				if key == "y" && (s.Action == "hire" || s.Action == "add") {
+					r.review = false
+					a.openJoin(&s)
+					return nil
+				}
+				a.call("room.resolve", map[string]any{"id": s.ID, "accept": key == "y"})
 			}
 		case "a":
 			for _, s := range r.pending {
@@ -386,6 +400,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "ctrl+t":
 		u.hideStats = !u.hideStats
+		return nil
+	case "ctrl+a":
+		a.openJoin(nil)
 		return nil
 	case "ctrl+p":
 		if r.state == "paused" {
@@ -469,6 +486,9 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "new":
 		a.startSetup()
+		return nil
+	case "join":
+		a.openJoin(nil)
 		return nil
 	case "thread":
 		r.view, u.feedFollow = cmd.params["seq"].(int), true
@@ -732,6 +752,8 @@ func (a *App) roomView() string {
 
 	var body string
 	switch {
+	case u.join != nil:
+		body = a.joinBox(bh)
 	case r.overlay != nil:
 		body = lipgloss.NewStyle().Width(a.w).Height(bh).Padding(0, 2).Render(u.overlayVP.View())
 	case a.roomSide():

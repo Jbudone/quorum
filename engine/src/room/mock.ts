@@ -109,6 +109,10 @@ class ScriptedRoomMock implements AgentTransport {
       yield* this.stream(SETUP[Math.min(c.setups++, SETUP.length - 1)], opts.signal);
     } else if (this.role === "floor") yield* this.stream(this.floor(prompt), opts.signal);
     else if (this.role === "scribe" && /side threads/.test(opts.systemPrompt ?? "")) yield* this.stream("They agreed 30 s is fine for product pages since checkout re-reads prices.", opts.signal);
+    else if (this.role === "scribe" && /catch-up briefs/.test(opts.systemPrompt ?? ""))
+      yield* this.stream("The room settled on an in-process LRU with a 30 s TTL (plan v2, #27). Open: tenant isolation in cache keys. Start with the plan and the bulk-import thread.", opts.signal);
+    else if (this.role === "assistant" && /write personas/.test(opts.systemPrompt ?? ""))
+      yield* this.stream("ID: tenancy-auditor\nROLE: multi-tenancy auditor\nPERSONA: Audits shared caches and queues for leaks between tenants. Asks how every key is scoped and what happens on a collision. Concedes quickly when shown isolation holds.", opts.signal);
     else if (this.role === "chair") yield* this.stream(this.chair(prompt), opts.signal);
     else if (this.role === "scribe") yield* this.stream(c.scribes++ < 2 ? SCRIBE[c.scribes - 1] : "NOTHING", opts.signal);
     else if (this.role === "assistant") yield* this.stream(this.assistant(prompt), opts.signal);

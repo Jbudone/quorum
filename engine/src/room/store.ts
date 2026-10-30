@@ -97,9 +97,20 @@ export interface AgentState {
   readAt?: number;
   /** The reading list as it stood then, so newly added entries count as unread. */
   readList?: string[];
+  /** What the human set up for a member joining: used on its first turn, then dropped. */
+  onboarding?: Onboarding;
   /** Highest event seq this agent has been shown. */
   lastRead: number;
   turns: number;
+}
+
+export interface Onboarding {
+  /** A catch-up brief written for this member. */
+  brief?: string;
+  /** What it reads first, instead of the channel's reading list. */
+  reading?: string[];
+  /** The human's first question for it. */
+  question?: string;
 }
 
 /** Shared docs the scribe may write, relative to `docs/`. */

@@ -452,7 +452,7 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	if r.pane == paneAssistant {
 		box = k("tab", "talk to the channel")
 	}
-	parts := []string{box, k("ctrl+k", "switch"), pause, k("ctrl+o", "docs"), k("ctrl+t", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
+	parts := []string{box, k("ctrl+k", "switch"), k("ctrl+a", "add someone"), pause, k("ctrl+o", "docs"), k("ctrl+t", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
 	if r.view != 0 {
 		parts = append([]string{k("esc", "back to channel")}, parts...)
 	}

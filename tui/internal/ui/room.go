@@ -78,6 +78,7 @@ type roomModel struct {
 	workspace      string   // the project's folder name, for the header
 	name           string   // the channel's short name
 	reading        []string // the channel's reading list
+	clis           []string // CLIs members can run on here
 	state, reason  string
 	agents, left   []rpc.PresetAgent
 	support        rpc.RoomSupport
@@ -113,7 +114,7 @@ type roomModel struct {
 
 func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 	r := &roomModel{
-		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
+		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
 		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
@@ -463,12 +464,13 @@ Your assistant (right box):
 
 Channel:
   ctrl+k            switch channel or thread, or start a new channel
+  ctrl+a            bring someone in: who, role, model, onboarding (or /add)
   ctrl+p            pause / resume           ctrl+o   documents and notes
   ctrl+t            show / hide the stats strip
   /read <path>…     set the reading list members work through (folders or files)
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document
-  /add <member> <cli> [model]   /remove <member>   /rejoin <member>
+  /add <member> <cli> [model]   (quick add)   /remove <member>   /rejoin <member>
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -578,6 +580,9 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{err: "/export takes an issue document's name"}
 	case strings.HasPrefix(in, "/add"):
 		f := strings.Fields(word("/add"))
+		if len(f) == 0 {
+			return roomCommand{local: "join"}
+		}
 		if len(f) < 2 {
 			return roomCommand{err: "/add takes a persona and a CLI, e.g. /add security claude"}
 		}

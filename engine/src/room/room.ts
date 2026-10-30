@@ -15,7 +15,12 @@ import {
   memberFresh,
   memberIncremental,
   memberThread,
+  parsePersonaDraft,
   parseWatch,
+  personaDraftPrompt,
+  PERSONA_SYSTEM,
+  BRIEF_SYSTEM,
+  briefPrompt,
   renderEvent,
   renderEvents,
   reviseIndependent,
@@ -410,7 +415,7 @@ export class Room {
    * Brings a member into this channel: a workspace member (by id, with its memory), a new one built
    * on a persona, or one who left. It gets the floor at once to catch up.
    */
-  addMember(o: { persona: string; cli: CliName; model?: string; id?: string }): string {
+  addMember(o: { persona: string; cli: CliName; model?: string; id?: string; why?: string }): string {
     const c = this.store.config();
     const back = (c.left ?? []).find((a) => a.id === (o.id ?? o.persona));
     if (back && !o.id && back.cli === o.cli && back.model === o.model) return this.rejoin(back.id);
@@ -427,8 +432,67 @@ export class Room {
     if (!ws.members().some((m) => m.id === id)) ws.saveMember({ ...spec, role: persona.role });
     this.personas.set(id, persona);
     this.log({ type: "agent.joined", agent: id, persona: personaKey, cli: o.cli, ...(o.model ? { model: o.model } : {}) });
-    this.welcome(id);
+    this.welcome(id, o.why);
     return id;
+  }
+
+  /**
+   * Onboards a member chosen in the add-member modal: a new one (with its persona, which joins the
+   * workspace) or a workspace member, on the CLI and model picked. A catch-up brief written for its
+   * role, its own reading list and the human's first question shape its first turn. Answering an
+   * assistant suggestion this way counts as approving it.
+   */
+  async join(o: {
+    id: string;
+    cli: CliName;
+    model?: string;
+    role?: string;
+    persona?: string;
+    brief?: boolean;
+    reading?: string[];
+    question?: string;
+    suggestion?: number;
+  }): Promise<string> {
+    const id = o.id.trim().toLowerCase();
+    // A channel only runs on the CLIs it was opened with (a mock channel never reaches a real CLI).
+    if (this.o.clis && !this.o.clis.includes(o.cli)) throw new Error(`${o.cli} isn't available here; use ${this.o.clis.join(", ")}`);
+    const ws = new Workspace(this.o.repo);
+    const known = ws.members().find((m) => m.id === id);
+    if (this.personas.has(id)) throw new Error(`${id} is already in this channel`);
+    if (!known && !o.persona?.trim()) throw new Error(`${id} needs a persona`);
+    if (o.persona?.trim()) {
+      ws.writePersona(id, { name: id, role: o.role?.trim() || known?.role || id, body: o.persona });
+      ws.saveMember({ id, cli: o.cli, persona: id, role: o.role?.trim() || known?.role, ...(o.model ? { model: o.model } : {}) });
+    }
+    const reading = o.reading?.map((p) => readingPath(this.o.repo, p));
+    const persona = personaFor(this.o.repo, o.persona?.trim() ? id : (known?.persona ?? id), this.o.assetsDir);
+    let brief: string | undefined;
+    if (o.brief) {
+      const notes = (["decisions.md", "open-questions.md"] as const).flatMap((p): [string, string][] => (this.store.readDoc(p).trim() ? [[p, this.store.readDoc(p)]] : []));
+      const recent = renderEvents(this.store.events().filter((e) => e.type === "message" && e.to === "room" && inMain(e)).slice(-30), this.focus());
+      brief = (await this.oneShot("scribe", briefPrompt({ view: this.view(), member: id, role: persona.role, persona: persona.body, digest: this.digest(), notes, recent }), BRIEF_SYSTEM))?.trim() || undefined;
+    }
+    const st = this.store.agentState(id);
+    const question = o.question?.trim() || undefined;
+    this.store.saveAgentState(id, { ...st, sessionId: undefined, sessionTurns: 0, onboarding: { ...(brief ? { brief } : {}), ...(reading ? { reading } : {}), ...(question ? { question } : {}) } });
+    // Someone who left this channel comes back on whatever CLI was picked now.
+    const c = this.store.config();
+    if ((c.left ?? []).some((a) => a.id === id)) this.store.setRoster(c.agents, (c.left ?? []).filter((a) => a.id !== id));
+    const joined = this.addMember({ persona: o.persona?.trim() ? id : (known?.persona ?? id), id, cli: o.cli, model: o.model, why: question ? `you just joined, and the human asks you to start with: ${question}` : undefined });
+    if (o.suggestion !== undefined && this.pending().some((p) => p.id === o.suggestion)) this.log({ type: "suggestion.resolved", id: o.suggestion, accepted: true });
+    return joined;
+  }
+
+  /** The assistant turns a one-line description into a persona the human can edit before anyone joins. */
+  async draftPersona(line: string): Promise<{ id: string; role: string; persona: string }> {
+    if (!line.trim()) throw new Error("describe the member in a line first");
+    const taken = new Set([...new Workspace(this.o.repo).members().map((m) => m.id), ...this.members()]);
+    const reply = await this.oneShot("assistant", personaDraftPrompt({ line: line.trim(), view: this.view(), taken: [...taken] }), PERSONA_SYSTEM);
+    const d = reply ? parsePersonaDraft(reply) : undefined;
+    if (!d) throw new Error("the assistant didn't produce a persona; try describing the member differently");
+    let id = d.id;
+    for (let n = 2; taken.has(id); n++) id = `${d.id}-${n}`;
+    return { ...d, id };
   }
 
   /** Brings in a member the assistant invented for this problem: its persona joins the workspace too. */
@@ -441,10 +505,10 @@ export class Room {
     return this.addMember({ persona: o.id, id: o.id, cli: o.cli, model: o.model });
   }
 
-  /** A member who joins a conversation already under way gets the floor to bring its view. */
-  private welcome(id: string): void {
-    if (this.store.events().some((e) => e.type === "message" && e.to === "room" && inMain(e))) {
-      this.want({ agent: id, why: "you just joined; catch up on where things stand and bring your angle" });
+  /** A member who joins a conversation already under way (or is asked something) gets the floor. */
+  private welcome(id: string, why?: string): void {
+    if (why || this.store.events().some((e) => e.type === "message" && e.to === "room" && inMain(e))) {
+      this.want({ agent: id, why: why ?? "you just joined; catch up on where things stand and bring your angle" });
     }
     this.kick();
   }
@@ -483,6 +547,11 @@ export class Room {
     this.leaving.delete(id);
     this.log({ type: "agent.left", agent: id, ...(text ? { memo: text } : {}) });
     this.kick();
+  }
+
+  /** CLIs members can run on in this channel. */
+  get clis(): string[] {
+    return this.o.clis ?? DEFAULT_CLIS;
   }
 
   channelName(): string {
@@ -846,6 +915,8 @@ export class Room {
 
   /** The channel's reading list for a member: everything if it never read it, otherwise what changed. */
   private readingFor(agent: string, st: AgentState): { paths: string[]; changed?: string[] } {
+    // A member onboarded with its own reading list starts from that.
+    if (st.onboarding?.reading) return { paths: st.onboarding.reading };
     const paths = this.store.config().reading ?? [];
     if (!paths.length) return { paths };
     // The channel-level state holds the reading position, whichever conversation the turn is in.
@@ -911,6 +982,7 @@ export class Room {
       floor,
       reading: read ?? (reading.paths.length ? { paths: reading.paths, changed: [] } : undefined),
       elsewhere: this.elsewhere(agent),
+      ...(st.onboarding?.brief ? { brief: st.onboarding.brief } : {}),
     });
   }
 

@@ -157,6 +157,7 @@ type (
 		Agents        []PresetAgent  `json:"agents"`
 		Left          []PresetAgent  `json:"left"`
 		Support       RoomSupport    `json:"support"`
+		CLIs          []string       `json:"clis"`
 		Digest        string         `json:"digest"`
 		Tuning        RoomTuning     `json:"tuning"`
 		Focus         string         `json:"focus"`

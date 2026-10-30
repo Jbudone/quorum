@@ -308,6 +308,52 @@ describe("Workspace members", () => {
   });
 });
 
+describe("Joining", () => {
+  it("onboards a new member with a brief, its own reading, and the human's first question", async () => {
+    const r = setup({
+      floor: () => [],
+      member: () => "PASS",
+      scribe: ["The room picked an LRU (#3). Open: tenant keys."],
+      assistant: ["ID: tenancy-auditor\nROLE: multi-tenancy auditor\nPERSONA: Audits caches for leaks between tenants."],
+    });
+    mkdirSync(join(r.repo, "notes"));
+    writeFileSync(join(r.repo, "notes", "keys.md"), "x");
+    const room = r.create({ reading: [] });
+    room.resume();
+    await room.settled();
+    r.calls.length = 0;
+
+    expect(await room.draftPersona("someone who checks tenant isolation")).toEqual({ id: "tenancy-auditor", role: "multi-tenancy auditor", persona: "Audits caches for leaks between tenants." });
+    const id = await room.join({ id: "tenancy-auditor", cli: "mock", role: "multi-tenancy auditor", persona: "Audits caches for leaks between tenants.", brief: true, reading: ["notes"], question: "Are cache keys tenant-scoped?" });
+    expect(id).toBe("tenancy-auditor");
+    await room.settled();
+    const prompt = r.memberCalls().find((c) => c.agent === "tenancy-auditor")!.prompt;
+    expect(prompt).toContain("A catch-up brief written for you:\nThe room picked an LRU (#3). Open: tenant keys.");
+    expect(prompt).toContain("This channel's reading list: notes.");
+    expect(prompt).toContain("the human asks you to start with: Are cache keys tenant-scoped?");
+    expect(r.calls.find((c) => c.agent === "scribe")!.prompt).toContain("tenancy-auditor is joining as: multi-tenancy auditor");
+    // Onboarding is for the first turn only.
+    expect(room.store.agentState("tenancy-auditor").onboarding).toBeUndefined();
+    expect(new Workspace(r.repo).members().map((m) => m.id)).toContain("tenancy-auditor");
+    await expect(room.join({ id: "tenancy-auditor", cli: "mock" })).rejects.toThrow(/already in this channel/);
+    await expect(room.join({ id: "nobody", cli: "mock" })).rejects.toThrow(/needs a persona/);
+
+    // A channel only runs members on its own CLIs.
+    const mockOnly = r.create({ clis: ["mock"] });
+    await expect(mockOnly.join({ id: "x", cli: "claude", persona: "p" })).rejects.toThrow(/claude isn't available here; use mock/);
+  });
+
+  it("approves the assistant's suggestion it was opened from", async () => {
+    const r = setup({ member: () => "PASS", assistant: ["x\n>> hire: qa | mock | QA lead | Breaks things. | nobody tests"] });
+    const room = r.create();
+    await room.ask("who's missing?");
+    const sug = room.pending()[0];
+    await room.join({ id: "qa", cli: "mock", role: "QA lead", persona: "Breaks things, on purpose.", suggestion: sug.id });
+    expect(room.pending()).toEqual([]);
+    expect(personaFor(r.repo, "qa").body).toBe("Breaks things, on purpose.");
+  });
+});
+
 describe("Setup chat", () => {
   it("has no channel until the human approves a lineup, then every member gives a first take", async () => {
     const r = setup({ member: (a) => `${a}: first take`, floor: () => [] });

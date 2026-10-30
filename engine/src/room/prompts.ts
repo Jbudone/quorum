@@ -110,6 +110,8 @@ export interface MemberContext {
   reading?: Reading;
   /** Where things stand in this member's other channels, as [channel, digest]. */
   elsewhere?: [string, string][];
+  /** A catch-up brief written for this member when it joined. */
+  brief?: string;
   view: RoomView;
   /** Shared notes worth showing on a fresh start, as [path, text]. */
   notes: [string, string][];
@@ -162,6 +164,7 @@ export function memberFresh(c: MemberContext): string {
     readingLine(c.reading),
     ...(c.elsewhere ?? []).map(([ch, d]) => `You're also in #${ch}, where things stand like this:\n${clip(d, 800)}`),
     c.joined ? "You have just joined a discussion already under way. Read the notes below before you speak, and bring a fresh view." : "",
+    c.brief ? `A catch-up brief written for you:\n${c.brief}` : "",
     describeRoom(c.view),
     ...c.notes.map(([p, t]) => `Shared notes, ${p}:\n${clip(t, 3000)}`),
     c.staleCode ? `Note: ${c.staleCode}` : "",
@@ -382,6 +385,43 @@ export function parseWatch(prose: string): { digest?: string; note?: string } {
   const digest = d ? prose.slice(d.index + d[0].length, n && n.index > d.index ? n.index : undefined).trim() : undefined;
   const note = n ? prose.slice(n.index + n[0].length, d && d.index > n.index ? d.index : undefined).trim() : undefined;
   return { ...(digest ? { digest } : {}), ...(note && note !== "NOTHING" ? { note } : {}) };
+}
+
+export const BRIEF_SYSTEM = `You write catch-up briefs for people joining a long-running team discussion. You are concise and concrete, and you never invent anything that wasn't said.`;
+
+export function briefPrompt(o: { view: RoomView; member: string; role: string; persona: string; digest?: string; notes: [string, string][]; recent: string }): string {
+  return [
+    describeRoom(o.view),
+    o.digest ? `Where things stand, per the human's assistant:\n${o.digest}` : "",
+    ...o.notes.map(([p, t]) => `Shared notes, ${p}:\n${clip(t, 2500)}`),
+    `Recent discussion:\n\n${o.recent || "(nothing yet)"}`,
+    `${o.member} is joining as: ${o.role}.\n${o.persona}`,
+    `Write ${o.member} a catch-up brief of at most 150 words: where the discussion stands, what's agreed, what's open and who holds which view, and what someone in their role should look at first. Cite message numbers. Plain prose, no headings.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export const PERSONA_SYSTEM = `You write personas for members of a long-running AI discussion group: specialists who will argue, check code and evidence, and change their minds when shown wrong.`;
+
+export function personaDraftPrompt(o: { line: string; view: RoomView; taken: string[] }): string {
+  return [
+    describeRoom(o.view),
+    `The human wants a new member: ${o.line}`,
+    `Write the member. Answer with exactly these three lines and nothing else:
+ID: <short lowercase id with dashes, not one of: ${o.taken.join(", ") || "none"}>
+ROLE: <a few words>
+PERSONA: <two to four sentences: their expertise, what they look for, how they argue>`,
+  ].join("\n\n");
+}
+
+/** Reads a drafted persona; undefined when the reply doesn't have all three parts. */
+export function parsePersonaDraft(text: string): { id: string; role: string; persona: string } | undefined {
+  const get = (k: string) => new RegExp(`^\\s*${k}:\\s*(.+)$`, "im").exec(text)?.[1].trim();
+  const id = get("ID")?.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  const role = get("ROLE");
+  const persona = /^\s*PERSONA:\s*([\s\S]+)$/im.exec(text)?.[1].trim();
+  return id && role && persona ? { id, role, persona } : undefined;
 }
 
 export const EXIT_MEMO = `You are leaving this Quorum room. Write a short exit memo for whoever continues the work: the threads you leave open, what you still believe and why, and anything unfinished. A few bullet points. Reply with the memo only.`;

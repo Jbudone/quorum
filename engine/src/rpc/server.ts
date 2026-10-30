@@ -14,7 +14,7 @@ import { Room, type TransportFactory } from "../room/room.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
-import { Workspace } from "../room/workspace.js";
+import { personaFor, Workspace } from "../room/workspace.js";
 
 /**
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
@@ -28,7 +28,8 @@ import { Workspace } from "../room/workspace.js";
  * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept},
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
- * room.export {slug}, room.read {paths}. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
+ * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
+ * persona.draft {line}, persona.get {key}. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
  * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
  *
  * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
@@ -62,6 +63,7 @@ function snapshot(r: Room) {
     agents: c.agents,
     left: c.left ?? [],
     support: c.support,
+    clis: r.clis,
     digest: r.digest() ?? "",
     tuning: { parallel: c.parallel, turnCap: c.turnCap, quotaWarn: c.quotaWarn, quotaStop: c.quotaStop, independent: Boolean(c.independent) },
     focus: r.focus() ?? "",
@@ -298,6 +300,29 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return {};
       case "room.post":
         return { seq: needRoom().post(String(p.text ?? ""), p.to ? String(p.to) : "room", p.thread === "new" ? "new" : p.thread ? Number(p.thread) : undefined).seq };
+      case "room.join": {
+        const r = needRoom();
+        return {
+          id: await r.join({
+            id: String(p.id ?? ""),
+            cli: String(p.cli) as CliName,
+            model: p.model ? String(p.model) : undefined,
+            role: p.role ? String(p.role) : undefined,
+            persona: p.persona ? String(p.persona) : undefined,
+            brief: Boolean(p.brief),
+            reading: Array.isArray(p.reading) ? p.reading.map(String) : undefined,
+            question: p.question ? String(p.question) : undefined,
+            suggestion: p.suggestion !== undefined ? Number(p.suggestion) : undefined,
+          }),
+        };
+      }
+      case "persona.draft":
+        return needRoom().draftPersona(String(p.line ?? ""));
+      case "persona.get": {
+        const key = String(p.key ?? "");
+        const pe = personaFor(room?.store.root ?? String(p.repo ?? process.cwd()), key, opts.assetsDir);
+        return { key, role: pe.role, body: pe.body };
+      }
       case "room.read":
         return { reading: needRoom().setReading(Array.isArray(p.paths) ? p.paths.map(String) : []) };
       case "room.ask": {

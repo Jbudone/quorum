@@ -21,6 +21,7 @@ for weeks, where they come back to ask questions, steer, and add feature request
 | Stats | The floor tags each message it reads (idea, critique, agreement, concession, question, evidence, decision; headline; whom it challenges) in the same call: a full-width strip of recent events, discussions (agreed/open) and member activity. |
 | Assistant | Short, natural replies (one to three sentences). Column: a "needs you" card (selected only in `ctrl+n` review, so Enter always sends text), a two-line status, then the chat. Visible "typing" for the assistant and every support role. |
 | Independent takes | Per-channel knob, default off (`/independent on`): members picked together draft from the same snapshot, then revise after reading whoever answered first. To be measured. |
+| Adding members | `ctrl+a` / `/add` opens a modal: who (workspace member or new) → role (preset, or one line the assistant drafts into an editable persona) → model (only the channel's CLIs; the engine enforces it) → onboarding (a scribe-written catch-up brief for the role, a per-member reading list, a first question), then `room.join`. `y` on an assistant's add/hire suggestion opens it prefilled and approves the suggestion on join. Onboarding lives in the member's state and is used on its first turn only. |
 | Rule | The human is never left unanswered: if the floor picks nobody after the human speaks, the member who spoke least recently in that conversation answers. |
 
 Verified live (Claude Sonnet assistant, Haiku/Codex/opencode members, opencode floor): setup reply in ~8 s with

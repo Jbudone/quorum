@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -156,18 +157,18 @@ func TestRoomJourney(t *testing.T) {
 	lacks(t, s, "PASS")
 
 	// A suggestion waits in the "needs you" card; nothing is selected until ctrl+n.
-	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "hire", Args: []string{"edge-case-hunter", "claude", "", "edge-case hunter", "Finds what breaks."}, Why: "nobody covers abuse"})
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "steer", Args: []string{"Settle the TTL first."}, Why: "they keep circling"})
 	s = h.screen()
 	contains(t, s, "NEEDS YOU · 2") // the recorded steer is still waiting too
-	contains(t, s, "bring in edge-case-hunter (edge-case hunter)")
+	contains(t, s, "steer the room: “Settle the TTL first.”")
 	contains(t, s, "ctrl+n to review")
-	lacks(t, s, "❯ bring in")
+	lacks(t, s, "❯ steer")
 
 	// With suggestions waiting, typing in the assistant's box and pressing Enter sends the question.
 	h.press("tab")
-	h.typ("is the hire worth it?")
+	h.typ("is the steer worth it?")
 	h.press("enter")
-	if c := h.expectCall("room.ask"); c.params["text"] != "is the hire worth it?" {
+	if c := h.expectCall("room.ask"); c.params["text"] != "is the steer worth it?" {
 		t.Fatalf("enter should ask, got %s %v", c.method, c.params)
 	}
 	h.send(engineMsg{rpc.Event{Name: "room.assistant.delta", Data: rpc.AssistantDelta{Delta: "Yes, nobody covers abuse.\n>> pause: look"}}})
@@ -176,7 +177,7 @@ func TestRoomJourney(t *testing.T) {
 
 	// Reviewing: keys answer suggestions and never reach the text box.
 	h.press("ctrl+n", "down")
-	contains(t, h.screen(), "❯ bring in edge-case-hunter")
+	contains(t, h.screen(), "❯ steer the room")
 	h.press("y")
 	if c := h.expectCall("room.resolve"); c.params["id"] != 9 || c.params["accept"] != true {
 		t.Fatalf("resolve params: %v", c.params)
@@ -185,7 +186,7 @@ func TestRoomJourney(t *testing.T) {
 		t.Fatalf("review keys leaked into the box: %q", v)
 	}
 	h.event(rpc.RoomEvent{Type: "suggestion.resolved", Seq: 91, ID: 9, Accepted: true})
-	contains(t, h.screen(), "You approved: bring in edge-case-hunter")
+	contains(t, h.screen(), "You approved: steer the room")
 	h.press("esc", "tab")
 
 	// The room box: open mentions, private messages, commands, and errors that explain themselves.
@@ -269,6 +270,86 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, h.screen(), "What should this channel work on?")
 }
 
+// reply answers the app's latest request for a method with a hand-written result.
+func (h *roomHarness) reply(method, result string) call {
+	h.t.Helper()
+	c := h.callTo(method)
+	h.send(engineMsg{rpc.Response{ID: c.id, Result: json.RawMessage(result)}})
+	return c
+}
+
+func TestRoomJoinModal(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("ctrl+a")
+	h.answer(h.callTo("workspace.open").id, 12) // everyone in the workspace is already here, so "who" is skipped
+	h.reply("personas.list", `[{"key":"skeptic","name":"Skeptic","role":"critic","custom":false}]`)
+	h.reply("clis.list", `[{"cli":"claude","usable":true,"models":["sonnet"]},{"cli":"mock","usable":true,"models":[]}]`)
+	s := h.screen()
+	contains(t, s, "BRING SOMEONE IN")
+	contains(t, s, "describe them in a line")
+	contains(t, s, "skeptic  critic")
+
+	// Describe in a line; the assistant drafts a persona to edit.
+	h.press("enter")
+	h.typ("someone who checks tenant isolation")
+	h.press("enter")
+	if c := h.expectCall("persona.draft"); c.params["line"] != "someone who checks tenant isolation" {
+		t.Fatalf("draft params: %v", c.params)
+	}
+	h.reply("persona.draft", `{"id":"tenancy-auditor","role":"multi-tenancy auditor","persona":"Audits caches for leaks."}`)
+	contains(t, h.screen(), "tenancy-auditor")
+	contains(t, h.screen(), "Audits caches for leaks.")
+	h.press("enter") // past the persona: on to the model
+
+	// Only the CLIs this channel runs on are offered (a mock channel never reaches a real CLI).
+	s = h.screen()
+	contains(t, s, "mock (its default model)")
+	lacks(t, s, "claude · sonnet")
+	h.press("enter")
+
+	// Onboarding: the brief is on by default; a first question is optional.
+	contains(t, h.screen(), "[x] catch-up brief")
+	h.press("down", "down")
+	h.typ("Are keys tenant-scoped?")
+	h.press("enter")
+	join := h.expectCall("room.join")
+	want := map[string]any{"id": "tenancy-auditor", "cli": "mock", "role": "multi-tenancy auditor", "persona": "Audits caches for leaks.", "brief": true, "question": "Are keys tenant-scoped?"}
+	for k, v := range want {
+		if join.params[k] != v {
+			t.Fatalf("join %s = %v, want %v (%v)", k, join.params[k], v, join.params)
+		}
+	}
+	if _, ok := join.params["reading"]; ok {
+		t.Fatalf("an unchanged reading list is left to the channel: %v", join.params)
+	}
+	contains(t, h.screen(), "onboarding tenancy-auditor")
+	h.reply("room.join", `{"id":"tenancy-auditor"}`)
+	lacks(t, h.screen(), "BRING SOMEONE IN")
+	contains(t, h.screen(), "tenancy-auditor joined.")
+
+	// y on the assistant's "bring in" suggestion opens the modal filled in, ready to join as proposed.
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "hire", Args: []string{"edge-case-hunter", "mock", "", "edge-case hunter", "Finds what breaks."}, Why: "nobody covers abuse"})
+	h.press("ctrl+n", "down", "y")
+	s = h.screen()
+	contains(t, s, "BRING SOMEONE IN")
+	contains(t, s, "edge-case-hunter on mock")
+	h.press("enter")
+	join = h.expectCall("room.join")
+	if join.params["suggestion"] != 9 || join.params["persona"] != "Finds what breaks." {
+		t.Fatalf("prefilled join params: %v", join.params)
+	}
+
+	// /add alone opens it too; esc backs out step by step.
+	h.reply("room.join", `{"id":"edge-case-hunter"}`)
+	h.typ("/add")
+	h.press("enter")
+	contains(t, h.screen(), "BRING SOMEONE IN")
+	h.answer(h.callTo("workspace.open").id, 12)
+	h.press("esc", "esc")
+	lacks(t, h.screen(), "BRING SOMEONE IN")
+}
+
 func TestRoomNarrowKeepsTheAssistantOnScreen(t *testing.T) {
 	h := newRoomHarness(t, 56, 40)
 	h.setup()
@@ -344,7 +425,7 @@ func TestParseRoomInput(t *testing.T) {
 			t.Errorf("%q → %+v, want %s", in, got, want)
 		}
 	}
-	for in, want := range map[string]string{"/new": "new", "/rooms": "switch", "/docs": "docs", "/help": "help", "/thread 12": "thread", "/ask why?": "open-thread"} {
+	for in, want := range map[string]string{"/add": "join", "/new": "new", "/rooms": "switch", "/docs": "docs", "/help": "help", "/thread 12": "thread", "/ask why?": "open-thread"} {
 		if got := r.parseRoomInput(in); got.local != want {
 			t.Errorf("%q → %+v, want local %s", in, got, want)
 		}

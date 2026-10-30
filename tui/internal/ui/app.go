@@ -195,7 +195,7 @@ func (a *App) needsTick() bool {
 		return true // the banner animates
 	}
 	if a.screen == screenRoom {
-		return a.rm != nil && (a.rm.room == nil && a.rm.setup == nil || a.rm.room != nil && a.rm.room.animating() || a.rm.setup != nil && (a.rm.setup.waiting || a.rm.setup.creating))
+		return a.rm != nil && (a.rm.room == nil && a.rm.setup == nil || a.rm.join != nil || a.rm.room != nil && a.rm.room.animating() || a.rm.setup != nil && (a.rm.setup.waiting || a.rm.setup.creating))
 	}
 	s := a.sess
 	return s != nil && (s.animating() || s.phase == phaseStarting || s.phase == phaseRunning || s.busy() || s.anyThinking())
