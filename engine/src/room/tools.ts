@@ -15,10 +15,15 @@ export interface ToolDef {
 export const ROOM_TOOLS: ToolDef[] = [
   {
     name: "post",
-    description: "Say something to the whole room. Use reply_to with a message number (#N) when answering one message.",
+    description:
+      "Say something to the whole room. Use reply_to with a message number (#N) when answering one message. Set topic only to file a short note under a parked topic; leave it out to speak on the topic in focus.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, reply_to: { type: "integer", description: "message number you answer" } },
+      properties: {
+        text: { type: "string" },
+        reply_to: { type: "integer", description: "message number you answer" },
+        topic: { type: "string", description: "slug of a parked topic this note belongs to" },
+      },
       required: ["text"],
     },
   },
@@ -35,6 +40,45 @@ export const ROOM_TOOLS: ToolDef[] = [
     name: "pass",
     description: "Say nothing this turn because you have nothing new to add. Wakes nobody.",
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "raise_topic",
+    description: "Propose a new question that deserves its own discussion. It starts parked; the Chair and the human decide when it gets focus.",
+    inputSchema: {
+      type: "object",
+      properties: { title: { type: "string" }, why: { type: "string" } },
+      required: ["title"],
+    },
+  },
+  {
+    name: "doc_draft",
+    description:
+      "Write or revise a document the room is producing (a plan, an issue, a decision record). Each call saves a new full version; the Chair accepts a version once the room agrees.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "short name, e.g. 'plan' or 'issue-login-timeout'" },
+        text: { type: "string", description: "the whole document in markdown" },
+        kind: { type: "string", enum: ["plan", "issue", "decision", "other"] },
+        note: { type: "string", description: "what changed in this version" },
+      },
+      required: ["name", "text"],
+    },
+  },
+  {
+    name: "read_doc",
+    description: "Read a room document (latest version) or a shared note kept by the scribe (decisions, facts, open-questions, code-notes, topics/<slug>). Call with no name to list them.",
+    inputSchema: { type: "object", properties: { name: { type: "string" } } },
+  },
+  {
+    name: "notebook_read",
+    description: "Read your private notebook. Only you see it, and it persists across turns and restarts.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "notebook_write",
+    description: "Replace your private notebook with new contents: your working notes, positions and things to check.",
+    inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
   },
   {
     name: "read_room",

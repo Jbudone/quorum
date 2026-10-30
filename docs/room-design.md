@@ -74,3 +74,13 @@ Each step ends with something runnable, mostly against the mock transport.
 - Exact wake rules (how much topic activity wakes a non-addressed agent) and per-agent cooldowns.
 - Thresholds for the hybrid context switch and the staleness metric; tune on real runs.
 - Gemini and agy have no per-run way to add an MCP server, so they still speak through their final reply text (exactly `PASS` to pass). Revisit if either gains a flag.
+
+## Future
+
+- **Remote control from a phone (web interface).** Keep a room running on this machine and follow or steer it
+  from a phone, like Claude Code's remote control. Shape: the engine (not the TUI) owns the running room, and a
+  small authenticated web server exposes the same room RPC methods and event stream (SSE or WebSocket) that the
+  TUI uses, with a mobile page showing the feed, the assistant pane and suggestion approvals. Things to settle
+  first: whether the room keeps running when the TUI closes (today closing it pauses the room), how the phone
+  reaches the machine (tailnet, tunnel, or relay), auth (pairing code + per-device token), and making the RPC
+  multi-client so the TUI and phone can watch the same room at once.

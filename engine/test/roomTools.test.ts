@@ -1,146 +1,319 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentSpec } from "../src/config.js";
-import { Room } from "../src/room/room.js";
-import { BRIDGE, ToolServer } from "../src/room/tools.js";
+import { parseDirectives, parseFileBlocks } from "../src/room/directives.js";
+import { computeSignals } from "../src/room/signals.js";
+import type { RoomEvent } from "../src/room/store.js";
+import { BRIDGE, ROOM_TOOLS, ToolServer } from "../src/room/tools.js";
 import { ClaudeTransport } from "../src/transports/claude.js";
 import { CodexTransport } from "../src/transports/codex.js";
 import { OpencodeTransport } from "../src/transports/opencode.js";
-import type { AgentEvent, AgentTransport, McpServerSpec, SendOptions } from "../src/transports/index.js";
+import type { McpServerSpec } from "../src/transports/index.js";
+import { AGENTS, callTool, messages, rig, types, type ToolCall } from "./roomRig.js";
 
-const agents: AgentSpec[] = [
-  { id: "arch", cli: "mock", persona: "architect" },
-  { id: "skeptic", cli: "mock", persona: "skeptic" },
-];
-
-type Call = [name: string, args?: Record<string, unknown>];
-
-/** Calls a room tool the way the bridge does: over HTTP with the turn's token. */
-async function call(mcp: McpServerSpec, name: string, args: Record<string, unknown> = {}): Promise<{ text?: string; error?: string }> {
-  const res = await fetch(`${mcp.env.QUORUM_ROOM_URL}/call`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${mcp.env.QUORUM_ROOM_TOKEN}` },
-    body: JSON.stringify({ name, arguments: args }),
-  });
-  return res.json();
-}
-
-/**
- * Tool-capable fake agents. `script(agent, turn)` lists the tool calls a turn makes; every result is
- * recorded, and each turn ends with throwaway reply text that must never reach the room.
- */
-function rig(script: (agent: string, turn: number) => Call[]) {
-  const repo = mkdtempSync(join(tmpdir(), "quorum-room-tools-"));
-  const results: Record<string, { text?: string; error?: string }[]> = {};
-  const prompts: string[] = [];
-  const specs: McpServerSpec[] = [];
-  const turns: Record<string, number> = {};
-  const transportFor = (agent: string): AgentTransport => ({
-    id: agent,
-    supportsMcp: true,
-    async *send(prompt: string, opts?: SendOptions): AsyncIterable<AgentEvent> {
-      prompts.push(prompt);
-      specs.push(opts!.mcp!);
-      for (const [name, args] of script(agent, (turns[agent] = (turns[agent] ?? 0) + 1))) {
-        (results[agent] ??= []).push(await call(opts!.mcp!, name, args));
-      }
-      yield { type: "text", delta: "scratch notes" };
-      yield { type: "done" };
-    },
-  });
-  return { repo, transportFor, results, prompts, specs };
-}
-
-const rooms: Room[] = [];
+let cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
-  await Promise.all(rooms.splice(0).map((r) => r.close()));
+  await Promise.all(cleanup.map((c) => c()));
+  cleanup = [];
 });
-
-function open(r: ReturnType<typeof rig>, extra: Partial<Parameters<typeof Room.create>[0]> = {}) {
-  const room = Room.create({ repo: r.repo, transportFor: r.transportFor, topic: "pick a cache", agents, ...extra });
-  rooms.push(room);
-  return room;
-}
+const setup = (o: Parameters<typeof rig>[0] = {}) => {
+  const r = rig(o);
+  cleanup.push(r.closeAll);
+  return r;
+};
+/** Members whose first turn runs `first` and who pass ever after. */
+const firstTurn = (who: string, first: ToolCall[]) => (agent: string, n: number) => (agent === who && n === 1 ? first : [["pass"] as ToolCall]);
 
 describe("Room tools", () => {
   it("posts, replies and DMs through the tools; the final reply text stays private", async () => {
-    const r = rig((agent, n) =>
-      agent === "arch" && n === 1
-        ? [["post", { text: "Use an LRU.", reply_to: 1 }], ["dm", { to: "skeptic", text: "you'll hate this" }]]
-        : [["pass"]],
-    );
+    const r = setup({
+      member: firstTurn("arch", [
+        ["post", { text: "Use an LRU.", reply_to: 3 }],
+        ["dm", { to: "skeptic", text: "you'll hate this" }],
+      ]),
+    });
     // One at a time so message numbers are deterministic.
-    const room = open(r, { parallel: 1 });
+    const room = r.create({ parallel: 1 });
     room.resume();
     await room.settled();
 
-    const msgs = room.store.events().filter((e) => e.type === "message");
-    expect(msgs.map((e) => e.type === "message" && [e.from, e.to, e.text, e.replyTo])).toEqual([
+    expect(messages(room).map((e) => e.type === "message" && [e.from, e.to, e.text, e.replyTo])).toEqual([
       ["human", "room", "pick a cache", undefined],
-      ["arch", "room", "Use an LRU.", 1],
+      ["arch", "room", "Use an LRU.", 3],
       ["arch", "skeptic", "you'll hate this", undefined],
     ]);
     expect(JSON.stringify(room.store.events())).not.toContain("scratch notes");
-    expect(r.results.arch).toEqual([{ text: "Sent as #3." }, { text: "Sent as #4." }]);
-    // skeptic's second wake (for arch's messages) shows the reply marker and the DM.
-    expect(r.prompts.at(-1)).toContain("[#3] arch (re #1)");
-    expect(r.prompts.at(-1)).toContain("[#4] arch → skeptic (private)");
-    expect(r.prompts[0]).toContain("Speak only through the quorum tools");
+    expect(r.results.arch).toEqual([{ text: "Sent as #5." }, { text: "Sent as #6." }]);
+    const last = r.memberCalls().at(-1)!.prompt;
+    expect(last).toContain("[#5] arch (re #3)");
+    expect(last).toContain("[#6] arch → skeptic (private)");
+    expect(r.memberCalls()[0].prompt).toContain("Speak only through the quorum tools");
     expect(room.state).toBe("idle");
   });
 
-  it("rejects bad calls with a message the agent can act on", async () => {
-    const r = rig((agent, n) =>
-      agent === "arch" && n === 1
-        ? [
-            ["dm", { to: "nobody", text: "hi" }],
-            ["dm", { to: "arch", text: "me" }],
-            ["post", { text: "  " }],
-            ["post", { text: "x", reply_to: 99 }],
-            ["shout", {}],
-            ...Array.from({ length: 5 }, (_, i): Call => ["post", { text: `point ${i}` }]),
-          ]
-        : [["pass"]],
-    );
-    const room = open(r, { agents: agents.slice(0, 1) });
+  it("rejects bad calls with a message the member can act on", async () => {
+    const r = setup({
+      member: firstTurn("arch", [
+        ["dm", { to: "nobody", text: "hi" }],
+        ["dm", { to: "arch", text: "me" }],
+        ["post", { text: "  " }],
+        ["post", { text: "x", reply_to: 1 }],
+        ["post", { text: "x", topic: "nope" }],
+        ["shout", {}],
+        ["read_doc", { name: "nothing" }],
+        ...Array.from({ length: 5 }, (_, i): ToolCall => ["post", { text: `point ${i}` }]),
+      ]),
+    });
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
     room.resume();
     await room.settled();
     expect(r.results.arch.map((x) => x.error ?? x.text)).toEqual([
       'no member "nobody"; members are human',
       'no member "arch"; members are human',
       "text is required",
-      "no message #99",
+      "no message #1",
+      'no open topic "nope"; open topics are pick-a-cache',
       'unknown tool "shout"',
-      "Sent as #3.",
-      "Sent as #4.",
+      'nothing called "nothing".\nNo documents yet.\nShared notes: none yet',
       "Sent as #5.",
       "Sent as #6.",
+      "Sent as #7.",
+      "Sent as #8.",
       "at most 4 messages per turn; wait for replies",
     ]);
   });
 
   it("refuses a token once its turn is over", async () => {
-    const r = rig(() => [["pass"]]);
-    const room = open(r, { agents: agents.slice(0, 1) });
+    const r = setup({ member: () => [["pass"]] });
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
     room.resume();
     await room.settled();
-    expect(await call(r.specs[0], "post", { text: "late" })).toEqual({ error: "this turn is over; nothing was sent" });
-    expect(await call({ ...r.specs[0], env: { ...r.specs[0].env, QUORUM_ROOM_TOKEN: "forged" } }, "pass")).toMatchObject({
-      error: expect.stringMatching(/turn is over/),
-    });
+    const spec = r.memberCalls()[0].opts!.mcp!;
+    expect(await callTool(spec, "post", { text: "late" })).toEqual({ error: "this turn is over; nothing was sent" });
+    expect(await callTool({ ...spec, env: { ...spec.env, QUORUM_ROOM_TOKEN: "forged" } }, "pass")).toMatchObject({ error: expect.stringMatching(/turn is over/) });
   });
 
   it("pages back through history with read_room", async () => {
-    const r = rig((agent, n) => (n === 1 ? [["read_room", { before: 2, limit: 1 }]] : [["pass"]]));
-    const room = open(r, { agents: agents.slice(0, 1) });
+    const r = setup({ member: firstTurn("arch", [["read_room", { before: 4, limit: 1 }]]) });
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
     room.post("second thought");
     room.resume();
     await room.settled();
-    expect(r.results.arch[0].text).toBe("[#1] human:\npick a cache");
+    expect(r.results.arch[0].text).toBe("[#3] human:\npick a cache");
+  });
+
+  it("raises topics, files parked notes without waking anyone, and moves focus", async () => {
+    const r = setup({
+      member: (agent, n) =>
+        agent === "arch" && n === 1
+          ? [["raise_topic", { title: "Bulk import consistency", why: "keeps coming up" }], ["post", { text: "parked idea", topic: "bulk-import-consistency" }]]
+          : [["pass"]],
+    });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    expect(room.topics()).toEqual([
+      { slug: "pick-a-cache", title: "pick a cache", closed: false },
+      { slug: "bulk-import-consistency", title: "Bulk import consistency", closed: false },
+    ]);
+    // skeptic took one turn (for the topic) and wasn't woken again by the parked note.
+    expect(r.memberCalls().filter((c) => c.agent === "skeptic")).toHaveLength(1);
+    expect(messages(room).at(-1)).toMatchObject({ topic: "bulk-import-consistency" });
+
+    room.setFocus("bulk-import-consistency");
+    await room.settled();
+    expect(room.focus()).toBe("bulk-import-consistency");
+    expect(() => room.setFocus("nope")).toThrow(/no topic/);
+    room.closeTopic("pick-a-cache", "human", "settled");
+    expect(room.topics()[0].closed).toBe(true);
+    expect(() => room.setFocus("pick-a-cache")).toThrow(/closed/);
+  });
+
+  it("versions documents, reads them back, and keeps private notebooks", async () => {
+    const r = setup({
+      member: (agent, n) =>
+        agent === "arch" && n === 1
+          ? [
+              ["doc_draft", { name: "Plan", kind: "plan", text: "# Plan\nv1" }],
+              ["doc_draft", { name: "plan", text: "# Plan\nv2", note: "tighter" }],
+              ["read_doc", { name: "plan" }],
+              ["read_doc", {}],
+              ["notebook_write", { text: "check TTL" }],
+              ["notebook_read"],
+            ]
+          : [["pass"]],
+    });
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
+    room.resume();
+    await room.settled();
+    expect(r.results.arch.map((x) => x.error ?? x.text)).toEqual([
+      "Saved plan v1.",
+      "Saved plan v2.",
+      "plan v2:\n\n# Plan\nv2\n",
+      "Documents: plan v2\nShared notes: none yet",
+      "Notebook saved.",
+      "check TTL\n",
+    ]);
+    expect(room.docs()).toEqual([{ slug: "plan", version: 2, kind: "plan" }]);
+    expect(room.store.events().filter((e) => e.type === "doc.revised").at(-1)).toMatchObject({ note: "tighter", by: "arch" });
+
+    // On a fresh start the member sees its notebook and the documents.
+    room.store.saveAgentState("arch", { lastRead: 0, turns: 3 });
+    room.post("next");
+    await room.settled();
+    const fresh = r.memberCalls().at(-1)!.prompt;
+    expect(fresh).toContain("Your private notebook:\ncheck TTL");
+    expect(fresh).toContain("Documents: plan (plan) v2");
+  });
+});
+
+describe("Room support roles", () => {
+  it("the Chair posts, nudges, raises topics, proposes focus, and accepting a document pauses for review", async () => {
+    const r = setup({
+      member: (agent, n) => (agent === "arch" && n === 1 ? [["doc_draft", { name: "plan", kind: "plan", text: "# Plan" }], ["post", { text: "drafted" }]] : [["pass"]]),
+      chair: [
+        "Skeptic, your view?\n>> nudge: skeptic | weigh in on the plan\n>> raise: Rollout | keeps coming up\n>> focus: rollout | next\n>> accept: plan v1\n>> launch: rockets",
+        "PASS",
+      ],
+    });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    const chair = messages(room).filter((e) => e.type === "message" && e.from === "chair");
+    expect(chair.map((e) => e.type === "message" && [e.to, e.text])).toEqual([
+      ["skeptic", "weigh in on the plan"],
+      ["room", "Skeptic, your view?"],
+    ]);
+    expect(room.topics().map((t) => t.slug)).toContain("rollout");
+    expect(room.pending()).toMatchObject([{ from: "chair", action: "focus", args: ["rollout"], why: "next" }]);
+    expect(room.docs()[0]).toMatchObject({ slug: "plan", accepted: 1 });
+    expect(room.state).toBe("paused");
+    expect(room.store.events().find((e) => e.type === "paused")).toMatchObject({ reason: "milestone: plan v1 accepted" });
+
+    await room.resolve(room.pending()[0].id, true);
+    expect(room.focus()).toBe("rollout");
+    expect(room.pending()).toEqual([]);
+    await expect(room.resolve(99, true)).rejects.toThrow(/no open suggestion/);
+  });
+
+  it("the scribe writes only allowed docs and tags code notes with the commit", async () => {
+    const r = setup({
+      member: () => "PASS",
+      scribe: ["=== decisions.md ===\n- LRU (#3)\n=== ../../etc/passwd ===\nnope\n=== topics/pick-a-cache.md ===\nwhere we are\n=== code-notes.md ===\nrepo layer"],
+    });
+    const room = r.create({ agents: AGENTS.slice(0, 1) });
+    room.post("more");
+    await room.runScribe();
+    expect(room.store.docPaths()).toEqual(["decisions.md", "code-notes.md", "topics/pick-a-cache.md"]);
+    expect(room.store.events().at(-1)).toMatchObject({ type: "docs.updated", files: ["decisions.md", "topics/pick-a-cache.md", "code-notes.md"] });
+    expect(room.store.meta()).toMatchObject({ codeCommit: "abc123", scribeSeq: 4 });
+
+    // When the repo moves on, members are warned the code notes may be stale.
+    const later = setup({ member: () => "PASS" });
+    const again = (await import("../src/room/room.js")).Room.open(room.id, { repo: r.repo, transports: later.transports, head: () => "def456" });
+    cleanup.push(() => again.close());
+    again.resume();
+    await again.settled();
+    const prompt = later.memberCalls()[0].prompt;
+    expect(prompt).toContain("Shared notes, decisions.md:\n- LRU (#3)");
+    expect(prompt).toContain("written at commit abc123, but the repo is now at def456");
+  });
+
+  it("the assistant answers privately, proposes changes, and only pauses by itself", async () => {
+    const r = setup({
+      member: () => "PASS",
+      assistant: ["They agree on an LRU (#3).\n>> add: security claude | nobody covers abuse\n>> steer: Decide the TTL first.\n>> pause: you should look at this"],
+    });
+    const room = r.create();
+    room.resume();
+    await room.settled();
+    const deltas: string[] = [];
+    const answer = await room.ask("where are we?", (d) => deltas.push(d));
+    expect(answer).toBe("They agree on an LRU (#3).");
+    expect(deltas.join("")).toContain(">> add:");
+    expect(room.state).toBe("paused");
+    expect(room.pending().map((p) => [p.action, p.args])).toEqual([
+      ["add", ["security", "claude"]],
+      ["steer", ["Decide the TTL first."]],
+    ]);
+    const asides = room.store.events().filter((e) => e.type === "aside");
+    expect(asides.map((e) => e.type === "aside" && e.from)).toEqual(["human", "assistant"]);
+    // Members never see asides or suggestions.
+    expect(r.memberCalls().every((c) => !c.prompt.includes("where are we"))).toBe(true);
+    expect(r.calls.find((c) => c.agent === "assistant")!.prompt).toContain("The human asks you: where are we?");
+
+    await room.resolve(1, true);
+    expect(room.store.config().agents.map((a) => a.id)).toEqual(["arch", "skeptic", "security"]);
+    await room.resolve(2, false);
+    expect(messages(room).some((e) => e.type === "message" && e.text === "Decide the TTL first.")).toBe(false);
+  });
+
+  it("a removed member writes an exit memo and can be brought back", async () => {
+    const r = setup({ member: () => "PASS" });
+    const room = r.create();
+    room.store.writeNotebook("skeptic", "my notes");
+    await room.removeMember("skeptic");
+    expect(room.store.config().agents.map((a) => a.id)).toEqual(["arch"]);
+    expect(room.store.events().at(-1)).toMatchObject({ type: "agent.left", agent: "skeptic", memo: "- skeptic memo" });
+    expect(room.store.notebook("skeptic")).toBe("");
+    await expect(room.removeMember("skeptic")).rejects.toThrow(/no member/);
+
+    expect(room.addMember({ persona: "skeptic", cli: "mock" })).toBe("skeptic");
+    expect(room.store.notebook("skeptic")).toContain("## Exit memo");
+    expect(room.addMember({ persona: "skeptic", cli: "mock", model: "other" })).toBe("skeptic-2");
+    expect(() => room.addMember({ persona: "nope", cli: "mock" })).toThrow(/persona/);
+    room.resume();
+    await room.settled();
+    const joined = r.memberCalls().find((c) => c.agent === "skeptic-2")!.prompt;
+    expect(joined).toContain("You have just joined a discussion already under way");
+  });
+
+  it("files an issue document only when asked", async () => {
+    const filed: [string, string][] = [];
+    const r = setup({ member: firstTurn("arch", [["doc_draft", { name: "issue-ttl", kind: "issue", text: "# TTL too long\n\nDetails." }]]) });
+    const room = r.create({
+      agents: AGENTS.slice(0, 1),
+      fileIssue: async (t, b) => (filed.push([t, b]), "https://github.com/x/y/issues/1"),
+    });
+    room.resume();
+    await room.settled();
+    expect(await room.exportIssue("issue-ttl")).toBe("https://github.com/x/y/issues/1");
+    expect(filed).toEqual([["TTL too long", "Details."]]);
+    await expect(room.exportIssue("nope")).rejects.toThrow(/no document/);
+  });
+});
+
+describe("parsers and signals", () => {
+  it("splits prose from action lines and keeps only known verbs", () => {
+    expect(parseDirectives("Hello.\n>> focus: caching | done here\n>> nudge: bob | speak up\n>> fly: away", ["focus", "nudge"])).toEqual({
+      prose: "Hello.",
+      directives: [
+        { verb: "focus", args: ["caching"], why: "done here" },
+        { verb: "nudge", args: ["bob"], why: "speak up" },
+      ],
+    });
+  });
+
+  it("reads scribe file blocks", () => {
+    expect(parseFileBlocks("=== docs/facts.md ===\na\n=== notes.txt ===\nb\n=== topics/x.md ===\nc")).toEqual([
+      { path: "facts.md", text: "a" },
+      { path: "topics/x.md", text: "c" },
+    ]);
+  });
+
+  it("notices repetition, pass streaks and missing progress", () => {
+    const ev = (seq: number, body: object) => ({ seq, ts: "", ...body }) as RoomEvent;
+    const say = (seq: number, from: string, text: string) => ev(seq, { type: "message", from, to: "room", text });
+    const events = [
+      ev(1, { type: "doc.revised", slug: "plan", version: 1, kind: "plan", by: "a" }),
+      say(2, "a", "we should cache product lookups with an LRU"),
+      say(3, "b", "an LRU cache for product lookups makes sense"),
+      say(4, "a", "agreed, cache product lookups with an LRU"),
+      say(5, "human", "ok"),
+      ev(6, { type: "pass", from: "a" }),
+      ev(7, { type: "pass", from: "b" }),
+    ];
+    expect(computeSignals(events, ["a", "b"])).toEqual({ sinceProgress: 3, passStreak: 2, repetition: 0.8, repeats: 2 });
   });
 });
 
@@ -171,7 +344,7 @@ describe("MCP bridge", () => {
 
     const byId = Object.fromEntries(replies.map((r) => [r.id, r]));
     expect(byId[1].result).toMatchObject({ protocolVersion: "2025-06-18", serverInfo: { name: "quorum" } });
-    expect(byId[2].result.tools.map((t: any) => t.name)).toEqual(["post", "dm", "pass", "read_room"]);
+    expect(byId[2].result.tools.map((t: any) => t.name)).toEqual(ROOM_TOOLS.map((t) => t.name));
     expect(byId[3].result).toEqual({ content: [{ type: "text", text: "ok" }] });
     expect(byId[4].result).toEqual({ content: [{ type: "text", text: "not now" }], isError: true });
     expect(byId[5].error.code).toBe(-32601);

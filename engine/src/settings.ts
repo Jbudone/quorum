@@ -19,6 +19,10 @@ export interface UserSettings {
   verifier?: HelperModel;
   /** Opt-in: send reply text to Jev (via OpenRouter) to gate and verify diagrams. The key comes from OPENROUTER_API_KEY. */
   jev?: { enabled: boolean; model?: string; endpoint?: string };
+  /** Room support roles: the human's assistant, the Chair, and the scribe who keeps the shared notes. */
+  assistant?: HelperModel;
+  chair?: HelperModel;
+  scribe?: HelperModel;
 }
 
 const helper = (v: any): HelperModel | undefined =>
@@ -34,6 +38,9 @@ export function readSettings(user = userDir()): UserSettings {
     return {
       illustrator: helper(raw.illustrator),
       verifier: helper(raw.verifier),
+      assistant: helper(raw.assistant),
+      chair: helper(raw.chair),
+      scribe: helper(raw.scribe),
       jev: j && j.enabled === true ? { enabled: true, model: typeof j.model === "string" ? j.model : undefined, endpoint: typeof j.endpoint === "string" ? j.endpoint : undefined } : undefined,
     };
   } catch {
@@ -72,7 +79,7 @@ export function askOpenRouter(model: string, system: string, timeoutMs = 30_000,
 }
 
 /** CLIs tried, in order, for drawing diagrams when settings.toml names none. Claude is left out so its quota is not spent silently. */
-const CHEAP_FIRST: CliName[] = ["opencode", "agy", "codex"];
+export const CHEAP_FIRST: CliName[] = ["opencode", "agy", "codex"];
 
 /** The diagram drawer for a session, or undefined when no suitable model is available. */
 export function buildIllustrator(clis: CliInfo[], repo: string, settings = readSettings()): Illustrate | undefined {

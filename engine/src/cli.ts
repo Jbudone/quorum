@@ -5,6 +5,8 @@ import { loadPreset, mockify, type CliName } from "./config.js";
 import { doctor, installedClis, readHealth, resolveAvailable, usableClis, writeHealth } from "./doctor.js";
 import { Engine } from "./engine.js";
 import { Room } from "./room/room.js";
+import { renderEvent } from "./room/prompts.js";
+import { personaIn, roomTransports, supportFor } from "./room/setup.js";
 import { RoomStore } from "./room/store.js";
 import { serve } from "./rpc/server.js";
 import { createTransport } from "./transports/index.js";
@@ -100,48 +102,50 @@ async function room(argv: string[]): Promise<void> {
     },
   });
   const repo = resolve(values.repo!);
-  const clis = new Map<string, { cli: CliName; model?: string }>();
-  const transportFor = (id: string) =>
-    createTransport({
-      id,
-      ...(values.mock ? { cli: "mock" as const } : clis.get(id)!),
-      mock: { rules: [], fallback: `[${id}] mock reply`, chunkDelayMs: 0 },
-    });
+  const tuning = {
+    parallel: values.parallel ? Number(values.parallel) : undefined,
+    turnCap: values.turns ? Number(values.turns) : undefined,
+  };
   let r: Room;
   if (values.resume) {
-    const id = values.resume === "last" ? RoomStore.list(repo)[0] : values.resume;
+    const id = values.resume === "last" ? RoomStore.list(repo)[0]?.id : values.resume;
     if (!id) throw new Error("no saved rooms here");
-    for (const a of RoomStore.open(repo, id).config().agents) clis.set(a.id, a);
-    r = Room.open(id, { repo, transportFor });
-    r.configure({
-      parallel: values.parallel ? Number(values.parallel) : undefined,
-      turnCap: values.turns ? Number(values.turns) : undefined,
-    });
+    const store = RoomStore.open(repo, id);
+    r = Room.open(id, { repo, transports: roomTransports(personaIn(() => store.config()), 0) });
+    r.configure(tuning);
   } else {
     if (!values.topic) throw new Error("--topic or --resume is required");
     let config = loadPreset(values.preset!);
-    if (values.mock) config = mockify(config);
-    else config = resolveAvailable(config, usableClis(installedClis(), readHealth())).config;
-    for (const a of config.agents) clis.set(a.id, a);
+    const usable = values.mock ? (["mock"] as CliName[]) : usableClis(installedClis(), readHealth());
+    config = values.mock ? mockify(config) : resolveAvailable(config, usable).config;
+    const agents = config.agents;
     r = Room.create({
       repo,
-      transportFor,
+      transports: roomTransports((id) => agents.find((a) => a.id === id)?.persona ?? id, 0),
       topic: values.topic,
-      agents: config.agents,
-      parallel: values.parallel ? Number(values.parallel) : undefined,
-      turnCap: values.turns ? Number(values.turns) : undefined,
+      agents,
+      support: supportFor(config, usable),
+      ...tuning,
     });
   }
   r.on((e) => {
-    if (e.event === "room.event" && e.data.type === "message" && e.data.from !== "human")
-      console.log(`\n#${e.data.seq} ${e.data.from}:\n${e.data.text}`);
-    if (e.event === "room.event" && e.data.type === "pass") console.log(`\n#${e.data.seq} ${e.data.from} passes`);
-    if (e.event === "room.event" && e.data.type === "turn.failed") console.error(`\n! ${e.data.agent}: ${e.data.message}`);
-    if (e.event === "room.state" && e.data.state !== "running") console.log(`\n── ${e.data.state}${e.data.reason ? `: ${e.data.reason}` : ""} ──`);
+    if (e.event !== "room.event") {
+      if (e.event === "room.state" && e.data.state !== "running") console.log(`\n── ${e.data.state}${e.data.reason ? `: ${e.data.reason}` : ""} ──`);
+      return;
+    }
+    const d = e.data;
+    if (d.type === "message" && d.from !== "human") console.log(`\n#${d.seq} ${d.from}${d.to === "room" ? "" : ` → ${d.to}`}:\n${d.text}`);
+    else if (d.type === "aside" && d.from === "assistant") console.log(`\n  ┃ assistant: ${d.text.replace(/\n/g, "\n  ┃ ")}`);
+    else if (d.type === "turn.failed") console.error(`\n! ${d.agent}: ${d.message}`);
+    else if (d.type !== "message" && d.type !== "aside" && d.type !== "paused" && d.type !== "resumed") {
+      const line = renderEvent(d);
+      if (line) console.log(`\n${line}`);
+    }
   });
   process.once("SIGINT", () => r.pause("interrupted"));
   r.resume();
   await r.settled();
+  await r.close();
   console.log(`\nRoom saved to ${r.store.dir}\nResume with: quorum-engine room --resume ${r.id}`);
 }
 
