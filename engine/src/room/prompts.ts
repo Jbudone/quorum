@@ -45,6 +45,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — ${e.agent} joined the room`;
     case "agent.left":
       return `[#${e.seq}] — ${e.agent} left the room`;
+    case "agent.swapped":
+      return `[#${e.seq}] — ${e.agent} now runs on ${e.cli}${e.model ? ` ${e.model}` : ""}`;
     case "pass":
       return `[#${e.seq}] — ${e.from} passed`;
     case "aside":
@@ -54,7 +56,7 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     case "suggestion":
       return `[#${e.seq}] (suggestion ${e.id} from ${e.from}) ${e.action} ${e.args.join(" ")}${e.why ? ` | ${e.why}` : ""}`;
     case "suggestion.resolved":
-      return `[#${e.seq}] (suggestion ${e.id} ${e.accepted ? "approved" : "declined"} by the human)`;
+      return `[#${e.seq}] (suggestion ${e.id} ${e.withdrawn ? "withdrawn" : e.accepted ? `approved by the human${e.args ? `, changed to: ${e.args.join(" | ")}` : ""}` : "declined by the human"})`;
     case "paused":
       return `[#${e.seq}] — room paused: ${e.reason}`;
     case "resumed":
@@ -283,8 +285,15 @@ export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum chann
 
 Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked. Cite a message number like #12 only when it helps the human check you. Never pad, never recap what the human just said.`;
 
-export function assistantActions(clis: string[], members: string[]): string {
-  return `To keep a record, write a channel document (no approval needed; it's versioned and the human can browse it):
+/** How the assistant should pick models, with the models it can pick from. */
+export function modelGuide(menu?: string): string {
+  return `Give every member you hire or add a harness and a model, chosen on purpose: the strongest models for the roles that need the most judgment, cheaper fast ones for narrow or high-volume roles, and different vendors so the group doesn't share one model's blind spots. Watch the budget: a harness near its quota is a poor pick. Write them as \`<harness> <model id>\`, exactly as listed.${menu ? `\nModels you can run now:\n${menu}\nAny other model a harness lists works too.` : ""}`;
+}
+
+export function assistantActions(clis: string[], members: string[], menu?: string): string {
+  return `${modelGuide(menu)}
+
+To keep a record, write a channel document (no approval needed; it's versioned and the human can browse it):
 >> write: <doc-name> | <what changed>
 <the whole document, in markdown>
 >> end
@@ -298,6 +307,7 @@ To propose a change, end with action lines; the human approves or declines each,
 >> hire: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
                                    bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
 >> add: <member> <cli> [model] | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
+>> swap: <member> | <cli> [model] | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
 >> steer: <text>                          post a steering message to the channel as the human
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the focus
@@ -367,6 +377,8 @@ export function setupPrompt(o: {
   history: { from: "human" | "assistant"; text: string }[];
   /** Planning for a channel that already exists: where it stands. */
   channel?: string;
+  /** Models the assistant can pick from (see modelMenu). */
+  models?: string;
 }): string {
   return [
     `The project is at ${o.repo}. You can read files there to find the docs the human mentions.`,
@@ -387,6 +399,8 @@ ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision
 >> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
 >> steer: <optional first instruction to the whole group>
 Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.
+
+${modelGuide(o.models)}
 
 When the human asks you to note something down, or you've worked out something worth keeping (a plan, decisions, a record of this conversation), write it as a channel document; never say you can't write things down:
 >> write: <doc-name> | <what it is>

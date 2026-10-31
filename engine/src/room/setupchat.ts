@@ -41,6 +41,7 @@ export class SetupChat {
       clis: this.o.clis,
       personas: listPersonas(this.o.assetsDir).map((p) => p.key),
       history: this.history,
+      models: this.o.modelMenu?.(),
       ...(room ? { channel: room.brief() } : {}),
     });
     let reply = "";

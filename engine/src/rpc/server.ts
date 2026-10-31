@@ -10,12 +10,12 @@ import { councilFromWire, savePreset } from "../library.js";
 import { createTransport } from "../transports/index.js";
 import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
-import { Room, type TransportFactory } from "../room/room.js";
+import { checkEdit, Room, type TransportFactory } from "../room/room.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
 import { listModels } from "../models.js";
-import { getCatalog, mockCatalog, resetCatalog } from "../catalog.js";
+import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
 
@@ -28,7 +28,7 @@ import { personaFor, Workspace } from "../room/workspace.js";
  * presets.save {name, config}, doctor.
  *
  * Rooms: rooms.list {repo}, room.start {repo, mock?, preset? | config?, topic?, parallel?, turnCap?} (no preset: an empty room), room.open {repo, id},
- * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept},
+ * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept, args?} (args: the human's edit),
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
  * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
@@ -130,6 +130,12 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
   // A room's slow jobs (the assistant's answer, a member's exit memo) run beside each other, not in the council queue.
   const side = (fn: () => Promise<unknown>) =>
     void fn().catch((e) => write({ event: "error", data: { message: e instanceof Error ? e.message : String(e) } }));
+
+  // The assistant's model menu, from the catalog once it's built (never for mock channels).
+  const menuFor = (clis: string[]) => (clis.includes("mock") ? undefined : () => {
+    const c = cachedCatalog();
+    return c ? modelMenu(c, clis) : undefined;
+  });
 
   const need = (): Engine => {
     if (!engine) throw new Error("no session: call session.start first");
@@ -251,6 +257,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
             transports: transportsFor(personaIn(() => r.store.config())),
             assetsDir: opts.assetsDir,
             clis: r.clis,
+            modelMenu: menuFor(r.clis),
             support: { ...c.support, floor: c.support.floor ?? c.support.scribe },
             room: r,
           });
@@ -265,6 +272,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor((id) => (room ? personaIn(() => room!.store.config())(id) : id)),
           assetsDir: opts.assetsDir,
           clis: usable,
+          modelMenu: menuFor(usable),
           support: fake ? MOCK_SUPPORT : supportFor(usable),
         });
         return {};
@@ -306,6 +314,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor(personaIn(() => r.store.config())),
           assetsDir: opts.assetsDir,
           clis: usable,
+          modelMenu: menuFor(usable),
           topic: p.topic ? String(p.topic) : undefined,
           agents,
           support: fake ? MOCK_SUPPORT : supportFor(usable),
@@ -319,7 +328,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const store = RoomStore.open(String(p.repo), String(p.id));
         const fake = Boolean(opts.roomTransports) || Object.values(store.config().support).every((x) => x?.cli === "mock");
         const clis: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
-        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis });
+        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis) });
         await adopt(r);
         return snapshot(r);
       }
@@ -412,7 +421,11 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "room.resolve": {
         const r = needRoom();
-        side(() => r.resolve(Number(p.id), Boolean(p.accept)));
+        const args: string[] | undefined = Array.isArray(p.args) ? p.args.map(String) : undefined;
+        // A bad edit is refused here, so the form can say why and stay open.
+        const s = r.pending().find((x) => x.id === Number(p.id));
+        if (s && args && p.accept) checkEdit(s.action, s.args, args);
+        side(() => r.resolve(Number(p.id), Boolean(p.accept), args));
         return {};
       }
       case "room.configure":

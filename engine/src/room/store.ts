@@ -6,7 +6,7 @@ import type { AgentSpec, CliName } from "../config.js";
 export type Recipient = "room" | string;
 
 /** What a proposed change does; the human approves or declines each one. */
-export type SuggestionAction = "steer" | "add" | "hire" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer";
+export type SuggestionAction = "steer" | "add" | "hire" | "swap" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer";
 
 export type DocKind = "plan" | "issue" | "decision" | "other";
 
@@ -30,8 +30,8 @@ export type RoomEventBody =
   | { type: "thread.summary"; thread: number; text: string }
   /** Something only the human may approve. `from` is the assistant, the Chair, or a member. */
   | { type: "suggestion"; id: number; from: string; action: SuggestionAction; args: string[]; why: string }
-  /** `withdrawn`: whoever suggested it took it back. */
-  | { type: "suggestion.resolved"; id: number; accepted: boolean; withdrawn?: boolean }
+  /** `withdrawn`: whoever suggested it took it back. `args`: what the human changed it to before approving. */
+  | { type: "suggestion.resolved"; id: number; accepted: boolean; withdrawn?: boolean; args?: string[] }
   /** Mail sent to the project's agents (in .quorum/mail/). */
   | { type: "mail.out"; file: string; to: string; subject: string; by: string; thread?: number }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }
@@ -42,6 +42,8 @@ export type RoomEventBody =
   | { type: "docs.updated"; files: string[]; by: string }
   | { type: "agent.joined"; agent: string; persona: string; cli: CliName; model?: string }
   | { type: "agent.left"; agent: string; memo?: string }
+  /** A member (or support role) moved to another harness or model; its memory stays, its vendor session doesn't. */
+  | { type: "agent.swapped"; agent: string; cli: CliName; model?: string; was: { cli: CliName; model?: string } }
   | { type: "budget"; level: "warn" | "stop"; cli: string; detail: string };
 
 export type TagKind = "idea" | "critique" | "agreement" | "concession" | "question" | "evidence" | "decision";
@@ -219,6 +221,23 @@ export class RoomStore {
 
   setReading(reading: string[]): RoomConfig {
     return this.saveConfig({ ...this.config(), reading });
+  }
+
+  setSupport(role: keyof RoomConfig["support"], spec: SupportSpec): RoomConfig {
+    const c = this.config();
+    return this.saveConfig({ ...c, support: { ...c.support, [role]: spec } });
+  }
+
+  /** Every state file an agent has: its main conversation and each side thread (`id@t<seq>`). */
+  agentStateKeys(id: string): string[] {
+    try {
+      return readdirSync(join(this.dir, "agents"))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => f.slice(0, -5))
+        .filter((k) => k === id || k.startsWith(`${id}@`));
+    } catch {
+      return [];
+    }
   }
 
   setRoster(agents: AgentSpec[], left: AgentSpec[]): RoomConfig {

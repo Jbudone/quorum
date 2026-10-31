@@ -456,3 +456,44 @@ export function mockCatalog(config: ProvidersFile = { harnesses: ["claude", "cod
   });
   return { ...built, source: { from: "mock" } };
 }
+
+const fmtTokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
+const fmtCost = (c?: { input: number; output: number }) => (c ? (c.input === 0 && c.output === 0 ? "free" : `$${+c.input.toFixed(2)}/$${+c.output.toFixed(2)} per Mtok`) : "");
+
+/** Labs whose models are worth offering first when a harness can run hundreds (OpenRouter through kimi or opencode). */
+const LABS = /^(anthropic|openai|google|moonshotai|deepseek|qwen|z-ai|zai|minimax|x-ai|xai|mistralai|mistral|meta-llama)\//;
+const notable = (m: CatalogModel) => !/free|preview|:/.test(m.model) && (LABS.test(m.model) || ["anthropic", "openai", "google", "zai-coding-plan", "deepseek", "moonshotai"].includes(m.provider));
+
+/**
+ * A short list of models for the assistant to choose from when it staffs a channel: the human's
+ * favourites and recent picks first, then the newest few each harness can run.
+ */
+export function modelMenu(c: Catalog, clis: string[], max = 45): string {
+  const ok = (m: CatalogModel) => m.routes.find((r) => r.ready && clis.includes(r.harness));
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  const add = (m: CatalogModel, tag?: string) => {
+    const r = ok(m);
+    if (!r || seen.has(m.key) || lines.length >= max) return;
+    seen.add(m.key);
+    const facts = [m.context ? `${fmtTokens(m.context)} context` : "", fmtCost(m.cost), m.reasoning ? "reasoning" : "", tag ?? ""].filter(Boolean).join(", ");
+    lines.push(`- ${r.harness} ${r.id} — ${m.name} (${m.providerName})${facts ? `: ${facts}` : ""}`);
+  };
+  for (const m of c.models) if (m.favourite) add(m, "the human's favourite");
+  for (const m of [...c.models].filter((m) => m.lastUsed).sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0)).slice(0, 8)) add(m, "used recently");
+  const perHarness = Math.max(3, Math.floor((max - lines.length) / Math.max(1, clis.length)));
+  for (const h of c.harnessOrder.filter((h) => clis.includes(h))) {
+    const own = c.models
+      .filter((m) => m.routes[0]?.harness === h && m.routes[0].ready)
+      .sort((a, b) => Number(notable(b)) - Number(notable(a)) || (b.released ?? "").localeCompare(a.released ?? ""))
+      .slice(0, perHarness);
+    for (const m of own) add(m);
+  }
+  return lines.join("\n");
+}
+
+/** The catalog if one was built recently; otherwise starts building one and returns nothing yet. */
+export function cachedCatalog(): Catalog | undefined {
+  if (!cached) void getCatalog().catch(() => {});
+  return cached?.catalog;
+}

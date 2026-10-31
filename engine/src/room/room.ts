@@ -93,6 +93,8 @@ export interface RoomOptions {
   floor?: FloorPolicy;
   /** CLIs the assistant may propose for new members. */
   clis?: string[];
+  /** Models the assistant can pick from, for its prompt (see catalog.modelMenu). */
+  modelMenu?: () => string | undefined;
 }
 
 export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
@@ -136,6 +138,34 @@ interface Want extends FloorReason {
 const turnKey = (agent: string, thread?: number) => (thread ? `${agent}#${thread}` : agent);
 /** Each thread keeps its own vendor session and read position, so it doesn't fill the channel's context. */
 const stateKey = (agent: string, thread?: number) => (thread ? `${agent}@t${thread}` : agent);
+
+/** What each suggestion's arguments are, for the human's edits. A model may be left empty (the harness's default). */
+export const SUGGESTION_FIELDS: Record<SuggestionAction, string[]> = {
+  steer: ["text"],
+  add: ["member", "harness", "model"],
+  hire: ["name", "harness", "model", "role", "persona"],
+  swap: ["member", "harness", "model"],
+  remove: ["member"],
+  focus: ["topic"],
+  close: ["topic"],
+  parallel: ["how many"],
+  export: ["document", "path"],
+  mail: ["to", "subject", "body"],
+  pointer: ["file"],
+};
+
+/** The human's edit of a suggestion, checked: same fields, the required ones filled in. */
+export function checkEdit(action: SuggestionAction, was: string[], edited: string[]): string[] {
+  const fields = SUGGESTION_FIELDS[action];
+  const args = [...was];
+  edited.slice(0, fields.length).forEach((v, i) => (args[i] = String(v ?? "").trim()));
+  fields.forEach((f, i) => {
+    if (f !== "model" && !args[i]) throw new Error(`the ${action} needs its ${f}`);
+  });
+  if (action === "hire" && !/^[a-z0-9][a-z0-9-]{0,31}$/.test(args[0])) throw new Error("a member's name is lowercase letters, digits and dashes");
+  if (action === "parallel" && !(Number(args[0]) >= 1)) throw new Error("parallel needs a number, 1 or more");
+  return args;
+}
 /** Messages in a side thread (including one that starts a thread) stay out of the main conversation. */
 const inMain = (e: RoomEvent) => e.type !== "message" || e.thread === undefined;
 
@@ -145,7 +175,7 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "hire", "remove", "focus", "close", "parallel", "pause", "export", "withdraw"] as const;
+const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw"] as const;
 /** Assistant actions that carry a multi-line body, closed by `>> end`. */
 const ASSISTANT_BLOCKS = ["write", "mail"] as const;
 /** How often a running room looks for mail from the project's agents. */
@@ -649,14 +679,46 @@ export class Room {
     return this.store.config().name || this.focus() || this.id;
   }
 
-  /** The human answers a suggestion; an approved one is carried out at once. */
-  async resolve(id: number, accept: boolean): Promise<void> {
+  /**
+   * The human answers a suggestion; an approved one is carried out at once. `edited` replaces its
+   * arguments (the human changed the model, the persona, the wording…) and is logged with it.
+   */
+  async resolve(id: number, accept: boolean, edited?: string[]): Promise<void> {
     const s = this.pending().find((x) => x.id === id);
     if (!s) throw new Error(`no open suggestion ${id}`);
-    if (accept) await this.apply(s.action, s.args, s.why, s.from);
+    const args = accept && edited ? checkEdit(s.action, s.args, edited) : s.args;
+    if (accept) await this.apply(s.action, args, s.why, s.from);
     // Declining the mail pointer is remembered too, so it isn't offered again.
     if (!accept && s.action === "pointer") new Workspace(this.o.repo).setFlag("mailPointer", "declined");
-    this.log({ type: "suggestion.resolved", id, accepted: accept });
+    const changed = args.join("\u0000") !== s.args.join("\u0000");
+    this.log({ type: "suggestion.resolved", id, accepted: accept, ...(changed ? { args } : {}) });
+  }
+
+  /**
+   * Moves a member, or a support role, to another harness or model. A member keeps its notebook
+   * and what it has read; its vendor sessions are dropped, so its next turn rebuilds its context.
+   */
+  swapModel(id: string, cli: CliName, model?: string): void {
+    if (this.o.clis && !this.o.clis.includes(cli)) throw new Error(`${cli} isn't available here; use ${this.o.clis.join(", ")}`);
+    const c = this.store.config();
+    if ((SUPPORT_ROLES as string[]).includes(id)) {
+      const role = id as keyof RoomConfig["support"];
+      const was = c.support[role] ?? c.support.scribe;
+      this.store.setSupport(role, { cli, ...(model ? { model } : {}) });
+      this.log({ type: "agent.swapped", agent: id, cli, ...(model ? { model } : {}), was: { cli: was.cli, ...(was.model ? { model: was.model } : {}) } });
+      return;
+    }
+    const spec = c.agents.find((a) => a.id === id);
+    if (!spec) throw new Error(`no member "${id}"`);
+    const next: AgentSpec = { ...spec, cli };
+    if (model) next.model = model;
+    else delete next.model;
+    this.store.setRoster(c.agents.map((a) => (a.id === id ? next : a)), c.left ?? []);
+    for (const k of this.store.agentStateKeys(id)) this.store.saveAgentState(k, { ...this.store.agentState(k), sessionId: undefined, sessionTurns: 0 });
+    const ws = new Workspace(this.o.repo);
+    const known = ws.members().find((m) => m.id === id);
+    if (known) ws.saveMember({ ...known, cli, ...(model ? { model } : { model: undefined }) });
+    this.log({ type: "agent.swapped", agent: id, cli, ...(model ? { model } : {}), was: { cli: spec.cli, ...(spec.model ? { model: spec.model } : {}) } });
   }
 
   /** Whoever made suggestions takes them back (they were replaced, or no longer stand). */
@@ -686,6 +748,9 @@ export class Room {
         return;
       case "hire":
         this.hire({ id: args[0], cli: args[1] as CliName, model: args[2] || undefined, role: args[3] ?? "", persona: args[4] ?? "" });
+        return;
+      case "swap":
+        this.swapModel(args[0], args[1] as CliName, args[2] || undefined);
         return;
       case "remove":
         await this.removeMember(args[0]);
@@ -1433,7 +1498,7 @@ export class Room {
       .members()
       .filter((m) => !here.has(m.id))
       .map((m) => `${m.id} (${m.role ?? m.persona})`);
-    return assistantActions(this.o.clis ?? DEFAULT_CLIS, others);
+    return assistantActions(this.o.clis ?? DEFAULT_CLIS, others, this.o.modelMenu?.());
   }
 
   /**
@@ -1462,6 +1527,11 @@ export class Room {
         const [cli, model] = cliModel.split(/\s+/);
         const id = (d.args[0] ?? "").toLowerCase();
         if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) && cli && role && persona) this.suggest("assistant", "hire", [id, cli, model ?? "", role, persona], why.join(" | "));
+      } else if (d.verb === "swap") {
+        // >> swap: member | cli [model] | why
+        const [cliModel = "", ...why] = d.why.split("|").map((x) => x.trim());
+        const [cli, model] = cliModel.split(/\s+/);
+        if (d.args[0] && cli) this.suggest("assistant", "swap", [d.args[0], cli, model ?? ""], why.join(" | "));
       } else if (d.args.length && d.args[0]) this.suggest("assistant", d.verb as SuggestionAction, d.args, d.why);
     }
   }
