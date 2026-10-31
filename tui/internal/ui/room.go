@@ -457,7 +457,7 @@ func suggestionLabel(s rpc.RoomEvent) string {
 	case "add":
 		label := "bring back " + s.Args[0]
 		if len(s.Args) > 1 {
-			label += " on " + strings.Join(s.Args[1:], " ")
+			label += " on " + runsOn(s.Args[1], arg(s.Args, 2))
 		}
 		return label
 	case "hire":
@@ -465,13 +465,13 @@ func suggestionLabel(s rpc.RoomEvent) string {
 		if len(s.Args) > 3 && s.Args[3] != "" {
 			label += " (" + s.Args[3] + ")"
 		}
-		if len(s.Args) > 2 {
-			label += " on " + strings.TrimSpace(s.Args[1]+" "+s.Args[2])
+		if len(s.Args) > 1 {
+			label += " on " + runsOn(s.Args[1], arg(s.Args, 2))
 		}
 		return label
 	case "swap":
 		if len(s.Args) > 1 {
-			return "move " + s.Args[0] + " to " + strings.TrimSpace(strings.Join(s.Args[1:], " "))
+			return "move " + s.Args[0] + " to " + runsOn(s.Args[1], arg(s.Args, 2))
 		}
 	case "remove":
 		return "ask " + args + " to leave"
@@ -493,6 +493,14 @@ func suggestionLabel(s rpc.RoomEvent) string {
 		return "tell the project's agents about Quorum mail (add a note to " + args + ")"
 	}
 	return s.Action + " " + args
+}
+
+// runsOn names a harness and model, saying so when no model was given and the harness picks.
+func runsOn(harness, model string) string {
+	if model = strings.TrimSpace(model); model != "" {
+		return harness + " " + model
+	}
+	return harness + " (its default model)"
 }
 
 // roomCommand is what the room input asked for.

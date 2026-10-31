@@ -81,7 +81,7 @@ describe("Model guidance", () => {
     const a = assistantActions(["claude", "kimi"], [], menu);
     expect(a).toContain("chosen on purpose");
     expect(a).toContain(menu);
-    expect(a).toContain(">> swap: <member> | <cli> [model]");
+    expect(a).toContain(">> swap: <member> | <cli> <model>");
     expect(assistantActions(["claude"], [])).not.toContain("Models you can run now");
     const s = setupPrompt({ repo: "/r", members: [], channels: [], clis: ["claude"], personas: [], history: [], models: menu });
     expect(s).toContain(menu);

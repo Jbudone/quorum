@@ -304,10 +304,10 @@ To propose a change, end with action lines; the human approves or declines each,
 <the body: short and actionable, pointing at files>
 >> end                                     mail the project's own agents, e.g. to build a probe in a worktree
 >> withdraw: <suggestion numbers> | <why>  take back your own earlier suggestions that you've replaced or no longer stand by; always withdraw what you replace
->> hire: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
+>> hire: <id> | <cli> <model> | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
                                    bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
->> add: <member> <cli> [model] | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
->> swap: <member> | <cli> [model] | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
+>> add: <member> <cli> <model> | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
+>> swap: <member> | <cli> <model> | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
 >> steer: <text>                          post a steering message to the channel as the human
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the focus
@@ -394,7 +394,7 @@ When you know enough, propose the plan with these lines at the end of your reply
 ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision: <two to four sentences: what the group is trying to achieve and what great looks like>
 >> consider: <one thing that must be considered>          one line each, three to eight
 >> read: <path relative to the project>                    folders or files everyone reads first
->> member: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think>
+>> member: <id> | <cli> <model> | <role, a few words> | <persona: two or three sentences on expertise and how they think>
 >> member: <existing-id>                                   to reuse a workspace member as they are
 >> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
 >> steer: <optional first instruction to the whole group>

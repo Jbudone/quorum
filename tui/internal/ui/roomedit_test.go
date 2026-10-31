@@ -134,3 +134,19 @@ func TestProvidersScreen(t *testing.T) {
 	h.press("esc")
 	lacks(t, h.screen(), "PROVIDERS & MODELS")
 }
+
+func TestSuggestionLabelNamesTheModel(t *testing.T) {
+	for _, c := range []struct {
+		s    rpc.RoomEvent
+		want string
+	}{
+		{rpc.RoomEvent{Action: "hire", Args: []string{"pcg-researcher", "agy", "", "procedural generation scientist"}}, "bring in pcg-researcher (procedural generation scientist) on agy (its default model)"},
+		{rpc.RoomEvent{Action: "hire", Args: []string{"pcg-researcher", "agy", "gemini-3.5-pro", "procedural generation scientist"}}, "bring in pcg-researcher (procedural generation scientist) on agy gemini-3.5-pro"},
+		{rpc.RoomEvent{Action: "add", Args: []string{"skeptic", "codex"}}, "bring back skeptic on codex (its default model)"},
+		{rpc.RoomEvent{Action: "swap", Args: []string{"skeptic", "kimi", "or/kimi-k3"}}, "move skeptic to kimi or/kimi-k3"},
+	} {
+		if got := suggestionLabel(c.s); got != c.want {
+			t.Errorf("got %q, want %q", got, c.want)
+		}
+	}
+}
