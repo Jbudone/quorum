@@ -210,7 +210,7 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "Not on the reading list")
 	contains(t, s, "↳ thread: ") // threads under their messages in the channel
 	contains(t, s, "· settled")
-	lacks(t, s, "nobody pays a stale price") // ...but not the thread's replies
+	contains(t, s, "↳ perf-researcher in #51 ") // ...and each reply in them as one line
 	lacks(t, s, ">> ")
 	lacks(t, s, "PASS")
 
@@ -283,7 +283,7 @@ func TestRoomJourney(t *testing.T) {
 		t.Fatalf("a reply in a thread should stay in it: %v", c.params)
 	}
 	h.press("esc")
-	lacks(t, h.screen(), "nobody pays a stale price")
+	lacks(t, h.screen(), "esc back to the channel")
 
 	// Members stream in as they write; support roles show they're working.
 	contains(t, h.screen(), "❚❚ PAUSED")
@@ -453,7 +453,7 @@ func TestRoomNarrowKeepsTheAssistantOnScreen(t *testing.T) {
 	h := newRoomHarness(t, 56, 40)
 	h.setup()
 	s := h.screen()
-	contains(t, s, "Plan v2 answers every objection")
+	contains(t, s, "thread on #51 settled")
 	contains(t, s, "NOW ")
 }
 

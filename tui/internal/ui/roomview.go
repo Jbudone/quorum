@@ -215,6 +215,17 @@ func suffix(sep, s string) string {
 	return sep + s
 }
 
+// threadActivity is a thread reply as the channel shows it: who, in which thread, and how it starts.
+func threadActivity(r *roomModel, th theme.Theme, width int, e rpc.RoomEvent) string {
+	title := strings.TrimPrefix(r.thread(e.Thread).title, "Workstream: ")
+	head := fg(th.Info).Render("↳ ") + fg(r.colorOf(th, e.From)).Bold(true).Render(displayName(e.From)) +
+		fg(th.Muted).Render(fmt.Sprintf(" in #%d %s: ", e.Thread, ansiCut(title, min(40, width/5))))
+	text := strings.Join(strings.Fields(strings.NewReplacer("**", "", "`", "").Replace(e.Text)), " ")
+	tail := fg(th.Subtle).Render(fmt.Sprintf(" · /thread %d", e.Thread))
+	room := max(width-lipgloss.Width(head)-lipgloss.Width(tail), 10)
+	return head + fg(th.Text).Render(ansi.Truncate(text, room, "…")) + tail
+}
+
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -265,7 +276,19 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	if r.view != 0 {
 		blocks = append(blocks, fg(th.Info).Render(fmt.Sprintf("side thread on #%d", r.view))+fg(th.Subtle).Render(" · esc back to the channel"))
 	}
+	activity := false
 	for _, it := range r.feed {
+		// In the channel, a reply inside a thread is one line, so the work there shows where it happens.
+		if e := it.ev; r.view == 0 && e.Type == "message" && e.Thread != 0 && e.Thread != e.Seq {
+			line := threadActivity(r, th, width, e)
+			if activity && len(blocks) > 0 {
+				blocks[len(blocks)-1] += "\n" + line // a run of them reads as one list
+			} else {
+				blocks = append(blocks, line)
+			}
+			activity = true
+			continue
+		}
 		if !r.shown(it.ev) {
 			continue
 		}
@@ -282,6 +305,7 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 			b += "\n" + fg(th.Info).Render("↳ thread: "+state) + fg(th.Subtle).Render(fmt.Sprintf(" · /thread %d", t.root))
 		}
 		blocks = append(blocks, b)
+		activity = false
 	}
 	// Members talking right now: their words stream in as they write them.
 	for _, t := range r.speaking() {
