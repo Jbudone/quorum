@@ -241,10 +241,102 @@ func (a *App) focusedInput() *textarea.Model {
 	return &a.rm.roomIn
 }
 
+// pasteTarget is the text field a paste goes into: whichever input has focus on the screen or
+// overlay in front, or nil when nothing is being typed into.
+func (a *App) pasteTarget() *textarea.Model {
+	focused := func(ins ...*textarea.Model) *textarea.Model {
+		for _, in := range ins {
+			if in != nil && in.Focused() {
+				return in
+			}
+		}
+		return nil
+	}
+	search := func(s *modelSearch) *textarea.Model {
+		if s == nil {
+			return nil
+		}
+		return &s.search
+	}
+	if p := a.prov; p != nil {
+		var ins []*textarea.Model
+		if p.form != nil {
+			for i := range p.form.ins {
+				ins = append(ins, &p.form.ins[i])
+			}
+			return focused(ins...)
+		}
+		switch p.tab {
+		case tabModels:
+			return search(p.search)
+		case tabProviders:
+			return &p.filter
+		}
+		return nil
+	}
+	switch a.screen {
+	case screenStart:
+		if a.start.focus == 1 {
+			return &a.start.topic
+		}
+		return nil
+	case screenSession:
+		if a.sess.canType() {
+			return &a.input
+		}
+		return nil
+	case screenRoom:
+	default:
+		return nil
+	}
+	u := a.rm
+	if u == nil {
+		return nil
+	}
+	if s := u.setup; s != nil {
+		switch {
+		case s.form != nil && s.form.search != nil:
+			return search(s.form.search)
+		case s.form != nil:
+			return focused(&s.form.vision)
+		case s.asking():
+			if s.owning {
+				return &s.own
+			}
+			return nil
+		}
+		return &s.in
+	}
+	if m := u.join; m != nil {
+		if m.search != nil && m.step == stepModelPick {
+			return search(m.search)
+		}
+		return focused(&m.idIn, &m.roleIn, &m.personaIn, &m.describeIn, &m.extraIn, &m.questionIn)
+	}
+	r := u.room
+	if r == nil {
+		return nil
+	}
+	if e := r.edit; e != nil {
+		if e.search != nil {
+			return search(e.search)
+		}
+		if e.field() == "model" {
+			return nil
+		}
+		return &e.ins[e.rows()[e.cur]]
+	}
+	if r.overlay != nil {
+		return nil
+	}
+	return a.focusedInput()
+}
+
 // attachImage puts an [image N] chip in the box and remembers which file it stands for.
 func (a *App) attachImage(path string) {
 	in := a.focusedInput()
-	if in == nil {
+	if in == nil || a.pasteTarget() != in {
+		a.notify("Images go in a message box; this field takes text only.")
 		return
 	}
 	a.images = append(a.images, path)

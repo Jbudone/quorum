@@ -271,11 +271,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.tick()
 
 	case pastedText:
-		if in := a.focusedInput(); in != nil && m.text != "" {
+		if in := a.pasteTarget(); in != nil && m.text != "" {
 			in.InsertString(m.text)
 		}
 		a.refresh()
 		return a, nil
+
+	case tea.PasteMsg:
+		// A terminal paste goes into whichever field has focus, wherever it is.
+		var c tea.Cmd
+		if in := a.pasteTarget(); in != nil {
+			*in, c = in.Update(m)
+		}
+		a.refresh()
+		return a, c
 
 	case tea.MouseWheelMsg:
 		if a.screen == screenRoom {
@@ -289,7 +298,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		a.sel.shown = false // any key clears a selection, as in a terminal
 		// ctrl+v pastes from the desktop clipboard, images included (terminal paste arrives as tea.PasteMsg).
-		if m.String() == "ctrl+v" && a.focusedInput() != nil {
+		if m.String() == "ctrl+v" && a.pasteTarget() != nil {
 			return a, readClipboard(a.opts.Repo)
 		}
 		c := a.handleKey(m)

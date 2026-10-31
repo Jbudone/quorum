@@ -162,7 +162,7 @@ func (h *roomHarness) setup() {
 	h.press("enter") // the recommended answer
 	contains(h.t, h.screen(), "DOCS  2 of 2")
 	h.press("down", "down", "enter")
-	h.typ("notes are in docs/")
+	h.send(tea.PasteMsg{Content: "notes are in docs/"}) // a paste lands in the own-answer field
 	h.press("enter")
 	if c := h.expectCall("setup.say"); c.params["text"] != "Goal: Ship something soon\nDocs: notes are in docs/" {
 		h.t.Fatalf("answers: %q", c.params["text"])
