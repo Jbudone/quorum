@@ -17,7 +17,7 @@
 // one line per tool call and result with a pointer into the raw file, likely secrets redacted. A
 // channel's members read those (they can't read the raw store, and it's not in any repo).
 import { DatabaseSync } from "node:sqlite";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
@@ -392,6 +392,19 @@ function attribution(repos: string[]): Map<string, { project: string; room?: str
   return m;
 }
 
+/**
+ * Where a member's transcript goes: under its project and channel (or the planning chat before a
+ * channel existed), in a folder per member. Sessions from before Quorum logged them can't be placed.
+ */
+function memberOut(who: ReturnType<typeof attribution>, id: string, cli: string): string {
+  const w = who.get(id);
+  if (!w) return join(OUT, "unplaced", cli, `${id}.md`);
+  const where = w.room ? join("rooms", w.room) : "planning";
+  // A side thread runs as `<member>@t<seq>`; it belongs in that member's folder.
+  const [agent, thread] = w.agent.split("@t");
+  return join(OUT, "projects", w.project, where, agent, `${thread ? `thread-${thread}-` : ""}${cli}-${id}.md`);
+}
+
 function memberSessions(who: ReturnType<typeof attribution>) {
   const label = (id: string, cli: string) => {
     const w = who.get(id);
@@ -404,7 +417,7 @@ function memberSessions(who: ReturnType<typeof attribution>) {
     const raw = join(RAW, "members", "claude", rel);
     const changed = keep(f, raw);
     if (!f.endsWith(".jsonl")) continue;
-    const out = join(OUT, "members", "claude", rel.replace(/\.jsonl$/, ".md"));
+    const out = memberOut(who, basename(f, ".jsonl"), "claude");
     const r = renderClaude(raw);
     if (changed || !existsSync(out)) writeRendered(out, r, raw, label(basename(f, ".jsonl"), "Claude"));
     record("member (claude)", r, out);
@@ -419,7 +432,7 @@ function memberSessions(who: ReturnType<typeof attribution>) {
     if (meta.cwd !== NEUTRAL_CWD && !who.has(id)) continue;
     const raw = join(RAW, "members", "codex", basename(f));
     const changed = keep(f, raw);
-    const out = join(OUT, "members", "codex", basename(f).replace(/\.jsonl$/, ".md"));
+    const out = memberOut(who, id, "codex");
     const r = renderCodex(raw);
     if (changed || !existsSync(out)) writeRendered(out, r, raw, label(id, "Codex"));
     record("member (codex)", r, out);
@@ -439,7 +452,7 @@ function memberSessions(who: ReturnType<typeof attribution>) {
     const dump = { session: { ...s }, messages: messages.map((m) => ({ ...m })) };
     const raw = join(RAW, "members", "opencode", `${s.id}.json`);
     const changed = keep(Buffer.from(`${JSON.stringify(dump, null, 1)}\n`), raw);
-    const out = join(OUT, "members", "opencode", `${s.id}.md`);
+    const out = memberOut(who, s.id, "opencode");
     const r = renderOpencode(dump);
     if (changed || !existsSync(out)) writeRendered(out, r, raw, label(s.id, "opencode"));
     record("member (opencode)", r, out);
@@ -457,7 +470,7 @@ function quorumData(repos: string[]) {
       const raw = join(RAW, "projects", name, rel);
       const changed = keep(f, raw);
       if (!/^rooms\/[^/]+\/events\.jsonl$/.test(rel)) continue;
-      const out = join(OUT, "channels", name, `${rel.split("/")[1]}.md`);
+      const out = join(OUT, "projects", name, "rooms", rel.split("/")[1], "channel.md");
       const r = renderRoom(raw);
       if (changed || !existsSync(out)) writeRendered(out, r, raw, `Quorum channel in ${name}`);
       record(`channel (${name})`, r, out);
@@ -476,8 +489,10 @@ function writeIndex(repos: string[]) {
       "Everything said while building Quorum and while using it, for reviewing what to improve. Written by `scripts/history-sync.ts`; don't edit.",
       "",
       "- `development/`: Claude Code sessions in which Quorum was built. The human's messages are the best evidence of friction: requests repeated, corrections, things that surprised them.",
-      "- `channels/<project>/`: Quorum channels as they ran, assistant asides and floor decisions included.",
-      "- `members/<cli>/`: what each member and support role saw and did inside its own CLI.",
+      "- `projects/<project>/rooms/<channel>/channel.md`: a Quorum channel as it ran, assistant asides and floor decisions included.",
+      "- `projects/<project>/rooms/<channel>/<member>/<cli>-<session>.md`: what that member (or support role) saw and did inside its own CLI.",
+      "- `projects/<project>/planning/<member>/`: the planning assistant before a channel existed.",
+      "- `unplaced/<cli>/`: member sessions from before Quorum recorded whose they were.",
       "",
       "Messages are verbatim. Tool calls and results are one line each; `L<n>` points into the raw transcript. Likely secrets are redacted. Context compactions are marked where they happened.",
       "",
@@ -493,6 +508,8 @@ function writeIndex(repos: string[]) {
 
 const repos = projects();
 mkdirSync(OUT, { recursive: true });
+// The readable copies are regenerated from raw each run; clear the flat layout older syncs wrote.
+for (const old of ["channels", "members", "projects", "unplaced"]) rmSync(join(OUT, old), { recursive: true, force: true });
 devSessions();
 memberSessions(attribution(repos));
 quorumData(repos);
