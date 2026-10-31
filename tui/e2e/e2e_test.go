@@ -277,10 +277,10 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.send("\x13") // ctrl+s: the plan form
 	tm.waitFor("THE PLAN", 5*time.Second)
 	tm.send("\r") // apply
-	tm.waitFor("TALKING", 20*time.Second)
+	tm.waitFor("● LIVE", 20*time.Second)
 	tm.snapshot("room-3-talking")
 	tm.waitFor("accepted by the chair", 60*time.Second)
-	tm.waitFor("PAUSED", 10*time.Second)
+	tm.waitFor("❚❚ PAUSED · milestone: plan v2 accepted", 10*time.Second)
 	s := tm.waitFor("Plan v2 answers every objection", 10*time.Second) // the Chair speaks just after the milestone pause
 	for _, want := range []string{"↩ ", "RECENT", "DISCUSSIONS", "MEMBERS"} {
 		if !strings.Contains(s, want) {
@@ -314,6 +314,6 @@ func TestRealBinaryMockRoom(t *testing.T) {
 
 	again := start(t, 150, 46, "--mock", "--repo", repo)
 	again.waitFor("#product-cache", 30*time.Second)
-	again.waitFor("Picked up where you left off", 10*time.Second)
+	again.waitFor("Picked up where you left off", 10*time.Second) // in the status bar
 	again.send("\x03")
 }

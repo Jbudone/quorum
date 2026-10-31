@@ -75,22 +75,40 @@ func renderRoomHeader(r *roomModel, th theme.Theme, width int, spin string) stri
 		}
 		chips = append(chips, fg(c).Render(fmt.Sprintf("%s %d%%", strings.ToUpper(cli), int(q*100+0.5))))
 	}
-	switch {
-	case r.state == "running" && len(r.live) > 0:
-		chips = append(chips, fg(th.Accent2).Render(spin+" TALKING"))
-	case r.state == "running":
-		chips = append(chips, fg(th.Accent2).Render(spin+" LISTENING"))
-	case r.state == "idle":
-		chips = append(chips, fg(th.Info).Render("◌ QUIET"))
-	default:
-		chips = append(chips, fg(th.Warn).Bold(true).Render("❚❚ PAUSED"))
-	}
 	right := strings.Join(chips, fg(th.Subtle).Render("  ·  "))
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		return ansi.Truncate(left, max(width-lipgloss.Width(right)-1, 10), "…") + " " + right
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// renderStatusBar is the full-width line under the header that always says whether the channel
+// is live: a solid bar with the reason while paused, a quiet line while running.
+func renderStatusBar(r *roomModel, th theme.Theme, width int, spin string) string {
+	k := func(s string) string { return fg(th.Text).Bold(true).Render(s) }
+	var line string
+	switch {
+	case r.state == "paused":
+		text := " ❚❚ PAUSED · " + r.pauseReason() + ".  Nobody is talking; what you say waits for you to resume.  ctrl+p resume "
+		bar := lipgloss.NewStyle().Background(th.Warn).Foreground(lipgloss.Color("#201F26")).Bold(true)
+		return bar.Render(padRight(ansiCut(text, width), width))
+	case r.flash != "" && r.frame < r.flashTo:
+		line = fg(th.OK).Bold(true).Render(r.flash)
+	case r.state == "running" && len(r.live) > 0:
+		n := len(r.live)
+		line = fg(th.OK).Bold(true).Render("● LIVE") + fg(th.Muted).Render(fmt.Sprintf(" · %s %d %s", spin, n, map[bool]string{true: "member talking", false: "members talking"}[n == 1]))
+	case r.state == "running":
+		line = fg(th.OK).Bold(true).Render("● LIVE") + fg(th.Muted).Render(" · "+spin+" deciding who speaks next")
+	default:
+		line = fg(th.OK).Bold(true).Render("● LIVE") + fg(th.Muted).Render(" · quiet: waiting for something new to respond to")
+	}
+	hint := fg(th.Subtle).Render("ctrl+p ") + k("pause")
+	gap := width - lipgloss.Width(line) - lipgloss.Width(hint)
+	if gap < 2 {
+		return ansi.Truncate(line, width, "…")
+	}
+	return line + strings.Repeat(" ", gap) + hint
 }
 
 // messageHead is the line above a message: who, to whom, what it answers, and when.
@@ -166,7 +184,9 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		}
 		out = event("$", c, e.Detail)
 	case "paused":
-		out = fg(th.Warn).Render("❚❚ paused — " + e.Reason)
+		out = fg(th.Warn).Bold(true).Render("❚❚ paused — "+e.Reason) + " " + fg(th.Subtle).Render(clock(e.TS))
+	case "resumed":
+		out = fg(th.OK).Render("▶ resumed") + " " + fg(th.Subtle).Render(clock(e.TS))
 	case "turn.failed":
 		out = event("✗", th.Err, e.Agent+" couldn't speak: "+firstLine(e.Message))
 	}

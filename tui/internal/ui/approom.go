@@ -161,14 +161,9 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 		case method == "setup.create":
 			a.call("room.resume", map[string]any{})
 		case u.room.resumesOnOpen():
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Picked up where you left off."})
+			// The status bar says so; nothing goes in the assistant's column that would go stale.
+			u.room.flash, u.room.flashTo = "▶ Picked up where you left off.", u.room.frame+flashFrames
 			a.call("room.resume", map[string]any{})
-		default:
-			why := u.room.lastPause
-			if why == "" {
-				why = "paused"
-			}
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Paused (" + why + "). ctrl+p carries on."})
 		}
 		// Keep the switcher's list current without asking the user to wait for it.
 		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
@@ -511,8 +506,8 @@ func (a *App) statsShown() bool {
 }
 
 func (a *App) roomBodyH() int {
-	// header, spacer, roster line, input boxes (rows + border), footer
-	h := a.h - 1 - 1 - 1 - (roomInputRows + 2) - 1
+	// header, status bar, spacer, roster line, input boxes (rows + border), footer
+	h := a.h - 1 - 1 - 1 - 1 - (roomInputRows + 2) - 1
 	if a.statsShown() {
 		h -= statsHeight()
 	}
@@ -592,6 +587,8 @@ func (a *App) refreshRoom() {
 	u.roomIn.SetWidth(roomBox)
 	u.assistIn.SetWidth(max(assistBox, 10))
 	switch {
+	case r.state == "paused":
+		u.roomIn.Placeholder = "Paused · you can still write; members answer once you resume (ctrl+p)"
 	case r.view != 0:
 		u.roomIn.Placeholder = "Reply in this thread · esc back to the channel"
 	case len(r.agents) == 0:
@@ -678,7 +675,7 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 		return
 	}
 	fh, _ := a.paneHeights()
-	top := 2
+	top := 3
 	if a.statsShown() {
 		top += statsHeight()
 	}
@@ -754,7 +751,7 @@ func (a *App) roomView() string {
 	default:
 		inputs = box(u.roomIn, true, a.w)
 	}
-	rows := []string{header, ""}
+	rows := []string{header, renderStatusBar(r, a.th, a.w, spin), ""}
 	if a.statsShown() {
 		rows = append(rows, renderStats(r, a.th, a.w), "")
 	}

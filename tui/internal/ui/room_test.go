@@ -286,9 +286,12 @@ func TestRoomJourney(t *testing.T) {
 	lacks(t, h.screen(), "nobody pays a stale price")
 
 	// Members stream in as they write; support roles show they're working.
+	contains(t, h.screen(), "❚❚ PAUSED")
 	h.press("ctrl+p")
 	h.expectCall("room.resume")
 	h.send(engineMsg{rpc.Event{Name: "room.state", Data: rpc.RoomStateEvent{State: "running"}}})
+	contains(t, h.screen(), "▶ Resumed. The channel is live again.") // and the bar no longer says paused
+	lacks(t, h.screen(), "❚❚ PAUSED")
 	h.send(engineMsg{rpc.Event{Name: "room.support", Data: rpc.RoomSupportEvent{Role: "floor", Busy: true}}})
 	contains(t, h.screen(), "deciding who speaks")
 	h.send(engineMsg{rpc.Event{Name: "room.turn.start", Data: rpc.RoomTurn{Agent: "product-engineer"}}})
@@ -298,7 +301,7 @@ func TestRoomJourney(t *testing.T) {
 	lacks(t, h.screen(), "Let me check.") // thinking aloud before a tool call is dropped
 	h.send(engineMsg{rpc.Event{Name: "room.turn.delta", Data: rpc.RoomTurnDelta{Agent: "product-engineer", Delta: "Sixty seconds, no more."}}})
 	contains(t, h.screen(), "Sixty seconds, no more.▌")
-	contains(t, h.screen(), "TALKING")
+	lacks(t, h.screen(), "❚❚ PAUSED")
 
 	// The stats strip can be put away.
 	h.press("ctrl+t")
@@ -439,7 +442,9 @@ func TestRoomReopensTheLatestChannel(t *testing.T) {
 	h.answer(open.id, 13)
 	s := h.screen()
 	// The human paused it, so it waits instead of carrying on by itself.
-	contains(t, s, "Paused (paused by the human). ctrl+p carries on.")
+	contains(t, s, "❚❚ PAUSED · you paused it.") // the status bar says so, with why
+	contains(t, s, "ctrl+p resume")
+	contains(t, s, "Paused · you can still write")
 	contains(t, s, "WHERE WE ARE")
 	if h.callTo("workspace.open").id == 1 {
 		t.Fatal("the switcher's channel list should refresh once the channel is open")

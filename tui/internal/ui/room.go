@@ -98,6 +98,8 @@ type roomModel struct {
 	view    int             // 0 shows the channel; otherwise the root seq of the thread on screen
 	busy    map[string]bool // support roles at work: assistant, watch, chair, scribe, floor
 	review  bool            // the human is going through the suggestions (keys answer them)
+	flash   string          // a short-lived status ("Resumed"), shown until flashTo
+	flashTo int             // the animation frame the flash lasts until
 	live    map[string]*liveTurn
 	colors  map[string]int
 	pending []rpc.RoomEvent
@@ -160,10 +162,16 @@ func (r *roomModel) apply(ev rpc.Event) {
 	case rpc.RoomEvent:
 		r.record(v)
 	case rpc.RoomStateEvent:
+		// Coming back from a pause says so, unless something more specific is already showing
+		// (a brand-new channel was never paused, and a reopened one says it picked up where it left off).
+		if r.state == "paused" && v.State != "paused" && r.lastPause != "" && !(r.flash != "" && r.frame < r.flashTo) {
+			r.flash, r.flashTo = "▶ Resumed. The channel is live again.", r.frame+flashFrames
+		}
 		r.state, r.reason = v.State, v.Reason
 		if v.State == "paused" {
 			r.live = map[string]*liveTurn{}
 			r.busy = map[string]bool{}
+			r.flash = ""
 		}
 	case rpc.RoomTurn:
 		if ev.Name == "room.turn.start" {
@@ -311,7 +319,7 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		delete(r.live, e.Agent)
 	case "paused":
 		r.lastPause = e.Reason
-	case "pass", "floor", "resumed":
+	case "pass", "floor":
 		return // bookkeeping; the feed reads as a conversation
 	}
 	r.feed = append(r.feed, &feedItem{ev: e})
@@ -383,9 +391,27 @@ func (r *roomModel) talking(agent string) (*liveTurn, bool) {
 	return found, found != nil
 }
 
+// flashFrames is how long a status flash stays up, in animation frames (about three seconds).
+const flashFrames = 150
+
 // animating reports whether the room screen needs the clock running.
 func (r *roomModel) animating() bool {
-	return r.state == "running" || len(r.live) > 0 || r.asking
+	return r.state == "running" || len(r.live) > 0 || r.asking || r.flash != "" && r.frame < r.flashTo
+}
+
+// pauseReason says why the channel is paused, in words for the status bar.
+func (r *roomModel) pauseReason() string {
+	why := r.reason
+	if why == "" {
+		why = r.lastPause
+	}
+	switch why {
+	case "", "paused by the human":
+		return "you paused it"
+	case "closed", "switched away":
+		return "it was closed"
+	}
+	return why
 }
 
 // empty is a room nobody has spoken in yet.
