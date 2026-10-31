@@ -15,6 +15,10 @@ import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/set
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
 import { defaultModel, listModels } from "../models.js";
+import { meters } from "../usage.js";
+
+/** Harnesses whose models are paid per token, so their members' turns are priced. */
+const METERED = ["opencode", "kimi"];
 import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
@@ -82,6 +86,7 @@ function snapshot(r: Room) {
     topics: r.topics(),
     docs: r.docs(),
     pending: r.pending(),
+    spend: r.store.spend(),
     events: r.store.events().slice(-SNAPSHOT_EVENTS),
   };
 }
@@ -141,6 +146,16 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       return c ? modelMenu(c, clis) : undefined;
     };
   };
+
+  // Prices for members billed per token (opencode and kimi run API keys); subscriptions are quota, not money.
+  const priceFor = (clis: string[]) =>
+    clis.includes("mock")
+      ? undefined
+      : (cli: string, model?: string) => {
+          if (!METERED.includes(cli) || !model) return undefined;
+          const m = cachedCatalog()?.models.find((x) => x.routes.some((r) => r.harness === cli && r.id === model));
+          return m?.cost && (m.cost.input || m.cost.output) ? { input: m.cost.input, output: m.cost.output } : undefined;
+        };
 
   // Fills in each harness's default model where a suggestion names none (never for mock channels).
   const defaultsFor = (clis: string[]) => (clis.includes("mock") ? undefined : (cli: string) => defaultModel(cli as CliName));
@@ -265,7 +280,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
             transports: transportsFor(personaIn(() => r.store.config())),
             assetsDir: opts.assetsDir,
             clis: r.clis,
-            modelMenu: menuFor(r.clis), defaultModel: defaultsFor(r.clis),
+            modelMenu: menuFor(r.clis), defaultModel: defaultsFor(r.clis), price: priceFor(r.clis),
             support: { ...c.support, floor: c.support.floor ?? c.support.scribe },
             room: r,
           });
@@ -280,7 +295,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor((id) => (room ? personaIn(() => room!.store.config())(id) : id)),
           assetsDir: opts.assetsDir,
           clis: usable,
-          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable),
+          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable), price: priceFor(usable),
           support: fake ? MOCK_SUPPORT : supportFor(usable),
         });
         return {};
@@ -322,7 +337,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor(personaIn(() => r.store.config())),
           assetsDir: opts.assetsDir,
           clis: usable,
-          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable),
+          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable), price: priceFor(usable),
           topic: p.topic ? String(p.topic) : undefined,
           agents,
           support: fake ? MOCK_SUPPORT : supportFor(usable),
@@ -336,7 +351,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const store = RoomStore.open(String(p.repo), String(p.id));
         const fake = Boolean(opts.roomTransports) || Object.values(store.config().support).every((x) => x?.cli === "mock");
         const clis: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
-        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis), defaultModel: defaultsFor(clis) });
+        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis), defaultModel: defaultsFor(clis), price: priceFor(clis) });
         await adopt(r);
         return snapshot(r);
       }
@@ -440,6 +455,8 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         if (!setup) throw new Error("no setup: call setup.start first");
         return { dirs: (Array.isArray(p.paths) ? p.paths.map(String) : []).map((x: string) => setup!.allowRead(x)) };
       }
+      case "usage.meters":
+        return meters(Boolean(p.refresh));
       case "room.swap":
         needRoom().swapModel(String(p.id ?? ""), String(p.cli ?? "") as CliName, p.model ? String(p.model) : undefined);
         return {};

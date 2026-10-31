@@ -108,6 +108,8 @@ type roomModel struct {
 	asking  bool
 	answer  string // the assistant's answer as it streams
 	quota   map[string]float64
+	spend   map[string]rpc.Spend // per member (and support role) in this channel
+	meters  *rpc.Meters          // quota and balances from OpenUsage, polled
 	pane    roomPane
 	overlay *docOverlay
 	edit    *sugEdit // a suggestion being edited before it is approved
@@ -120,7 +122,10 @@ func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
-		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, calm: calm,
+		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, spend: map[string]rpc.Spend{}, calm: calm,
+	}
+	for id, sp := range s.Spend {
+		r.spend[id] = sp
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -196,6 +201,8 @@ func (r *roomModel) apply(ev rpc.Event) {
 		if v.QuotaUtilization != nil {
 			r.quota[v.CLI] = *v.QuotaUtilization
 		}
+	case rpc.RoomSpend:
+		r.spend[v.Agent] = v.Spend
 	case rpc.AssistantDelta:
 		r.answer += v.Delta
 	case rpc.EngineError:

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSpec, CliName, Persona } from "../config.js";
-import type { AgentTransport, McpServerSpec } from "../transports/index.js";
+import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
 import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
@@ -53,6 +53,7 @@ import {
   type RoomEvent,
   type RoomEventBody,
   type RoomTuning,
+  type Spend,
   type SuggestionAction,
   type SupportSpec,
 } from "./store.js";
@@ -70,7 +71,9 @@ export type RoomEmit =
   | { event: "room.turn.end"; data: { agent: string; thread?: number } }
   /** A support role started or stopped working, so the human can see it isn't stuck. */
   | { event: "room.support"; data: { role: SupportRole | "watch"; busy: boolean } }
-  | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } };
+  | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
+  /** What a member has used in this channel so far, after each of its turns. */
+  | { event: "room.spend"; data: { agent: string; cli: string; spend: Spend } };
 
 /** paused: nobody is woken. running: turns underway. idle: running, but nobody has anything new to answer. */
 export type RoomState = "paused" | "running" | "idle";
@@ -97,6 +100,8 @@ export interface RoomOptions {
   clis?: string[];
   /** Models the assistant can pick from, for its prompt (see catalog.modelMenu). */
   modelMenu?: () => string | undefined;
+  /** USD per million tokens for a harness and model billed per token; undefined for subscriptions. */
+  price?: (cli: string, model?: string) => { input: number; output: number } | undefined;
   /** The model a harness runs by default, filled into suggestions that don't name one (see models.defaultModel). */
   defaultModel?: (cli: string) => string | undefined;
 }
@@ -1181,8 +1186,10 @@ export class Room {
             // What a member writes before a tool call is thinking aloud; its message is what comes after the last one.
             text = "";
             this.emit({ event: "room.turn.tool", data: { agent, name: e.name, ...tag } });
-          } else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
-          else if (e.type === "done" && e.sessionId) {
+          } else if (e.type === "usage") {
+            this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
+            this.spent(agent, spec, e);
+          } else if (e.type === "done" && e.sessionId) {
             sessionId = e.sessionId;
             noteVendorSession(this.o.repo, { room: this.id, agent: sk, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
           }
@@ -1252,6 +1259,18 @@ export class Room {
   }
 
   /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
+  /** Adds a turn's tokens to the member's spend, priced when its model is paid per token. */
+  private spent(agent: string, spec: { cli: CliName; model?: string }, e: Extract<AgentEvent, { type: "usage" }>): void {
+    const input = e.inputTokens ?? 0;
+    const output = e.outputTokens ?? 0;
+    if (!input && !output && e.costUsd === undefined) return;
+    const p = this.o.price?.(spec.cli, spec.model || this.o.defaultModel?.(spec.cli));
+    const usd = e.costUsd ?? (p ? (input * p.input + output * p.output) / 1e6 : undefined);
+    const id = agent.split("@")[0]; // a side thread counts toward its member
+    const spend = this.store.addSpend(id, { input, output, ...(usd !== undefined ? { usd } : {}) });
+    this.emit({ event: "room.spend", data: { agent: id, cli: spec.cli, spend } });
+  }
+
   private usage(agent: string, cli: string, q: number | undefined, rateLimited: boolean | undefined): void {
     if (q === undefined && !rateLimited) return;
     this.emit({ event: "room.usage", data: { agent, cli, quotaUtilization: q, rateLimited } });
@@ -1425,7 +1444,10 @@ export class Room {
         if (e.type === "text") {
           text += e.delta;
           onDelta?.(e.delta);
-        } else if (e.type === "usage") this.usage(id, spec.cli, e.quotaUtilization, e.rateLimited);
+        } else if (e.type === "usage") {
+          this.usage(id, spec.cli, e.quotaUtilization, e.rateLimited);
+          this.spent(id, spec, e);
+        }
         else if (e.type === "done" && e.sessionId) noteVendorSession(this.o.repo, { room: this.id, agent: id, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
         else if (e.type === "error") failed = e.message;
       }

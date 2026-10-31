@@ -103,6 +103,13 @@ export interface RoomConfig {
 export type RoomTuning = Pick<RoomConfig, "parallel" | "turnCap" | "quotaWarn" | "quotaStop"> & Pick<RoomConfig, "independent">;
 
 /** Per-agent state that must survive a restart. */
+/** Tokens a member used in a channel, and their cost in USD when its model is paid per token. */
+export interface Spend {
+  input: number;
+  output: number;
+  usd?: number;
+}
+
 export interface AgentState {
   /** Vendor CLI session to resume, when the transport reported one. */
   sessionId?: string;
@@ -277,6 +284,25 @@ export class RoomStore {
 
   saveAgentState(id: string, s: AgentState): void {
     writeFileSync(join(this.dir, "agents", `${id}.json`), JSON.stringify(s, null, 2));
+  }
+
+  /** What each member (and support role) has used in this channel. Kept apart from agent state, which a running turn rewrites. */
+  spend(): Record<string, Spend> {
+    try {
+      return JSON.parse(readFileSync(join(this.dir, "spend.json"), "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
+  addSpend(id: string, d: Spend): Spend {
+    const all = this.spend();
+    const was = all[id] ?? { input: 0, output: 0 };
+    const now: Spend = { input: was.input + d.input, output: was.output + d.output };
+    if (was.usd !== undefined || d.usd !== undefined) now.usd = (was.usd ?? 0) + (d.usd ?? 0);
+    all[id] = now;
+    writeFileSync(join(this.dir, "spend.json"), JSON.stringify(all, null, 2));
+    return now;
   }
 
   // ---- shared docs (scribe) ----

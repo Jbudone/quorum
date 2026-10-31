@@ -1,3 +1,7 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { createRequire } from "node:module";
+import type { DatabaseSync } from "node:sqlite";
 import { parseJson, SubprocessTransport, type Invocation, type LineMapper } from "./subprocess.js";
 import { readProviders, type ProvidersFile } from "../providers.js";
 import type { AgentEvent, SendOptions } from "./types.js";
@@ -12,6 +16,9 @@ export class OpencodeMapper implements LineMapper {
   private sessionId?: string;
   private input?: number;
   private output?: number;
+  private readonly started = Date.now();
+
+  constructor(private readonly db = join(homedir(), ".local", "share", "opencode", "opencode.db")) {}
 
   push(line: string): AgentEvent[] {
     const j = parseJson(line);
@@ -41,11 +48,42 @@ export class OpencodeMapper implements LineMapper {
 
   end(): AgentEvent[] {
     const answer = this.answer || this.text;
+    const stored = this.sessionId ? turnUsage(this.db, this.sessionId, this.started) : undefined;
     return [
       ...(answer ? [{ type: "text", delta: answer } as AgentEvent] : []),
-      { type: "usage", inputTokens: this.input, outputTokens: this.output },
+      { type: "usage", inputTokens: this.input ?? stored?.input, outputTokens: this.output ?? stored?.output, ...(stored?.cost !== undefined ? { costUsd: stored.cost } : {}) },
       { type: "done", sessionId: this.sessionId },
     ];
+  }
+}
+
+/**
+ * Tokens and cost of this turn, from opencode's own database: opencode 2 no longer prints them in
+ * its JSON stream, but stores both on each assistant message.
+ */
+export function turnUsage(db: string, session: string, since: number): { input: number; output: number; cost?: number } | undefined {
+  let d: DatabaseSync | undefined;
+  try {
+    // Loaded on use: vitest can't resolve node:sqlite as a static import.
+    const { DatabaseSync: Db } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+    d = new Db(db, { readOnly: true });
+    const rows = d.prepare("select data from session_message where session_id = ? and type = 'assistant' and time_created >= ?").all(session, since - 1000) as { data: string }[];
+    if (!rows.length) return undefined;
+    let input = 0;
+    let output = 0;
+    let cost: number | undefined;
+    for (const r of rows) {
+      const m = JSON.parse(r.data);
+      const t = m.tokens ?? {};
+      input += (t.input ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0);
+      output += (t.output ?? 0) + (t.reasoning ?? 0);
+      if (typeof m.cost === "number") cost = (cost ?? 0) + m.cost;
+    }
+    return { input, output, ...(cost !== undefined ? { cost } : {}) };
+  } catch {
+    return undefined;
+  } finally {
+    d?.close();
   }
 }
 

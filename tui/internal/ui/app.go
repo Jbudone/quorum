@@ -96,6 +96,7 @@ type App struct {
 
 	catalog      *rpc.Catalog // every model and how to run it, once the engine sent it
 	catalogAsked bool
+	meters       *rpc.Meters // quota and balances, polled while a channel is open
 	prov         *providersScreen // the Providers & models screen (alt+o), over whatever is open
 }
 
@@ -156,6 +157,7 @@ func (a *App) Init() tea.Cmd {
 		// The room is the app: carry on in this repo's latest channel, or set up the first one.
 		a.newRoomUI("opening")
 		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
+		return tea.Batch(a.listen(), a.tick(), pollMeters())
 	}
 	return tea.Batch(a.listen(), a.tick())
 }
@@ -226,6 +228,10 @@ func (a *App) tick() tea.Cmd {
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case meterTick:
+		a.askMeters()
+		return a, pollMeters()
+
 	case tea.WindowSizeMsg:
 		a.w, a.h = m.Width, m.Height
 		a.refresh()
@@ -400,7 +406,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
-	if a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
+	if a.metersResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
 		return
 	}
 	if r.Err != "" {

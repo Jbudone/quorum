@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { NEUTRAL_CWD } from "./claude.js";
 import { parseJson, repoNote, SubprocessTransport, type Invocation, type LineMapper } from "./subprocess.js";
@@ -13,6 +14,9 @@ import type { AgentEvent, SendOptions } from "./types.js";
 export class KimiMapper implements LineMapper {
   private text = "";
   private sessionId?: string;
+  private readonly started = Date.now();
+
+  constructor(private readonly sessions = join(homedir(), ".kimi-code", "sessions")) {}
 
   push(line: string): AgentEvent[] {
     const j = parseJson(line);
@@ -33,8 +37,35 @@ export class KimiMapper implements LineMapper {
   }
 
   end(): AgentEvent[] {
-    return [...(this.text ? [{ type: "text", delta: this.text } as AgentEvent] : []), { type: "done", sessionId: this.sessionId }];
+    const u = this.sessionId ? kimiUsage(this.sessions, this.sessionId, this.started) : undefined;
+    return [
+      ...(this.text ? [{ type: "text", delta: this.text } as AgentEvent] : []),
+      ...(u ? [{ type: "usage", inputTokens: u.input, outputTokens: u.output } as AgentEvent] : []),
+      { type: "done", sessionId: this.sessionId },
+    ];
   }
+}
+
+/** Tokens this turn used, from the session's wire log (Kimi's stream-json doesn't carry them). */
+export function kimiUsage(sessions: string, session: string, since: number): { input: number; output: number } | undefined {
+  try {
+    for (const wd of readdirSync(sessions)) {
+      const wire = join(sessions, wd, session, "agents", "main", "wire.jsonl");
+      if (!existsSync(wire)) continue;
+      let input = 0;
+      let output = 0;
+      for (const l of readFileSync(wire, "utf8").split("\n")) {
+        if (!l.includes('"usage.record"')) continue;
+        const j = JSON.parse(l);
+        if ((j.time ?? 0) < since - 1000) continue;
+        const u = j.usage ?? {};
+        input += (u.inputOther ?? 0) + (u.inputCacheRead ?? 0) + (u.inputCacheCreation ?? 0);
+        output += u.output ?? 0;
+      }
+      return { input, output };
+    }
+  } catch {}
+  return undefined;
 }
 
 /** Linux caps one argv string at 128 KiB; longer prompts go in a file the agent is told to read. */

@@ -9,6 +9,8 @@ export type AgentEvent =
       rateLimited?: boolean;
       /** Subscription quota used in the current window, 0..1, when the CLI reports it. */
       quotaUtilization?: number;
+      /** What the turn cost in USD, when the CLI reports it (pay-per-token providers). */
+      costUsd?: number;
     }
   | { type: "done"; sessionId?: string }
   | { type: "error"; message: string };

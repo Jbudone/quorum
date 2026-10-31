@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -252,6 +253,9 @@ func memberLines(r *roomModel, th theme.Theme, width, n int) []string {
 		line := fg(r.colorOf(th, m.id)).Render(padRight(m.id, nameW)) + " " + fg(r.colorOf(th, m.id)).Render(padRight(bar, barW)) +
 			fg(th.Muted).Render(fmt.Sprintf(" %2d", m.said)) +
 			count(th.Info, "+", m.ideas) + count(th.Err, "✗", m.critiques) + count(th.Warn, "↻", m.conceded)
+		if s, ok := r.spend[m.id]; ok && s.USD != nil {
+			line += fg(th.Subtle).Render(" " + fmtUSD(*s.USD))
+		}
 		lines = append(lines, line)
 	}
 	var ideas, critiques, decisions int
@@ -275,23 +279,28 @@ func renderStats(r *roomModel, th theme.Theme, width int) string {
 		title string
 		lines []string
 	}
-	cols := []col{{"recent", nil}, {"discussions", nil}, {"members", nil}}
-	n := 3
+	cols := []col{{"recent", nil}, {"discussions", nil}, {"members", nil}, {"budget", nil}}
+	// Narrower screens drop discussions first, then recent, then members; the budget always shows.
+	keep := []int{0, 1, 2, 3}
 	switch {
 	case width < 70:
-		n = 1
+		keep = []int{3}
 	case width < 110:
-		n = 2
+		keep = []int{2, 3}
+	case width < 150:
+		keep = []int{0, 2, 3}
 	}
+	n := len(keep)
 	colW := (width - (n - 1)) / n
 	cols[0].lines = recentLines(r, th, statsRows)
 	cols[1].lines = discussionLines(r, th, statsRows)
 	cols[2].lines = memberLines(r, th, colW, statsRows)
-	if n == 2 {
-		cols = []col{cols[0], cols[2]}
-	} else if n == 1 {
-		cols = cols[:1]
+	cols[3].lines = budgetLines(r, th, colW, statsRows, time.Now())
+	var shown []col
+	for _, i := range keep {
+		shown = append(shown, cols[i])
 	}
+	cols = shown
 	blocks := make([]string, len(cols))
 	for i, c := range cols {
 		rows := []string{sectionTitle(c.title, colW, th, false)}

@@ -144,6 +144,39 @@ type (
 		Name   string `json:"name"`
 		Thread int    `json:"thread"`
 	}
+	// Spend is what a member has used in a channel: tokens, and USD when its model is paid per token.
+	Spend struct {
+		Input  int      `json:"input"`
+		Output int      `json:"output"`
+		USD    *float64 `json:"usd"`
+	}
+	RoomSpend struct {
+		Agent string `json:"agent"`
+		CLI   string `json:"cli"`
+		Spend Spend  `json:"spend"`
+	}
+	// Meters are quota left per harness and money left per provider, from OpenUsage.
+	Meters struct {
+		Harnesses []HarnessMeter `json:"harnesses"`
+		Balances  []Balance      `json:"balances"`
+		Source    string         `json:"source"`
+		Error     string         `json:"error"`
+	}
+	HarnessMeter struct {
+		CLI     string        `json:"cli"`
+		Windows []QuotaWindow `json:"windows"`
+	}
+	QuotaWindow struct {
+		Label    string  `json:"label"`
+		Used     float64 `json:"used"`
+		ResetsAt string  `json:"resetsAt"`
+	}
+	Balance struct {
+		Provider     string   `json:"provider"`
+		Name         string   `json:"name"`
+		RemainingUSD float64  `json:"remainingUsd"`
+		LimitUSD     *float64 `json:"limitUsd"`
+	}
 	RoomUsage struct {
 		Agent            string   `json:"agent"`
 		CLI              string   `json:"cli"`
@@ -183,25 +216,26 @@ type (
 	}
 	// RoomSnapshot is what room.start and room.open return: the room as it stands, with recent history.
 	RoomSnapshot struct {
-		ID            string         `json:"id"`
-		Dir           string         `json:"dir"`
-		Name          string         `json:"name"`
-		Topic         string         `json:"topic"`
-		Reading       []string       `json:"reading"`
-		Skipped       []string       `json:"skipped"`
-		State         string         `json:"state"`
-		Agents        []PresetAgent  `json:"agents"`
-		Left          []PresetAgent  `json:"left"`
-		Support       RoomSupport    `json:"support"`
-		CLIs          []string       `json:"clis"`
-		Digest        string         `json:"digest"`
-		Tuning        RoomTuning     `json:"tuning"`
-		Focus         string         `json:"focus"`
-		Topics        []RoomTopic    `json:"topics"`
-		Docs          []RoomDoc      `json:"docs"`
-		Pending       []RoomEvent    `json:"pending"`
-		Events        []RoomEvent    `json:"events"`
-		Substitutions []Substitution `json:"substitutions"`
+		ID            string           `json:"id"`
+		Dir           string           `json:"dir"`
+		Name          string           `json:"name"`
+		Topic         string           `json:"topic"`
+		Reading       []string         `json:"reading"`
+		Skipped       []string         `json:"skipped"`
+		State         string           `json:"state"`
+		Agents        []PresetAgent    `json:"agents"`
+		Left          []PresetAgent    `json:"left"`
+		Support       RoomSupport      `json:"support"`
+		CLIs          []string         `json:"clis"`
+		Digest        string           `json:"digest"`
+		Tuning        RoomTuning       `json:"tuning"`
+		Focus         string           `json:"focus"`
+		Topics        []RoomTopic      `json:"topics"`
+		Docs          []RoomDoc        `json:"docs"`
+		Pending       []RoomEvent      `json:"pending"`
+		Spend         map[string]Spend `json:"spend"`
+		Events        []RoomEvent      `json:"events"`
+		Substitutions []Substitution   `json:"substitutions"`
 	}
 	RoomListItem struct {
 		ID      string `json:"id"`

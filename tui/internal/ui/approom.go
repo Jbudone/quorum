@@ -184,6 +184,8 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 		}
 		u.setup = nil
 		u.room = newRoom(s, a.opts.Calm)
+		u.room.meters = a.meters
+		a.askMeters()
 		u.room.workspace = workspaceName(a.opts.Repo)
 		u.room.frame = a.frame
 		u.opening = ""
