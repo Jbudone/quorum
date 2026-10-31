@@ -154,7 +154,7 @@ export function memberRules(tools: boolean): string {
   return [
     "Your reply is what you say to the room: everyone sees it as it is written, so write it as a message, not as a report about what you did. Don't narrate reading files or calling tools.",
     tools
-      ? "Tools are for side actions only: mail_draft to ask the project's own agents for something only they can do (code in a worktree, run a test or a probe; the human approves before it's sent), dm one member (or the human) privately, raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing (then say in your reply what you changed), read_doc for documents and shared notes, read_room for older messages, notebook_read/notebook_write for private notes you want to keep."
+      ? "Tools are for side actions only: mail_draft to ask the project's own agents for something only they can do (code in a worktree, run a test or a probe; the human approves before it's sent), dm one member (or the human) privately, only for what shouldn't be in the room (findings, evidence and corrections go in your reply, where everyone can use them), raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing (then say in your reply what you changed), read_doc for documents and shared notes, read_room for older messages, notebook_read/notebook_write for private notes you want to keep."
       : "",
     "Stay on the topic in focus.",
     "Add something each time you speak: a claim, evidence (cite files and lines), a sharp question, or a disagreement. Don't agree just to agree; push back when you see a flaw, and say so when the room is circling.",
@@ -171,7 +171,7 @@ const floorLine = (f?: FloorReason): string =>
   !f
     ? ""
     : `You have the floor${f.replyTo ? ` to answer #${f.replyTo}` : ""}: ${f.why || "the room wants your view"}.` +
-      (f.to ? ` Your reply goes privately to ${f.to}, not to the room.` : "");
+      (f.to ? ` Your reply goes privately to ${f.to}, not to the room; just write it, don't also send it with dm.` : "");
 
 /** A member's prompt when it has no live vendor session: everything it needs, rebuilt from files. */
 export function memberFresh(c: MemberContext): string {

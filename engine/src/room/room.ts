@@ -138,6 +138,8 @@ interface LiveTurn {
   agent: string;
   ctrl: AbortController;
   thread?: number;
+  /** Who it wrote to privately this turn: one private message per turn. */
+  dmTo?: string;
 }
 
 /** A member the floor gave a turn to. */
@@ -1211,6 +1213,7 @@ export class Room {
       }
     }
     this.running.delete(key);
+    const dmTo = this.live.get(token)?.dmTo;
     this.live.delete(token);
     this.emit({ event: "room.turn.end", data: { agent, ...tag } });
     // An aborted turn is owed: the member gets the floor back on resume.
@@ -1224,6 +1227,8 @@ export class Room {
       this.log({ type: "turn.failed", agent, message: failed });
       // A vendor session that broke the turn is dropped; the next turn rebuilds context from the log.
       sessionId = undefined;
+    } else if (why.to && dmTo === why.to) {
+      // It answered with the dm tool; what it says after is a note about having done so.
     } else if (reply && reply !== PASS) {
       // A DM from a member who has since left goes to the room instead of nowhere.
       const to = why.to && (why.to === "human" || this.personas.has(why.to)) ? why.to : "room";
@@ -1365,6 +1370,14 @@ export class Room {
         const to = String(args.to ?? "");
         if (to === agent || (to !== "human" && !this.personas.has(to)))
           throw new Error(`no member "${to}"; members are ${["human", ...this.members()].filter((a) => a !== agent).join(", ")}`);
+        if (turn.dmTo) throw new Error(`you already wrote privately to ${turn.dmTo} this turn; put the rest in your reply, where everyone can use it`);
+        turn.dmTo = to;
+        // Inside a workstream, a note to another member belongs to the thread, where the rest of it can see it.
+        if (turn.thread && to !== "human") {
+          const e = this.log({ type: "message", from: agent, to: "room", thread: turn.thread, text: `@${to} ${text}` });
+          this.floorCheck();
+          return `Posted in thread #${turn.thread} as #${e.seq}, addressed to ${to}: notes between members in a workstream stay in its thread.`;
+        }
         const e = this.log({ type: "message", from: agent, to, text });
         this.floorCheck();
         return `Sent privately to ${to} as #${e.seq}.`;

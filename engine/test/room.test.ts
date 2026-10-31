@@ -365,6 +365,23 @@ describe("Planning", () => {
     expect(p).toMatchObject({ vision: "Levels made by AI that designers trust.", considerations: ["playability"], topics: [{ title: "Edge cases", done: "a ranked list", members: ["pcg", "ux"] }], steer: "Start with the vision." });
   });
 
+  it("a note between members in a thread is posted in the thread, not privately", async () => {
+    const r = setup({
+      floor: (c) => (c.thread && lastFrom(c) === "human" ? [{ agent: "skeptic", why: "knows" }] : []),
+      member: (_a, _n, prompt) => (/side thread/.test(prompt) ? { tools: [["dm", { to: "arch", text: "the TTL evidence is in cache.ts:40" }]], say: "Thirty seconds." } : "PASS"),
+    });
+    const room = r.create();
+    room.resume();
+    await room.settled();
+    const q = room.post("How long can a price be stale?", "room", "new");
+    await room.settled();
+    expect(r.results.skeptic[0].text).toMatch(/Posted in thread/);
+    expect(room.thread(q.seq).messages).toMatchObject([
+      { from: "skeptic", to: "room", text: "@arch the TTL evidence is in cache.ts:40", thread: q.seq },
+      { from: "skeptic", text: "Thirty seconds.", thread: q.seq },
+    ]);
+  });
+
   it("opens a channel with pinned vision and workstreams its owners start on", async () => {
     const r = setup({ member: (a, _n, prompt) => (/You're in a side thread/.test(prompt) ? `${a} on edge cases` : `${a}: first take`), floor: () => [] });
     const plan = ">> channel: levels | AI level design\n>> vision: Levels designers trust.\n>> consider: playability\n>> member: pcg | mock | PCG researcher | Knows PCG.\n>> member: ux | mock | UX researcher | Studies players.\n>> topic: Edge cases | a ranked list | ux";

@@ -66,6 +66,24 @@ describe("Room tools", () => {
     ]);
   });
 
+  it("allows one private message a turn, and an answer sent by dm isn't posted twice", async () => {
+    const r = setup({
+      member: (agent, n) =>
+        agent === "arch" && n === 1
+          ? { tools: [["dm", { to: "skeptic", text: "check the TTL" }], ["dm", { to: "skeptic", text: "and the eviction" }]], say: "Use an LRU." }
+          : agent === "skeptic" && n === 1
+            ? { tools: [["dm", { to: "arch", text: "TTL is fine" }]], say: "Replied privately to arch." }
+            : "PASS",
+    });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    expect(r.results.arch[1].error).toMatch(/already wrote privately to skeptic this turn/);
+    const said = messages(room).map((e) => e.type === "message" && [e.from, e.to, e.text]);
+    expect(said).toContainEqual(["skeptic", "arch", "TTL is fine"]);
+    expect(said).not.toContainEqual(["skeptic", "arch", "Replied privately to arch."]);
+  });
+
   it("refuses a token once its turn is over", async () => {
     const r = setup({ member: () => "PASS" });
     const room = r.create({ agents: AGENTS.slice(0, 1) });

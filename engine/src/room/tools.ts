@@ -15,7 +15,8 @@ export interface ToolDef {
 export const ROOM_TOOLS: ToolDef[] = [
   {
     name: "dm",
-    description: "Send a private message to one member (or 'human'). The human's assistant can still read it.",
+    description:
+      "Send a private message to one member (or 'human'), at most one per turn. Only for what shouldn't be in the room: findings, evidence and corrections go in your reply, where everyone can use them. In a workstream thread, a note to another member is posted in the thread. The human's assistant can still read it.",
     inputSchema: {
       type: "object",
       properties: { to: { type: "string" }, text: { type: "string" } },
