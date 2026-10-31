@@ -90,7 +90,7 @@ func renderStatusBar(r *roomModel, th theme.Theme, width int, spin string) strin
 	var line string
 	switch {
 	case r.state == "paused":
-		text := " ❚❚ PAUSED · " + r.pauseReason() + ".  Nobody is talking; what you say waits for you to resume.  ctrl+p resume "
+		text := " ❚❚ PAUSED · " + r.pauseReason() + ".  Nobody is talking; what you say waits for you to resume.  alt+p resume "
 		bar := lipgloss.NewStyle().Background(th.Warn).Foreground(lipgloss.Color("#201F26")).Bold(true)
 		return bar.Render(padRight(ansiCut(text, width), width))
 	case r.flash != "" && r.frame < r.flashTo:
@@ -103,7 +103,7 @@ func renderStatusBar(r *roomModel, th theme.Theme, width int, spin string) strin
 	default:
 		line = fg(th.OK).Bold(true).Render("● LIVE") + fg(th.Muted).Render(" · quiet: waiting for something new to respond to")
 	}
-	hint := fg(th.Subtle).Render("ctrl+p ") + k("pause")
+	hint := fg(th.Subtle).Render("alt+p ") + k("pause")
 	gap := width - lipgloss.Width(line) - lipgloss.Width(hint)
 	if gap < 2 {
 		return ansi.Truncate(line, width, "…")
@@ -346,7 +346,7 @@ func renderAssistant(r *roomModel, th theme.Theme, width int, spin string) strin
 }
 
 // renderSuggestions is the "needs you" card at the top of the assistant column. Nothing is selected
-// until the human presses ctrl+n to review, so typing and Enter always go to the chat box.
+// until the human presses alt+n to review, so typing and Enter always go to the chat box.
 func renderSuggestions(r *roomModel, th theme.Theme, width int, compact bool) string {
 	if len(r.pending) == 0 {
 		return ""
@@ -368,7 +368,7 @@ func renderSuggestions(r *roomModel, th theme.Theme, width int, compact bool) st
 	if r.review {
 		lines = append(lines, fg(th.Subtle).Render("y approve · n decline · a all · esc done"))
 	} else {
-		lines = append(lines, fg(th.Subtle).Render("ctrl+n to review"))
+		lines = append(lines, fg(th.Subtle).Render("alt+n to review"))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -464,15 +464,15 @@ func renderOverlay(o *docOverlay, th theme.Theme, width int) string {
 func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
 	sep := fg(th.Subtle).Render(" · ")
-	pause := k("ctrl+p", "pause")
+	pause := k("alt+p", "pause")
 	if r.state == "paused" {
-		pause = k("ctrl+p", "resume")
+		pause = k("alt+p", "resume")
 	}
 	box := k("tab", "talk to your assistant")
 	if r.pane == paneAssistant {
 		box = k("tab", "talk to the channel")
 	}
-	parts := []string{box, k("ctrl+g", "plan"), k("ctrl+k", "switch"), k("ctrl+a", "add someone"), pause, k("ctrl+o", "docs"), k("ctrl+t", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
+	parts := []string{box, k("alt+g", "plan"), k("alt+k", "switch"), k("alt+a", "add someone"), pause, k("ctrl+o", "docs"), k("alt+s", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
 	if r.view != 0 {
 		parts = append([]string{k("esc", "back to channel")}, parts...)
 	}

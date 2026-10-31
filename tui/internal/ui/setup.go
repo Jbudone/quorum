@@ -16,7 +16,7 @@ import (
 )
 
 // setupModel is a planning session with the assistant: for a new channel (there's no channel until
-// the human approves the plan) or for the channel that's open (ctrl+g, /plan). The assistant asks
+// the human approves the plan) or for the channel that's open (alt+g, /plan). The assistant asks
 // choice-card questions to narrow things down, then proposes a plan the human edits in a form.
 type setupModel struct {
 	channel   bool // planning the open channel's next steps
@@ -402,11 +402,11 @@ func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
 			a.openPlanForm()
 		}
 		return nil
-	case "pgup", "ctrl+u":
+	case "pgup":
 		s.vp.HalfPageUp()
 		s.follow = s.vp.AtBottom()
 		return nil
-	case "pgdown", "ctrl+d":
+	case "pgdown":
 		s.vp.HalfPageDown()
 		s.follow = s.vp.AtBottom()
 		return nil

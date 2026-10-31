@@ -100,7 +100,7 @@ func (h *roomHarness) pick(text string) {
 // review enters review mode and moves to the suggestion with this id.
 func (h *roomHarness) review(id int) {
 	h.t.Helper()
-	h.press("ctrl+n")
+	h.press("alt+n")
 	for _, p := range h.app.rm.room.pending {
 		if p.ID == id {
 			return
@@ -219,7 +219,7 @@ func TestRoomJourney(t *testing.T) {
 	s = h.screen()
 	contains(t, s, fmt.Sprintf("NEEDS YOU · %d", len(h.app.rm.room.pending))) // recorded suggestions are still waiting too
 	contains(t, s, "steer the room: “Settle the TTL first.”")
-	contains(t, s, "ctrl+n to review")
+	contains(t, s, "alt+n to review")
 	lacks(t, s, "❯ steer")
 
 	// With suggestions waiting, typing in the assistant's box and pressing Enter sends the question.
@@ -287,7 +287,7 @@ func TestRoomJourney(t *testing.T) {
 
 	// Members stream in as they write; support roles show they're working.
 	contains(t, h.screen(), "❚❚ PAUSED")
-	h.press("ctrl+p")
+	h.press("alt+p")
 	h.expectCall("room.resume")
 	h.send(engineMsg{rpc.Event{Name: "room.state", Data: rpc.RoomStateEvent{State: "running"}}})
 	contains(t, h.screen(), "▶ Resumed. The channel is live again.") // and the bar no longer says paused
@@ -304,9 +304,9 @@ func TestRoomJourney(t *testing.T) {
 	lacks(t, h.screen(), "❚❚ PAUSED")
 
 	// The stats strip can be put away.
-	h.press("ctrl+t")
+	h.press("alt+s")
 	lacks(t, h.screen(), "DISCUSSIONS")
-	h.press("ctrl+t")
+	h.press("alt+s")
 
 	// Documents.
 	h.press("ctrl+o")
@@ -317,7 +317,7 @@ func TestRoomJourney(t *testing.T) {
 	h.press("esc")
 
 	// The switcher: channels, this channel's threads, and a new channel.
-	h.press("ctrl+k")
+	h.press("alt+k")
 	h.answer(h.expectCall("workspace.open").id, 12)
 	s = h.screen()
 	contains(t, s, "SWITCH TO")
@@ -326,7 +326,7 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "+ new channel")
 	h.pick("How long can a price be stale?")
 	contains(t, h.screen(), "thread: How long can a price be stale?")
-	h.press("esc", "ctrl+k")
+	h.press("esc", "alt+k")
 	h.answer(h.expectCall("workspace.open").id, 12)
 	h.pick("+ new channel")
 	h.expectCall("setup.start")
@@ -344,7 +344,7 @@ func (h *roomHarness) reply(method, result string) call {
 func TestRoomJoinModal(t *testing.T) {
 	h := newRoomHarness(t, 150, 46)
 	h.setup()
-	h.press("ctrl+a")
+	h.press("alt+a")
 	h.answer(h.callTo("workspace.open").id, 12) // everyone in the workspace is already here, so "who" is skipped
 	h.reply("personas.list", `[{"key":"skeptic","name":"Skeptic","role":"critic","custom":false}]`)
 	h.reply("clis.list", `[{"cli":"claude","usable":true,"models":["sonnet"]},{"cli":"mock","usable":true,"models":[]}]`)
@@ -424,6 +424,34 @@ func TestRoomJoinModal(t *testing.T) {
 	lacks(t, h.screen(), "BRING SOMEONE IN")
 }
 
+// The text boxes type like a terminal: ctrl keys edit text, they don't trigger app actions.
+func TestRoomTypingKeysMatchTheTerminal(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	in := &h.app.rm.roomIn
+	h.typ("world")
+	h.press("ctrl+a") // start of line, not "add someone"
+	h.typ("hello ")
+	if in.Value() != "hello world" {
+		t.Fatalf("ctrl+a should move to the start of the line: %q", in.Value())
+	}
+	h.press("ctrl+u") // delete to the start of the line, not scroll
+	if in.Value() != "world" {
+		t.Fatalf("ctrl+u should delete back to the start: %q", in.Value())
+	}
+	h.press("ctrl+k") // delete to the end, not the switcher
+	if in.Value() != "" {
+		t.Fatalf("ctrl+k should delete to the end: %q", in.Value())
+	}
+	lacks(t, h.screen(), "SWITCH TO")
+	lacks(t, h.screen(), "BRING SOMEONE IN")
+	for _, c := range h.fc.calls[len(h.fc.calls)-1:] {
+		if c.method == "room.pause" || c.method == "room.resume" {
+			t.Fatal("typing keys must not pause or resume")
+		}
+	}
+}
+
 func TestRoomNarrowKeepsTheAssistantOnScreen(t *testing.T) {
 	h := newRoomHarness(t, 56, 40)
 	h.setup()
@@ -443,7 +471,7 @@ func TestRoomReopensTheLatestChannel(t *testing.T) {
 	s := h.screen()
 	// The human paused it, so it waits instead of carrying on by itself.
 	contains(t, s, "❚❚ PAUSED · you paused it.") // the status bar says so, with why
-	contains(t, s, "ctrl+p resume")
+	contains(t, s, "alt+p resume")
 	contains(t, s, "Paused · you can still write")
 	contains(t, s, "WHERE WE ARE")
 	if h.callTo("workspace.open").id == 1 {

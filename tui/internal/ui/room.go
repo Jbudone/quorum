@@ -489,15 +489,19 @@ const roomHelp = `Talking (left box):
 
 Your assistant (right box):
   ask it anything about the discussion; /catchup for a recap
-  ctrl+n            go through its suggestions: ↑↓ choose, y approve, n decline, a approve all
+  alt+n             go through its suggestions: ↑↓ choose, y approve, n decline, a approve all
 
 Channel:
-  ctrl+k            switch channel or thread, or start a new channel
-  ctrl+a            bring someone in: who, role, model, onboarding (or /add)
-  ctrl+g            plan next steps with your assistant: it asks, then proposes
+  alt+k             switch channel or thread, or start a new channel
+  alt+a             bring someone in: who, role, model, onboarding (or /add)
+  alt+g             plan next steps with your assistant: it asks, then proposes
                     members, workstreams and what to consider (or /plan)
-  ctrl+p            pause / resume           ctrl+o   documents and notes
-  ctrl+t            show / hide the stats strip
+  alt+p             pause / resume           ctrl+o   documents and notes
+  alt+s             show / hide the stats strip
+  pgup / pgdn       scroll (or the mouse wheel)
+
+Typing works as in a terminal: ctrl+a/e start/end, ctrl+u/k delete to start/end,
+ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /read <path>…     set the reading list members work through (folders or files)
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document

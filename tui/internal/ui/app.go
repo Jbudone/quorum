@@ -430,7 +430,7 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	s := a.sess
 	switch key {
-	case "ctrl+p":
+	case "alt+p":
 		if a.wide() {
 			a.focus = focusPlan - a.focus
 		} else {
@@ -444,10 +444,10 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 			a.showPlan = !a.showPlan
 		}
 		return nil
-	case "pgup", "ctrl+u":
+	case "pgup":
 		a.scrollKey(-1, true)
 		return nil
-	case "pgdown", "ctrl+d":
+	case "pgdown":
 		a.scrollKey(1, true)
 		return nil
 	case "ctrl+x":

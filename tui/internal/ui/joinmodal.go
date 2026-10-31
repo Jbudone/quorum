@@ -14,7 +14,7 @@ import (
 	"github.com/jbud/quorum/tui/internal/theme"
 )
 
-// The add-member modal (ctrl+a, /add, or y on an assistant's "bring in" suggestion): who, their
+// The add-member modal (alt+a, /add, or y on an assistant's "bring in" suggestion): who, their
 // role, the model they run on, and how they're onboarded, then they join the channel.
 
 type joinStep int

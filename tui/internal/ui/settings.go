@@ -273,7 +273,7 @@ func (s *settings) update(k tea.KeyPressMsg) (closeIt bool, save string, cmd tea
 		return false, "", cmd
 	}
 	switch key {
-	case "esc", "ctrl+a", "tab":
+	case "esc", "alt+a", "tab":
 		return true, "", nil
 	case "up", "k":
 		s.cursor = max(0, s.cursor-1)

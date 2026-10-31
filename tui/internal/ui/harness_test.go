@@ -142,6 +142,9 @@ func keyMsg(s string) tea.KeyPressMsg {
 	case "pgdown":
 		return tea.KeyPressMsg{Code: tea.KeyPgDown}
 	}
+	if strings.HasPrefix(s, "alt+") && len(s) == 5 {
+		return tea.KeyPressMsg{Code: rune(s[4]), Mod: tea.ModAlt}
+	}
 	if strings.HasPrefix(s, "ctrl+") && len(s) == 6 {
 		return tea.KeyPressMsg{Code: rune(s[5]), Mod: tea.ModCtrl}
 	}

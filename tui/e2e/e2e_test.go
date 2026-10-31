@@ -290,7 +290,7 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.waitFor("WHERE WE ARE", 10*time.Second)
 	tm.snapshot("room-3-milestone")
 
-	tm.send("\x10") // ctrl+p: carry on
+	tm.send("\x1bp") // alt+p: carry on
 	time.Sleep(200 * time.Millisecond)
 	tm.typ("/ask How long can a price be stale?")
 	tm.send("\r")
@@ -300,12 +300,12 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.send("\x1b")                    // back to the channel
 	time.Sleep(200 * time.Millisecond) // an esc straight before the next key reads as alt+key
 	tm.waitFor("NEEDS YOU", 30*time.Second)
-	tm.send("\x0e") // ctrl+n: review
+	tm.send("\x1bn") // alt+n: review
 	tm.waitFor("y approve", 5*time.Second)
 	tm.snapshot("room-5-review")
 	tm.send("\x1b")
 	time.Sleep(200 * time.Millisecond)
-	tm.send("\x07") // ctrl+g: plan next steps for this channel
+	tm.send("\x1bg") // alt+g: plan next steps for this channel
 	tm.waitFor("plan next steps", 5*time.Second)
 	tm.send("\x1b")
 	time.Sleep(200 * time.Millisecond)

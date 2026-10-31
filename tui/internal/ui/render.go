@@ -204,7 +204,7 @@ func drawEntry(s *session, e *entry, th theme.Theme, width int, spin string) str
 	}
 	switch {
 	case e.artifact == "plan":
-		rows = append(rows, fg(th.OK).Render("✎ plan updated")+fg(th.Muted).Render(fmt.Sprintf("  (%s) · ctrl+p to read", humanSize(len(e.text)))))
+		rows = append(rows, fg(th.OK).Render("✎ plan updated")+fg(th.Muted).Render(fmt.Sprintf("  (%s) · alt+p to read", humanSize(len(e.text)))))
 	case s.full || t == nil || e.speaker == "chair":
 		rows = append(rows, "", wrapPlain(strings.TrimSpace(e.text), width-2, th))
 	default:
@@ -459,7 +459,7 @@ func footerHint(s *session, th theme.Theme, width int) string {
 	var parts []string
 	switch {
 	case s.phase == phaseDone:
-		parts = []string{k("n", "new session"), k("q", "quit"), k("tab", "focus"), k("ctrl+p", "plan")}
+		parts = []string{k("n", "new session"), k("q", "quit"), k("tab", "focus"), k("alt+p", "plan")}
 	case s.canType() && s.qa.active:
 		if it := s.currentItem(); it != nil && len(it.options) > 0 {
 			parts = []string{k("↑↓", "move"), k("space", "pick"), k("enter", "send"), k("esc", "skip all"), k("ctrl+c", "quit")}
@@ -467,9 +467,9 @@ func footerHint(s *session, th theme.Theme, width int) string {
 			parts = []string{k("enter", "answer"), k("enter ∅", "skip"), k("esc", "skip all"), k("ctrl+c", "quit")}
 		}
 	case s.canType():
-		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+o", "full"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
+		parts = []string{k("enter", "continue / send"), k("@name", "ask one"), k("/steer", "direct"), k("/stop", "finish"), k("ctrl+o", "full"), k("alt+p", "plan"), k("ctrl+c", "quit")}
 	default:
-		parts = []string{k("ctrl+x", "stop"), k("ctrl+o", "full"), k("tab", "focus"), k("ctrl+p", "plan"), k("ctrl+c", "quit")}
+		parts = []string{k("ctrl+x", "stop"), k("ctrl+o", "full"), k("tab", "focus"), k("alt+p", "plan"), k("ctrl+c", "quit")}
 	}
 	for len(parts) > 1 && lipgloss.Width(strings.Join(parts, sep)) > width {
 		parts = parts[:len(parts)-1]

@@ -202,7 +202,7 @@ func TestLayoutNeverOverflows(t *testing.T) {
 		h.feedThrough("awaiting_human")
 		h.feedThrough("idle")
 		check("paused")
-		h.press("ctrl+p")
+		h.press("alt+p")
 		check("plan toggled")
 	}
 }

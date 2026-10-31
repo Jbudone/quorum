@@ -134,7 +134,7 @@ func TestWireShapeMatchesEngine(t *testing.T) {
 func TestDrawerJourneyEditsStartsAndSaves(t *testing.T) {
 	h := newHarness(t, 140, 44)
 	h.press("down") // trio
-	h.press("ctrl+a")
+	h.press("alt+a")
 	contains(t, h.screen(), "SETTINGS · TRIO")
 	h.press("down", "right") // rounds 3 -> 4 (trio ships with 2; just check it moved)
 	contains(t, h.screen(), "EDITED")
@@ -154,7 +154,7 @@ func TestDrawerJourneyEditsStartsAndSaves(t *testing.T) {
 
 func TestDrawerSavePromptsForName(t *testing.T) {
 	h := newHarness(t, 140, 44)
-	h.press("ctrl+a")
+	h.press("alt+a")
 	h.press("down", "right")
 	h.press("s")
 	contains(t, h.screen(), "save as")
@@ -179,7 +179,7 @@ func TestDrawerSavePromptsForName(t *testing.T) {
 func TestDrawerFitsSmallScreens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {60, 20}, {140, 44}} {
 		h := newHarness(t, size[0], size[1])
-		h.press("down", "ctrl+a")
+		h.press("down", "alt+a")
 		for i := 0; i < 20; i++ {
 			h.press("down")
 		}

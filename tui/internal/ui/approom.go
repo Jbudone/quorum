@@ -270,7 +270,7 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	if r.overlay != nil {
 		o := r.overlay
 		switch key {
-		case "esc", "q", "ctrl+k":
+		case "esc", "q", "alt+k":
 			r.overlay = nil
 		case "up", "k":
 			if o.list != nil {
@@ -284,9 +284,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			} else {
 				u.overlayVP.ScrollDown(1)
 			}
-		case "pgup", "ctrl+u":
+		case "pgup":
 			u.overlayVP.HalfPageUp()
-		case "pgdown", "ctrl+d":
+		case "pgdown":
 			u.overlayVP.HalfPageDown()
 		case "enter":
 			if o.list != nil && o.cur < len(o.list) {
@@ -334,7 +334,7 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			for _, s := range r.pending {
 				a.call("room.resolve", map[string]any{"id": s.ID, "accept": true})
 			}
-		case "esc", "ctrl+n":
+		case "esc", "alt+n":
 			r.review = false
 		}
 		return nil
@@ -349,26 +349,27 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		r.pane = paneRoom
 		u.assistIn.Blur()
 		return u.roomIn.Focus()
-	case "ctrl+n":
+	// App actions use alt+letter: every ctrl+letter is a typing key in the text boxes (as in a terminal).
+	case "alt+n":
 		if len(r.pending) > 0 {
 			r.review = true
 			r.sugCur = min(r.sugCur, len(r.pending)-1)
 		}
 		return nil
-	case "ctrl+k":
+	case "alt+k":
 		u.switching = true
 		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
 		return nil
-	case "ctrl+t":
+	case "alt+s":
 		u.hideStats = !u.hideStats
 		return nil
-	case "ctrl+a":
+	case "alt+a":
 		a.openJoin(nil)
 		return nil
-	case "ctrl+g":
+	case "alt+g":
 		a.startPlan()
 		return nil
-	case "ctrl+p":
+	case "alt+p":
 		if r.state == "paused" {
 			a.call("room.resume", map[string]any{})
 		} else {
@@ -378,10 +379,10 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+o":
 		r.overlay = &docOverlay{title: "Documents", list: r.docList()}
 		return nil
-	case "pgup", "ctrl+u":
+	case "pgup":
 		a.roomScroll(-1, true)
 		return nil
-	case "pgdown", "ctrl+d":
+	case "pgdown":
 		a.roomScroll(1, true)
 		return nil
 	case "esc":
@@ -500,7 +501,7 @@ func (a *App) feedW() int {
 	return a.w - a.assistW() - 1
 }
 
-// statsShown reports whether the stats strip is on screen: it's hidden on short terminals and by ctrl+t.
+// statsShown reports whether the stats strip is on screen: it's hidden on short terminals and by alt+s.
 func (a *App) statsShown() bool {
 	return a.rm != nil && a.rm.room != nil && a.rm.room.overlay == nil && !a.rm.hideStats && a.h >= 30 && !a.rm.room.empty()
 }
@@ -588,7 +589,7 @@ func (a *App) refreshRoom() {
 	u.assistIn.SetWidth(max(assistBox, 10))
 	switch {
 	case r.state == "paused":
-		u.roomIn.Placeholder = "Paused · you can still write; members answer once you resume (ctrl+p)"
+		u.roomIn.Placeholder = "Paused · you can still write; members answer once you resume (alt+p)"
 	case r.view != 0:
 		u.roomIn.Placeholder = "Reply in this thread · esc back to the channel"
 	case len(r.agents) == 0:
