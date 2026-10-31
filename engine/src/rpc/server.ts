@@ -34,7 +34,7 @@ import { personaFor, Workspace } from "../room/workspace.js";
  * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
  * persona.draft {line}, persona.get {key}, models.list {cli}, catalog.list {refresh?, mock?} (every model and how to run it),
  * catalog.favourite {key, on?}, catalog.used {key}, providers.get, providers.set {id, name?, env?, baseUrl?, models?, hidden?, remove?},
- * harnesses.order {order}. setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
+ * harnesses.order {order}, room.swap {id, cli, model?} (move a member or support role to another model). setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
  * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
  *
  * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
@@ -428,6 +428,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         side(() => r.resolve(Number(p.id), Boolean(p.accept), args));
         return {};
       }
+      case "room.swap":
+        needRoom().swapModel(String(p.id ?? ""), String(p.cli ?? "") as CliName, p.model ? String(p.model) : undefined);
+        return {};
       case "room.configure":
         return needRoom().configure({ parallel: p.parallel, turnCap: p.turnCap, quotaWarn: p.quotaWarn, quotaStop: p.quotaStop, independent: p.independent });
       case "room.focus":

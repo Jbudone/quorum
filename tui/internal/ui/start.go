@@ -294,7 +294,7 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		b.WriteString("\n")
 	}
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
-	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("alt+a", "customize"), k("ctrl+c", "quit")}
+	hints := []string{k("↑↓", "choose"), k("tab", "switch"), k("enter", "start"), k("alt+a", "customize"), k("alt+o", "models"), k("ctrl+c", "quit")}
 	sep := fg(th.Subtle).Render(" · ")
 	for len(hints) > 1 && lipgloss.Width(strings.Join(hints, sep)) > cw {
 		hints = hints[:len(hints)-1]

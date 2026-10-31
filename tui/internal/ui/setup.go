@@ -448,8 +448,8 @@ type planForm struct {
 	cur    int
 	vision textarea.Model
 	clis   []string // CLIs members can run on
-	picker *modelPicker
-	pickIx int // the member the picker is for
+	search *modelSearch
+	pickIx int // the member the search is for
 }
 
 func (a *App) openPlanForm() {
@@ -509,14 +509,6 @@ func (a *App) planResponse(method string, r rpc.Response) bool {
 				}
 			}
 		}
-	case "models.list":
-		if f.picker != nil {
-			f.picker.loading = false
-			var ms []rpc.ModelInfo
-			if r.Err == "" && rpc.DecodeResult(r.Result, &ms) == nil {
-				f.picker.all = ms
-			}
-		}
 	default:
 		return false
 	}
@@ -527,15 +519,17 @@ func (a *App) handlePlanFormKey(k tea.KeyPressMsg) tea.Cmd {
 	s := a.rm.setup
 	f := s.form
 	key := k.String()
-	if f.picker != nil {
+	if f.search != nil {
 		if key == "esc" {
-			f.picker = nil
+			f.search = nil
 			return nil
 		}
-		picked, done, cmd := f.picker.key(k)
+		pick, done, fav, cmd := f.search.key(k)
+		a.starred(fav)
 		if done {
-			f.p.Members[f.pickIx].CLI, f.p.Members[f.pickIx].Model = f.picker.cli, picked
-			f.picker = nil
+			a.picked(pick)
+			f.p.Members[f.pickIx].CLI, f.p.Members[f.pickIx].Model = pick.harness, pick.model
+			f.search = nil
 		}
 		return cmd
 	}
@@ -576,12 +570,7 @@ func (a *App) handlePlanFormKey(k tea.KeyPressMsg) tea.Cmd {
 	case "m":
 		if row.kind == "member" {
 			m := f.p.Members[row.index]
-			cli := m.CLI
-			if cli == "" && len(f.clis) > 0 {
-				cli = f.clis[0]
-			}
-			f.picker, f.pickIx = newModelPicker(a.th, cli, m.Model), row.index
-			a.call("models.list", map[string]any{"cli": cli})
+			f.search, f.pickIx = a.openSearch(f.clis, m.CLI, m.Model), row.index
 		}
 	}
 	return nil
@@ -641,9 +630,10 @@ func (a *App) planFormView(height int) string {
 	f := s.form
 	w := min(a.w-4, 110)
 	th := a.th
-	if f.picker != nil {
+	if f.search != nil {
 		m := f.p.Members[f.pickIx]
-		body := sectionTitle("model for "+m.ID, w, th, true) + "\n\n" + f.picker.view(th, w, a.spin.View()) + "\n\n" + fg(th.Subtle).Render("type to search · ↑↓ choose · enter use it · esc back")
+		w = min(a.w-4, 140)
+		body := sectionTitle("model for "+m.ID, w, th, true) + "\n\n" + f.search.view(th, w, a.spin.View()) + "\n\n" + fg(th.Subtle).Render("type to search · ↑↓ choose · tab harness · enter use it · alt+f star · esc back")
 		return lipgloss.NewStyle().Padding(0, 2).Height(height).MaxHeight(height).Render(body)
 	}
 	f.vision.SetWidth(w - 8)

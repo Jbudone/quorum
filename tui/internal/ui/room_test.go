@@ -365,20 +365,17 @@ func TestRoomJoinModal(t *testing.T) {
 	contains(t, h.screen(), "Audits caches for leaks.")
 	h.press("enter") // past the persona: on to the model
 
-	// Only the CLIs this channel runs on are offered (a mock channel never reaches a real CLI).
+	// The model search: only harnesses this channel runs on are offered (a mock channel never reaches a real CLI).
+	h.expectCall("catalog.list")
+	h.reply("catalog.list", testCatalog)
 	s = h.screen()
-	contains(t, s, "❯ mock")
-	lacks(t, s, "claude")
-	h.press("enter")
-	if c := h.expectCall("models.list"); c.params["cli"] != "mock" {
-		t.Fatalf("models.list params: %v", c.params)
-	}
-	h.reply("models.list", `[{"id":"scripted","label":"scripted mock cast"},{"id":"other","label":"another"}]`)
-	contains(t, h.screen(), "(default)")
-	h.typ("scrip") // search narrows the list
+	contains(t, s, "Harness defaults")
+	contains(t, s, "its own default model")
+	lacks(t, s, "Claude Opus")
+	h.typ("scripted") // a name the catalog doesn't list is used as typed, on the channel's harness
 	s = h.screen()
-	contains(t, s, "❯ scripted")
-	lacks(t, s, "another")
+	contains(t, s, "“scripted”")
+	contains(t, s, "on mock")
 	h.press("enter")
 
 	// Onboarding: the brief is on by default; a first question is optional.

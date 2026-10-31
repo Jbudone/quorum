@@ -118,7 +118,7 @@ func (a *App) openRoom(id string) {
 
 // handleRoomResponse handles answers to workspace, setup and room requests. It reports whether it took the method.
 func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
-	if a.planResponse(method, r) || a.joinResponse(method, r) {
+	if a.planResponse(method, r) || a.joinResponse(method, r) || a.editResponse(method, r) {
 		return true
 	}
 	if !strings.HasPrefix(method, "room.") && !strings.HasPrefix(method, "setup.") && method != "workspace.open" {
@@ -296,6 +296,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		return a.handleJoinKey(k)
 	}
 	r := u.room
+	if r.edit != nil {
+		return a.handleEditKey(k)
+	}
 	if r.overlay != nil {
 		o := r.overlay
 		switch key {
@@ -358,6 +361,11 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 					return nil
 				}
 				a.call("room.resolve", map[string]any{"id": s.ID, "accept": key == "y"})
+			}
+		case "e":
+			if r.sugCur < len(r.pending) {
+				a.openEdit(r.pending[r.sugCur])
+				return r.edit.focus()
 			}
 		case "a":
 			for _, s := range r.pending {
@@ -487,6 +495,22 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "new":
 		a.startSetup()
+		return nil
+	case "providers":
+		a.openProviders()
+		return nil
+	case "swap":
+		id, _ := cmd.params["id"].(string)
+		cli, model := "", ""
+		for _, ag := range r.agents {
+			if ag.ID == id {
+				cli, model = ag.CLI, ag.Model
+			}
+		}
+		a.openEdit(rpc.RoomEvent{Action: "swap", Args: []string{id, cli, model}})
+		r.edit.direct = true
+		r.edit.cur = 1 // straight to the model row
+		r.edit.search = a.openSearch(r.clis, cli, model)
 		return nil
 	case "join":
 		a.openJoin(nil)
@@ -797,6 +821,8 @@ func (a *App) roomView() string {
 	switch {
 	case u.join != nil:
 		body = a.joinBox(bh)
+	case r.edit != nil:
+		body = a.editBox(bh)
 	case r.overlay != nil:
 		body = lipgloss.NewStyle().Width(a.w).Height(bh).Padding(0, 2).Render(u.overlayVP.View())
 	case a.roomSide():

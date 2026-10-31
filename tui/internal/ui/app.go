@@ -93,6 +93,10 @@ type App struct {
 	toast     string    // a short message flashed in the footer
 	toastTo   int       // the frame the toast lasts until
 	images    []string  // pasted images, by the [image N] chips that stand for them
+
+	catalog      *rpc.Catalog // every model and how to run it, once the engine sent it
+	catalogAsked bool
+	prov         *providersScreen // the Providers & models screen (alt+o), over whatever is open
 }
 
 // animFPS is the animation clock. Every effect is counted in these ticks, so raising it speeds
@@ -296,6 +300,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(c, a.tick())
 	}
+	if a.prov != nil {
+		var c tea.Cmd
+		switch p := a.prov; {
+		case p.form != nil && p.form.cur < len(p.form.ins):
+			p.form.ins[p.form.cur], c = p.form.ins[p.form.cur].Update(msg)
+		case p.tab == tabModels:
+			p.search.search, c = p.search.search.Update(msg)
+		case p.tab == tabProviders:
+			p.filter, c = p.filter.Update(msg)
+		}
+		return a, c
+	}
 	if a.screen == screenStart && a.start.focus == 1 {
 		var c tea.Cmd
 		a.start.topic, c = a.start.topic.Update(msg)
@@ -305,6 +321,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var c tea.Cmd
 		a.rm.setup.in, c = a.rm.setup.in.Update(msg)
 		return a, c
+	}
+	if a.screen == screenRoom && a.rm != nil && a.rm.room != nil && a.rm.room.edit != nil {
+		// Pastes go into the field being edited.
+		e := a.rm.room.edit
+		if e.search == nil && e.field() != "model" {
+			var c tea.Cmd
+			f := e.rows()[e.cur]
+			e.ins[f], c = e.ins[f].Update(msg)
+			return a, c
+		}
+		return a, nil
 	}
 	if a.screen == screenRoom && a.rm != nil && a.rm.room != nil {
 		var c tea.Cmd
@@ -364,7 +391,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
-	if a.handleRoomResponse(method, r) {
+	if a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
 		return
 	}
 	if r.Err != "" {
@@ -458,6 +485,13 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	if key == "ctrl+c" {
 		a.quitting = true
 		return nil
+	}
+	if a.prov != nil {
+		return a.handleProvKey(k)
+	}
+	if key == "alt+o" && (a.screen == screenStart || a.screen == screenRoom && a.rm != nil && a.rm.setup == nil && a.rm.join == nil) {
+		a.openProviders()
+		return a.prov.focus()
 	}
 	if a.screen == screenStart {
 		return a.handleStartKey(k)
@@ -824,7 +858,9 @@ func (a *App) layoutSide() (int, int) {
 
 func (a *App) View() tea.View {
 	var content string
-	if a.screen == screenStart {
+	if a.prov != nil {
+		content = a.providersView()
+	} else if a.screen == screenStart {
 		repo := a.opts.Repo
 		content = a.start.view(a.th, a.w, a.h, repo, !a.loaded && a.engineErr == "", a.spin.View(), a.frame)
 		if a.engineErr != "" {

@@ -280,3 +280,41 @@ describe("rpc server: customizing a council", () => {
     await done;
   });
 });
+
+describe("rpc catalog and providers", () => {
+  it("serves the mock catalog, stars models, and saves providers and harness order", async () => {
+    const prev = { config: process.env.XDG_CONFIG_HOME, state: process.env.XDG_STATE_HOME };
+    process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "q-config-"));
+    process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), "q-state-"));
+    try {
+      const h = harness();
+      h.send({ id: 1, method: "catalog.list", params: { mock: true } });
+      const cat = (await h.waitFor((m) => m.id === 1)).result;
+      expect(cat.models.length).toBeGreaterThan(3);
+      expect(cat.source.from).toBe("mock");
+
+      h.send({ id: 2, method: "catalog.favourite", params: { key: "anthropic/claude-opus-5-5" } });
+      expect((await h.waitFor((m) => m.id === 2)).result.favourites).toEqual(["anthropic/claude-opus-5-5"]);
+      h.send({ id: 3, method: "catalog.used", params: { key: "openai/gpt-6-astra" } });
+      await h.waitFor((m) => m.id === 3);
+      h.send({ id: 4, method: "catalog.list", params: { mock: true } });
+      const again = (await h.waitFor((m) => m.id === 4)).result;
+      expect(again.models.find((m: any) => m.key === "anthropic/claude-opus-5-5").favourite).toBe(true);
+      expect(again.models.find((m: any) => m.key === "openai/gpt-6-astra").lastUsed).toBeGreaterThan(0);
+
+      h.send({ id: 5, method: "providers.set", params: { id: "lmstudio", name: "LM Studio", baseUrl: "http://localhost:1234/v1", models: "a b" } });
+      expect((await h.waitFor((m) => m.id === 5)).result.providers.lmstudio).toEqual({ name: "LM Studio", baseUrl: "http://localhost:1234/v1", models: ["a", "b"] });
+      h.send({ id: 6, method: "providers.set", params: { id: "bad id!" } });
+      expect(JSON.stringify((await h.waitFor((m) => m.id === 6)).error)).toMatch(/provider id/);
+      h.send({ id: 7, method: "harnesses.order", params: { order: ["opencode", "claude"] } });
+      expect((await h.waitFor((m) => m.id === 7)).result.harnesses.slice(0, 2)).toEqual(["opencode", "claude"]);
+      h.send({ id: 8, method: "providers.set", params: { id: "lmstudio", remove: true } });
+      expect((await h.waitFor((m) => m.id === 8)).result.providers).toEqual({});
+      h.input.end();
+      await h.done;
+    } finally {
+      process.env.XDG_CONFIG_HOME = prev.config;
+      process.env.XDG_STATE_HOME = prev.state;
+    }
+  });
+});

@@ -53,7 +53,8 @@ type joinModal struct {
 	questionIn textarea.Model
 	field      int // stepEdit: 0 id, 1 role, 2 persona
 	cli, model string
-	picker     *modelPicker
+	search     *modelSearch
+	searchBack joinStep // where esc from the model search goes
 	rows       []joinRow
 	suggestion int // the assistant suggestion this answers, or -1
 	waiting    string
@@ -135,20 +136,10 @@ func (m *joinModal) cliOptions() []string {
 	return out
 }
 
-// selectModel puts the cursor on the chosen CLI, if it's listed.
-func (m *joinModal) selectModel() {
-	m.cur = max(slices.Index(m.cliOptions(), m.cli), 0)
-}
-
-// pickModel opens the model search for a CLI.
-func (a *App) pickModel(cli string) {
+// joinSearch opens the model search for the member being brought in; esc returns to back.
+func (a *App) joinSearch(back joinStep) {
 	m := a.rm.join
-	current := ""
-	if cli == m.cli {
-		current = m.model
-	}
-	m.cli, m.picker, m.step = cli, newModelPicker(a.th, cli, current), stepModelPick
-	a.call("models.list", map[string]any{"cli": cli})
+	m.search, m.searchBack, m.step = a.openSearch(m.cliOptions(), m.cli, m.model), back, stepModelPick
 }
 
 func (m *joinModal) name() string {
@@ -212,21 +203,10 @@ func (a *App) joinResponse(method string, r rpc.Response) bool {
 		if r.Err == "" && rpc.DecodeResult(r.Result, &ps) == nil {
 			m.presets = ps
 		}
-	case "models.list":
-		if m.picker != nil {
-			m.picker.loading = false
-			var ms []rpc.ModelInfo
-			if r.Err == "" && rpc.DecodeResult(r.Result, &ms) == nil {
-				m.picker.all = ms
-			}
-		}
 	case "clis.list":
 		var cs []rpc.CLIInfo
 		if r.Err == "" && rpc.DecodeResult(r.Result, &cs) == nil {
 			m.clis = cs
-			if m.step == stepModel {
-				m.selectModel()
-			}
 		}
 	case "workspace.open":
 		var w rpc.Workspace
@@ -336,8 +316,7 @@ func (a *App) handleJoinKey(k tea.KeyPressMsg) tea.Cmd {
 			}
 			w := m.members[m.cur-1]
 			m.existing, m.cli, m.model = w.ID, w.CLI, w.Model
-			m.step = stepModel
-			m.selectModel()
+			a.joinSearch(stepWho)
 		}
 		return nil
 	case stepRole:
@@ -405,41 +384,31 @@ func (a *App) handleJoinKey(k tea.KeyPressMsg) tea.Cmd {
 			for _, in := range ins {
 				in.Blur()
 			}
-			m.step = stepModel
-			m.selectModel()
+			a.joinSearch(stepEdit)
 			return nil
 		}
 		var c tea.Cmd
 		*ins[m.field], c = ins[m.field].Update(k)
 		return c
-	case stepModel:
-		opts := m.cliOptions()
-		if list(len(opts)) {
-			return nil
-		}
-		switch key {
-		case "esc":
-			if m.existing != "" {
-				m.existing, m.step, m.cur = "", stepWho, 0
-			} else {
-				m.step, m.field = stepEdit, 2
-				return m.focusEdit()
-			}
-		case "enter":
-			if m.cur < len(opts) {
-				a.pickModel(opts[m.cur])
-			}
-		}
-		return nil
 	case stepModelPick:
 		if key == "esc" {
-			m.step, m.picker = stepModel, nil
-			m.selectModel()
+			m.search = nil
+			switch m.searchBack {
+			case stepWho:
+				m.existing, m.step, m.cur = "", stepWho, 0
+			case stepEdit:
+				m.step, m.field = stepEdit, 2
+				return m.focusEdit()
+			default:
+				m.step, m.cur = stepOnboard, 0
+			}
 			return nil
 		}
-		picked, done, cmd := m.picker.key(k)
+		pick, done, fav, cmd := m.search.key(k)
+		a.starred(fav)
 		if done {
-			m.model, m.picker = picked, nil
+			a.picked(pick)
+			m.cli, m.model, m.search = pick.harness, pick.model, nil
 			m.step, m.cur = stepOnboard, 0
 		}
 		return cmd
@@ -448,8 +417,7 @@ func (a *App) handleJoinKey(k tea.KeyPressMsg) tea.Cmd {
 		case "esc":
 			m.extraIn.Blur()
 			m.questionIn.Blur()
-			m.step = stepModel
-			m.selectModel()
+			a.joinSearch(stepOnboard)
 			return nil
 		case "up", "shift+tab":
 			m.cur = max(m.cur-1, 0)
@@ -570,17 +538,9 @@ func renderJoin(m *joinModal, th theme.Theme, width int, spin string) string {
 		}
 		lines = append(lines, label(0, "name"), m.idIn.View(), label(1, "role"), m.roleIn.View(), label(2, "persona"), m.personaIn.View())
 		keys = "tab next field · enter next · alt+enter new line · esc back"
-	case stepModel:
-		lines = append(lines, fg(th.Muted).Render("Which CLI? Mixing models helps: different models catch different things."), "")
-		opts := m.cliOptions()
-		if len(opts) == 0 {
-			lines = append(lines, fg(th.Muted).Italic(true).Render(spin+" finding your CLIs…"))
-		}
-		pick(opts)
-		keys = "↑↓ choose · enter pick a model · esc back"
 	case stepModelPick:
-		lines = append(lines, m.picker.view(th, width, spin))
-		keys = "type to search · ↑↓ choose · enter use it · esc back"
+		lines = append(lines, fg(th.Muted).Render("Which model? Mixing vendors helps: different models catch different things."), "", m.search.view(th, width, spin))
+		keys = "type to search · ↑↓ choose · tab harness · enter use it · alt+f star · alt+c fold · esc back"
 	case stepOnboard, stepJoining:
 		who := m.name()
 		model := strings.TrimSpace(m.cli + " " + m.model)
@@ -633,6 +593,9 @@ func renderJoin(m *joinModal, th theme.Theme, width int, spin string) string {
 func (a *App) joinBox(height int) string {
 	m := a.rm.join
 	w := min(a.w-4, 84)
+	if m.step == stepModelPick {
+		w = min(a.w-4, 140)
+	}
 	inner := w - 4
 	for _, in := range []*textarea.Model{&m.idIn, &m.roleIn, &m.personaIn, &m.describeIn} {
 		in.SetWidth(inner)

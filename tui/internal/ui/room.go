@@ -110,6 +110,7 @@ type roomModel struct {
 	quota   map[string]float64
 	pane    roomPane
 	overlay *docOverlay
+	edit    *sugEdit // a suggestion being edited before it is approved
 	frame   int
 	calm    bool
 }
@@ -312,6 +313,12 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		if !r.isMember(e.Agent) {
 			r.agents = append(r.agents, rpc.PresetAgent{ID: e.Agent, Persona: e.Persona, CLI: e.CLI, Model: e.Model})
 		}
+	case "agent.swapped":
+		for i := range r.agents {
+			if r.agents[i].ID == e.Agent {
+				r.agents[i].CLI, r.agents[i].Model = e.CLI, e.Model
+			}
+		}
 	case "agent.left":
 		for _, a := range r.agents {
 			if a.ID == e.Agent {
@@ -462,6 +469,10 @@ func suggestionLabel(s rpc.RoomEvent) string {
 			label += " on " + strings.TrimSpace(s.Args[1]+" "+s.Args[2])
 		}
 		return label
+	case "swap":
+		if len(s.Args) > 1 {
+			return "move " + s.Args[0] + " to " + strings.TrimSpace(strings.Join(s.Args[1:], " "))
+		}
 	case "remove":
 		return "ask " + args + " to leave"
 	case "focus":
@@ -512,6 +523,7 @@ Channel:
   alt+p             pause / resume           ctrl+o   documents and notes
   alt+s             show / hide the stats strip
   alt+w             widen / narrow your assistant's column
+  alt+o             providers & models: favourites, harness order, keys
   pgup / pgdn       scroll (or the mouse wheel)
 
 Typing works as in a terminal: ctrl+a/e start/end, ctrl+u/k delete to start/end,
@@ -520,6 +532,8 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document
   /add <member> <cli> [model]   (quick add)   /remove <member>   /rejoin <member>
+  /swap <member>    move a member (or assistant, chair, scribe, floor) to another model
+  /models           providers & models: favourites, harness order, keys (or alt+o)
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -562,6 +576,20 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{local: "switch"}
 	case in == "/new":
 		return roomCommand{local: "new"}
+	case in == "/models" || in == "/providers":
+		return roomCommand{local: "providers"}
+	case strings.HasPrefix(in, "/swap"):
+		v, ok := needs("/swap")
+		if !ok {
+			return roomCommand{err: "/swap takes a member (or assistant, chair, scribe, floor), e.g. /swap skeptic"}
+		}
+		id := strings.ToLower(strings.TrimPrefix(strings.Fields(v)[0], "@"))
+		if !slices.Contains([]string{"assistant", "chair", "scribe", "floor"}, id) {
+			if _, bad := member(id); bad != "" {
+				return roomCommand{err: bad}
+			}
+		}
+		return roomCommand{local: "swap", params: map[string]any{"id": id}}
 	case in == "/plan":
 		return roomCommand{local: "plan"}
 	case in == "/resume":

@@ -182,6 +182,8 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		out = event("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
 	case "agent.left":
 		out = event("−", th.Muted, e.Agent+" left"+suffix(" · memo: ", firstLine(e.Memo)))
+	case "agent.swapped":
+		out = event("⇄", th.Info, fmt.Sprintf("%s now runs on %s", e.Agent, strings.TrimSpace(e.CLI+" "+e.Model)))
 	case "budget":
 		c := th.Warn
 		if e.Level == "stop" {
@@ -384,7 +386,7 @@ func renderSuggestions(r *roomModel, th theme.Theme, width int, compact bool) st
 		}
 	}
 	if r.review {
-		lines = append(lines, fg(th.Subtle).Render("y approve · n decline · a all · esc done"))
+		lines = append(lines, fg(th.Subtle).Render("y approve · e edit · n decline · a all · esc done"))
 	} else {
 		lines = append(lines, fg(th.Subtle).Render("alt+n to review"))
 	}
@@ -490,12 +492,12 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	if r.pane == paneAssistant {
 		box = k("tab", "talk to the channel")
 	}
-	parts := []string{box, k("alt+w", "widen"), k("alt+g", "plan"), k("alt+k", "switch"), k("alt+a", "add someone"), pause, k("ctrl+o", "docs"), k("alt+s", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
+	parts := []string{box, k("alt+w", "widen"), k("alt+g", "plan"), k("alt+k", "switch"), k("alt+a", "add someone"), k("alt+o", "models"), pause, k("ctrl+o", "docs"), k("alt+s", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
 	if r.view != 0 {
 		parts = append([]string{k("esc", "back to channel")}, parts...)
 	}
 	if r.review {
-		parts = []string{k("↑↓", "choose"), k("y", "approve"), k("n", "decline"), k("a", "approve all"), k("esc", "done")}
+		parts = []string{k("↑↓", "choose"), k("y", "approve"), k("e", "edit"), k("n", "decline"), k("a", "approve all"), k("esc", "done")}
 	}
 	if r.overlay != nil {
 		parts = []string{k("esc", "close"), k("↑↓", "move"), k("enter", "open")}
