@@ -55,6 +55,7 @@ import {
   type SupportSpec,
 } from "./store.js";
 import { newToken, ToolServer, type ToolHandler } from "./tools.js";
+import { noteVendorSession } from "./vendorlog.js";
 import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
@@ -1043,7 +1044,10 @@ export class Room {
             text = "";
             this.emit({ event: "room.turn.tool", data: { agent, name: e.name, ...tag } });
           } else if (e.type === "usage") this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
-          else if (e.type === "done" && e.sessionId) sessionId = e.sessionId;
+          else if (e.type === "done" && e.sessionId) {
+            sessionId = e.sessionId;
+            noteVendorSession(this.o.repo, { room: this.id, agent: sk, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
+          }
           else if (e.type === "error") failed = e.message;
         }
       } catch (err) {
@@ -1283,6 +1287,7 @@ export class Room {
           text += e.delta;
           onDelta?.(e.delta);
         } else if (e.type === "usage") this.usage(id, spec.cli, e.quotaUtilization, e.rateLimited);
+        else if (e.type === "done" && e.sessionId) noteVendorSession(this.o.repo, { room: this.id, agent: id, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
         else if (e.type === "error") failed = e.message;
       }
     } catch (err) {

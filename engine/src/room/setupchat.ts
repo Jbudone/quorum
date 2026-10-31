@@ -3,6 +3,7 @@ import { parseBlocks } from "./directives.js";
 import { parseSetup, setupPrompt, SETUP_SYSTEM, type PlanQuestion, type SetupProposal } from "./prompts.js";
 import { Room, type RoomOptions } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
+import { noteVendorSession } from "./vendorlog.js";
 import { readingPath, Workspace } from "./workspace.js";
 
 /**
@@ -48,7 +49,8 @@ export class SetupChat {
       if (e.type === "text") {
         reply += e.delta;
         onDelta?.(e.delta);
-      } else if (e.type === "error") failed = e.message;
+      } else if (e.type === "done" && e.sessionId) noteVendorSession(this.o.repo, { ...(room ? { room: room.id } : {}), agent: "assistant", cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
+      else if (e.type === "error") failed = e.message;
     }
     if (!reply.trim()) throw new Error(failed ?? "the assistant didn't answer");
     // Records it writes are kept: in the channel being planned, or until the new one opens.

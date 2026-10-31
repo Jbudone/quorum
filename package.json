@@ -7,7 +7,8 @@
     "tui": "cd tui && go run ./cmd/quorum --repo \"${INIT_CWD:-$PWD}\"",
     "tui:mock": "cd tui && go run ./cmd/quorum --mock --repo \"${INIT_CWD:-$PWD}\"",
     "test:go": "cd tui && go test ./...",
-    "test:all": "pnpm test && cd tui && go test ./..."
+    "test:all": "pnpm test && cd tui && go test ./...",
+    "history:sync": "pnpm -C engine exec tsx ../scripts/history-sync.ts"
   },
   "type": "module"
 }
