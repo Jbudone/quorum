@@ -387,7 +387,17 @@ export class Room {
   /** Suggestions the human hasn't answered yet. */
   pending(): Extract<RoomEvent, { type: "suggestion" }>[] {
     const done = new Set(this.store.events().flatMap((e) => (e.type === "suggestion.resolved" ? [e.id] : [])));
-    return this.store.events().flatMap((e) => (e.type === "suggestion" && !done.has(e.id) ? [e] : []));
+    // Older suggestions may name no model; they show (and, approved, pin) the harness's default.
+    return this.store.events().flatMap((e) => (e.type === "suggestion" && !done.has(e.id) ? [{ ...e, args: this.withModel(e.action, e.args) }] : []));
+  }
+
+  /** A member's model is always spelled out, so the human sees what they approve and it stays put if the default changes. */
+  private withModel(action: SuggestionAction, args: string[]): string[] {
+    if (!(action === "hire" || action === "add" || action === "swap") || !args[1] || args[2]) return args;
+    // Someone coming back on the same harness keeps the model they had.
+    const before = action === "add" ? [...(this.store.config().left ?? []), ...new Workspace(this.o.repo).members()].find((m) => m.id === args[0] && m.cli === args[1]) : undefined;
+    const model = before?.model ?? this.o.defaultModel?.(args[1]);
+    return model ? [args[0], args[1], model, ...args.slice(3)] : args;
   }
 
   private memberMessagesAfter(seq: number): number {
@@ -840,13 +850,7 @@ export class Room {
   }
 
   private suggest(from: string, action: SuggestionAction, args: string[], why: string): void {
-    // A member's model is always spelled out, so the human sees what they approve and it stays put if the default changes.
-    if ((action === "hire" || action === "add" || action === "swap") && args[1] && !args[2]) {
-      // Someone coming back on the same harness keeps the model they had.
-      const before = action === "add" ? [...(this.store.config().left ?? []), ...new Workspace(this.o.repo).members()].find((m) => m.id === args[0] && m.cli === args[1]) : undefined;
-      const model = before?.model ?? this.o.defaultModel?.(args[1]);
-      if (model) args = [args[0], args[1], model, ...args.slice(3)];
-    }
+    args = this.withModel(action, args);
     if (this.pending().some((p) => p.action === action && p.args.join(" ") === args.join(" "))) return;
     const id = 1 + Math.max(0, ...this.store.events().flatMap((e) => (e.type === "suggestion" ? [e.id] : [])));
     this.log({ type: "suggestion", id, from, action, args, why });

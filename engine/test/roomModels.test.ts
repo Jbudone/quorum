@@ -104,6 +104,15 @@ describe("Spelling out the default model", () => {
     expect(room.pending().map((s) => s.args.slice(0, 3))).toEqual([["qa", "mock", "mock-large"], ["arch", "mock", "mock-large"]]);
   });
 
+  it("fills in older suggestions saved without a model, and pins it on approval", async () => {
+    const r = setup({ member: () => "PASS" });
+    const room = r.create({ defaultModel: (cli) => (cli === "mock" ? "mock-large" : undefined) });
+    room.store.append({ type: "suggestion", id: 1, from: "assistant", action: "hire", args: ["qa", "mock", "", "QA lead", "Breaks things."], why: "" });
+    expect(room.pending()[0].args).toEqual(["qa", "mock", "mock-large", "QA lead", "Breaks things."]);
+    await room.resolve(1, true);
+    expect(room.store.config().agents.find((a) => a.id === "qa")).toMatchObject({ cli: "mock", model: "mock-large" });
+  });
+
   it("reads each harness's default from its own settings", async () => {
     const { defaultModel } = await import("../src/models.js");
     const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
