@@ -29,7 +29,7 @@ const testCatalog = `{
   ],
   "harnesses": [
     {"cli":"claude","usable":true,"models":1,"quotaUtilization":0.4},
-    {"cli":"codex","usable":true,"models":1},
+    {"cli":"codex","usable":true,"models":1,"defaultModel":"gpt-6-astra"},
     {"cli":"kimi","usable":true,"models":1},
     {"cli":"opencode","usable":true,"anyProvider":true,"models":4}
   ],
@@ -202,5 +202,23 @@ func TestModelSearchStarsFoldsAndRespectsTheChannel(t *testing.T) {
 	press(s, "alt+c")
 	if len(s.build()) >= before {
 		t.Fatal("alt+c didn't fold")
+	}
+}
+
+func TestHarnessDefaultsNameTheirModel(t *testing.T) {
+	c := loadTestCatalog(t)
+	s := newModelSearch(theme.Default(), func() *rpc.Catalog { return c }, nil, "", "")
+	out := ansi.Strip(s.view(theme.Default(), 120, ""))
+	if !strings.Contains(out, "codex  GPT-6 Astra  its default") || !strings.Contains(out, "kimi  its own default model") {
+		t.Fatalf("default rows:\n%s", out)
+	}
+	for i, r := range s.build() {
+		if r.isDefault && r.harness == "codex" {
+			s.cur = i
+		}
+	}
+	p, done, _ := press(s, "enter")
+	if !done || p.harness != "codex" || p.model != "gpt-6-astra" || p.key != "openai/gpt-6-astra" {
+		t.Fatalf("pick %+v", p)
 	}
 }

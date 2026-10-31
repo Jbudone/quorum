@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "smol-toml";
 import type { CliName } from "./config.js";
 
@@ -179,10 +179,33 @@ export function defaultModel(cli: CliName, home = homedir(), env: NodeJS.Process
       const d = json(".zcode/v2/provider_config.json")?.config?.defaultModelSelection;
       return str(d?.providerId) && str(d?.modelId) ? `${d.providerId}/${d.modelId}` : undefined;
     }
-    case "opencode":
-      return str(json(".config/opencode/opencode.json")?.model) ?? str(json(".config/opencode/opencode.jsonc")?.model);
+    case "opencode": {
+      // Unset, opencode picks from its provider list more or less at random; the model you used last
+      // in it (what its TUI opens with) is the better guess.
+      const recent = json(".local/state/opencode/model.json")?.recent?.[0];
+      const last = str(recent?.providerID) && str(recent?.modelID) ? `${recent.providerID}/${recent.modelID}` : undefined;
+      return str(json(".config/opencode/opencode.json")?.model) ?? str(json(".config/opencode/opencode.jsonc")?.model) ?? last;
+    }
     case "gemini":
-      return str(json(".gemini/settings.json")?.model?.name);
+      return str(json(".gemini/settings.json")?.model?.name) ?? geminiBuiltin(env);
+  }
+  return undefined;
+}
+
+let geminiDefault: string | null | undefined;
+
+/** The model Gemini CLI runs when its settings name none, as its installed bundle defines it. */
+function geminiBuiltin(env: NodeJS.ProcessEnv): string | undefined {
+  if (geminiDefault !== undefined) return geminiDefault ?? undefined;
+  geminiDefault = null;
+  for (const dir of (env.PATH ?? "").split(":")) {
+    try {
+      const bundle = dirname(realpathSync(join(dir, "gemini")));
+      for (const f of readdirSync(bundle).filter((n) => n.endsWith(".js"))) {
+        const m = /DEFAULT_GEMINI_MODEL\s*=\s*["']([\w.-]+)["']/.exec(readFileSync(join(bundle, f), "utf8"));
+        if (m) return (geminiDefault = m[1]);
+      }
+    } catch {}
   }
   return undefined;
 }

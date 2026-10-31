@@ -569,7 +569,12 @@ func (s *modelSearch) key(k tea.KeyPressMsg) (pick modelPick, done bool, fav *mo
 			s.collapsed[r.group] = !s.groupFolded(r.group, rows)
 			s.rows = nil
 		case r.isDefault:
-			return modelPick{harness: r.harness}, true, nil, nil
+			id, m := s.harnessDefault(r.harness)
+			p := modelPick{harness: r.harness, model: id}
+			if m != nil {
+				p.key = m.Key
+			}
+			return p, true, nil, nil
 		case r.typed != "":
 			return modelPick{harness: r.harness, model: r.typed}, true, nil, nil
 		case r.m != nil:
@@ -731,7 +736,14 @@ func (s *modelSearch) renderRow(r searchRow, on bool, th theme.Theme, w int) str
 		}
 		return ansi.Truncate(mark+st.Render(label)+count, w, "…")
 	case r.isDefault:
-		return ansi.Truncate(mark+"  "+fg(th.Text).Render(r.harness)+fg(th.Subtle).Render("  its own default model"), w, "…")
+		id, m := s.harnessDefault(r.harness)
+		if id == "" {
+			return ansi.Truncate(mark+"  "+fg(th.Text).Render(r.harness)+fg(th.Subtle).Render("  its own default model"), w, "…")
+		}
+		if m != nil {
+			id = m.Name
+		}
+		return ansi.Truncate(mark+"  "+fg(th.Text).Render(r.harness+"  "+id)+fg(th.Subtle).Render("  its default"), w, "…")
 	case r.typed != "":
 		return ansi.Truncate(mark+"  "+fg(th.Text).Render("“"+r.typed+"”")+fg(th.Subtle).Render("  on "+r.harness+" · tab another harness"), w, "…")
 	}
@@ -799,7 +811,11 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 	if r.m == nil {
 		switch {
 		case r.isDefault:
-			return fg(th.Text).Bold(true).Render(r.harness) + "\n" + fg(th.Muted).Render(wrapText("Runs on whatever model "+r.harness+" is set to use by default.", w))
+			id, _ := s.harnessDefault(r.harness)
+			if id == "" {
+				return fg(th.Text).Bold(true).Render(r.harness) + "\n" + fg(th.Muted).Render(wrapText("Runs on whatever model "+r.harness+" is set to use by default; its settings don't say which.", w))
+			}
+			return fg(th.Text).Bold(true).Render(r.harness+" "+id) + "\n" + fg(th.Muted).Render(wrapText("The model "+r.harness+" is set to use when given none. Picking it pins it, so the member keeps it if that setting changes.", w))
 		case r.typed != "":
 			return fg(th.Text).Bold(true).Render(r.typed) + "\n" + fg(th.Muted).Render(wrapText("Passed to "+r.harness+" exactly as typed. tab picks another harness.", w))
 		}
@@ -875,4 +891,32 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 // wrapText breaks prose to a width, on spaces.
 func wrapText(s string, w int) string {
 	return lipgloss.NewStyle().Width(w).Render(s)
+}
+
+// harnessDefault is the model a harness runs when given none, and its catalog entry when there is one.
+func (s *modelSearch) harnessDefault(h string) (string, *rpc.CatalogModel) {
+	return harnessDefault(s.cat(), h)
+}
+
+func harnessDefault(c *rpc.Catalog, h string) (string, *rpc.CatalogModel) {
+	if c == nil {
+		return "", nil
+	}
+	id := ""
+	for _, x := range c.Harnesses {
+		if x.CLI == h {
+			id = x.DefaultModel
+		}
+	}
+	if id == "" {
+		return "", nil
+	}
+	for i := range c.Models {
+		for _, rt := range c.Models[i].Routes {
+			if rt.Harness == h && rt.ID == id {
+				return id, &c.Models[i]
+			}
+		}
+	}
+	return id, nil
 }

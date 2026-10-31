@@ -106,7 +106,7 @@ describe("Spelling out the default model", () => {
 
   it("reads each harness's default from its own settings", async () => {
     const { defaultModel } = await import("../src/models.js");
-    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
     const home = mkdtempSync(join(tmpdir(), "qhome-"));
@@ -124,6 +124,9 @@ describe("Spelling out the default model", () => {
     expect(defaultModel("kimi", home, {})).toBe("k3");
     expect(defaultModel("zcode", home, {})).toBe("account:zai/GLM-5.3");
     expect(defaultModel("opencode", home, {})).toBe("openrouter/qwen/qwen3");
-    expect(defaultModel("gemini", home, {})).toBeUndefined();
+    expect(defaultModel("gemini", home, { PATH: "" })).toBeUndefined();
+    rmSync(join(home, ".config/opencode/opencode.jsonc"));
+    put(".local/state/opencode/model.json", `{"recent":[{"providerID":"openrouter","modelID":"qwen/qwen3-coder-next"}]}`);
+    expect(defaultModel("opencode", home, {})).toBe("openrouter/qwen/qwen3-coder-next");
   });
 });

@@ -134,6 +134,10 @@ func (e *sugEdit) args() []string {
 func (a *App) submitEdit() {
 	e := a.rm.room.edit
 	e.sending, e.err = true, ""
+	if e.model == "" {
+		// Pin the harness's default, so what's approved is what was shown.
+		e.model, _ = harnessDefault(a.getCatalog(), e.harness)
+	}
 	if e.direct {
 		args := e.args()
 		a.call("room.swap", map[string]any{"id": args[0], "cli": args[1], "model": args[2]})
@@ -264,6 +268,9 @@ func (a *App) editBox(height int) string {
 				val := strings.TrimSpace(e.harness + " " + e.model)
 				if e.model == "" {
 					val = e.harness + " (its default model)"
+					if id, _ := harnessDefault(a.getCatalog(), e.harness); id != "" {
+						val = e.harness + " " + id + " (its default)"
+					}
 				}
 				st := fg(th.Text)
 				if on {

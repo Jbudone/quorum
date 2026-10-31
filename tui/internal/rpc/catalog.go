@@ -41,6 +41,7 @@ type (
 		QuotaUtilization *float64 `json:"quotaUtilization"`
 		AnyProvider      bool     `json:"anyProvider"`
 		Models           int      `json:"models"`
+		DefaultModel     string   `json:"defaultModel"`
 	}
 	ProviderInfo struct {
 		ID       string   `json:"id"`

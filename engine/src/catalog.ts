@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CliName } from "./config.js";
 import { cliInfo, type CliInfo } from "./doctor.js";
-import { listModels, type ModelInfo } from "./models.js";
+import { defaultModel, listModels, type ModelInfo } from "./models.js";
 import { applyProviderEnv, readProviders, readRecent, type ProvidersFile } from "./providers.js";
 
 /**
@@ -58,6 +58,8 @@ export interface HarnessInfo {
   /** Runs models from any provider with a key (opencode), not just its vendor's. */
   anyProvider: boolean;
   models: number;
+  /** What it runs when given no model, when its settings say. */
+  defaultModel?: string;
 }
 
 export interface ProviderInfo {
@@ -183,6 +185,8 @@ export interface CatalogInputs {
   dev: ModelsDev;
   /** Installed harnesses and their health. */
   clis: CliInfo[];
+  /** The model each harness runs when given none (models.defaultModel). */
+  defaults?: Partial<Record<CliName, string>>;
   /** Each installed harness's own model list. */
   lists: Partial<Record<CliName, ModelInfo[]>>;
   config: ProvidersFile;
@@ -341,6 +345,7 @@ export function buildCatalog(i: CatalogInputs): Omit<Catalog, "source"> {
       ...(c.error ? { error: c.error } : {}),
       ...(c.quotaUtilization !== undefined ? { quotaUtilization: c.quotaUtilization } : {}),
       anyProvider: ANY_PROVIDER.includes(c.cli),
+      ...(i.defaults?.[c.cli] ? { defaultModel: i.defaults[c.cli] } : {}),
       models: models.filter((m) => m.routes.some((r) => r.harness === c.cli)).length,
     }))
     .sort((a, b) => rank(a.cli) - rank(b.cli));
@@ -409,6 +414,8 @@ async function buildFresh(refresh: boolean): Promise<Catalog> {
     dev: dev.data,
     clis,
     lists: Object.fromEntries(clis.map((c, n) => [c.cli, lists[n]])),
+    // After the lists: agy's default is matched against the models it listed.
+    defaults: Object.fromEntries(clis.flatMap((c) => { const m = defaultModel(c.cli); return m ? [[c.cli, m]] : []; })),
     config: readProviders(),
     recent: readRecent(),
     env: process.env,
