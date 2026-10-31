@@ -45,6 +45,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — ${e.agent} joined the room`;
     case "agent.left":
       return `[#${e.seq}] — ${e.agent} left the room`;
+    case "access.granted":
+      return `[#${e.seq}] — everyone can now read ${e.path}`;
     case "agent.swapped":
       return `[#${e.seq}] — ${e.agent} now runs on ${e.cli}${e.model ? ` ${e.model}` : ""}`;
     case "pass":
@@ -308,6 +310,7 @@ To propose a change, end with action lines; the human approves or declines each,
                                    bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
 >> add: <member> <cli> <model> | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
 >> swap: <member> | <cli> <model> | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
+>> read: <folder> | <why>               let everyone in the channel read a folder outside the project
 >> steer: <text>                          post a steering message to the channel as the human
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the focus
@@ -537,3 +540,12 @@ export function parsePersonaDraft(text: string): { id: string; role: string; per
 }
 
 export const EXIT_MEMO = `You are leaving this Quorum room. Write a short exit memo for whoever continues the work: the threads you leave open, what you still believe and why, and anything unfinished. A few bullet points. Reply with the memo only.`;
+
+/**
+ * What an agent can read, said plainly. Agents run headless: a folder outside these fails with a
+ * permission error that nobody can approve, so they must ask the human to grant it instead.
+ */
+export function accessNote(repo: string, dirs: string[] = [], suggest = false): string {
+  const where = [repo, ...dirs].map((d) => `\`${d}\``).join(", ");
+  return `You can read files in ${where}, and nowhere else. You run headless: there are no permission prompts, and nothing the human approves in chat changes your access, so never ask them to approve one. To read another folder, ask the human to type \`/read <folder>\`${suggest ? " or propose `>> read: <folder> | why`" : ""}; once they do, everyone can read it from their next turn.`;
+}

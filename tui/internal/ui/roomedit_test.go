@@ -161,3 +161,19 @@ func TestBlankModelsShowTheHarnessDefault(t *testing.T) {
 		t.Fatalf("join list %q", got)
 	}
 }
+
+func TestReadGrantsAFolderOutsideTheProject(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.typ("/read ~/work/loom")
+	h.press("enter")
+	if c := h.expectCall("room.read"); fmt.Sprint(c.params["paths"]) != "[~/work/loom]" {
+		t.Fatalf("read params %v", c.params)
+	}
+	h.reply("room.read", `{"reading":[],"dirs":["/home/me/work/loom"]}`)
+	contains(t, h.screen(), "Everyone can now read /home/me/work/loom")
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 95, ID: 4, From: "assistant", Action: "read", Args: []string{"/home/me/work/other"}, Why: "the transcript is there"})
+	contains(t, h.screen(), "let everyone read /home/me/work/other")
+	h.event(rpc.RoomEvent{Type: "access.granted", Seq: 96, Path: "/home/me/work/other", By: "human"})
+	contains(t, h.screen(), "everyone can now read /home/me/work/other")
+}

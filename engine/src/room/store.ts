@@ -6,7 +6,7 @@ import type { AgentSpec, CliName } from "../config.js";
 export type Recipient = "room" | string;
 
 /** What a proposed change does; the human approves or declines each one. */
-export type SuggestionAction = "steer" | "add" | "hire" | "swap" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer";
+export type SuggestionAction = "steer" | "add" | "hire" | "swap" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer" | "read";
 
 export type DocKind = "plan" | "issue" | "decision" | "other";
 
@@ -44,6 +44,7 @@ export type RoomEventBody =
   | { type: "agent.left"; agent: string; memo?: string }
   /** A member (or support role) moved to another harness or model; its memory stays, its vendor session doesn't. */
   | { type: "agent.swapped"; agent: string; cli: CliName; model?: string; was: { cli: CliName; model?: string } }
+  | { type: "access.granted"; path: string; by: string }
   | { type: "budget"; level: "warn" | "stop"; cli: string; detail: string };
 
 export type TagKind = "idea" | "critique" | "agreement" | "concession" | "question" | "evidence" | "decision";
@@ -77,6 +78,8 @@ export interface RoomConfig {
   topic: string;
   /** Files and folders (relative to the repo) every member reads before speaking. */
   reading?: string[];
+  /** Folders outside the repo the human let everyone in the channel read (absolute paths). */
+  dirs?: string[];
   /** Members picked together think without seeing each other's answers, then revise. */
   independent?: boolean;
   /** What the group is trying to achieve, pinned for every member. */
@@ -221,6 +224,10 @@ export class RoomStore {
 
   setReading(reading: string[]): RoomConfig {
     return this.saveConfig({ ...this.config(), reading });
+  }
+
+  setDirs(dirs: string[]): RoomConfig {
+    return this.saveConfig({ ...this.config(), dirs });
   }
 
   setSupport(role: keyof RoomConfig["support"], spec: SupportSpec): RoomConfig {

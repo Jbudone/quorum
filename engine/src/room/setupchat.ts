@@ -1,7 +1,7 @@
 import { listPersonas, type AgentSpec, type CliName } from "../config.js";
 import { parseBlocks } from "./directives.js";
-import { parseSetup, setupPrompt, SETUP_SYSTEM, type PlanQuestion, type SetupProposal } from "./prompts.js";
-import { Room, type RoomOptions } from "./room.js";
+import { accessNote, parseSetup, setupPrompt, SETUP_SYSTEM, type PlanQuestion, type SetupProposal } from "./prompts.js";
+import { grantableDir, Room, type RoomOptions } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
 import { noteVendorSession } from "./vendorlog.js";
 import { readingPath, Workspace } from "./workspace.js";
@@ -17,6 +17,8 @@ export class SetupChat {
   proposal?: SetupProposal;
   /** Records the assistant wrote before there was a channel to keep them in. */
   private readonly drafts: { name: string; text: string; note?: string }[] = [];
+  /** Folders outside the repo the human let the assistant read, before there's a channel to keep them. */
+  private readonly granted: string[] = [];
 
   constructor(
     private readonly o: RoomOptions & { support: Required<RoomConfig["support"]>; clis: string[]; room?: Room },
@@ -25,6 +27,19 @@ export class SetupChat {
   /** The channel this session plans, when it isn't planning a new one. */
   get forRoom(): Room | undefined {
     return this.o.room;
+  }
+
+  /** Folders outside the repo the assistant (and later the channel) may read. */
+  dirs(): string[] {
+    return this.o.room?.dirs() ?? this.granted;
+  }
+
+  /** The human lets the assistant read a folder outside the repo; a new channel keeps it. */
+  allowRead(path: string): string {
+    if (this.o.room) return this.o.room.allowRead(path, "human");
+    const dir = grantableDir(path, this.o.repo);
+    if (!this.granted.includes(dir)) this.granted.push(dir);
+    return dir;
   }
 
   /** The human says something; the assistant's reply streams through `onDelta`. */
@@ -46,7 +61,7 @@ export class SetupChat {
     });
     let reply = "";
     let failed: string | undefined;
-    for await (const e of this.o.transports({ id: "assistant", ...spec }).send(prompt, { cwd: this.o.repo, systemPrompt: SETUP_SYSTEM, readOnly: true, signal })) {
+    for await (const e of this.o.transports({ id: "assistant", ...spec }).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: `${SETUP_SYSTEM}\n\n${accessNote(this.o.repo, this.dirs())}`, readOnly: true, signal })) {
       if (e.type === "text") {
         reply += e.delta;
         onDelta?.(e.delta);
@@ -124,6 +139,7 @@ export class SetupChat {
       topic,
       name: proposal.name,
       reading,
+      dirs: this.granted,
       agents,
       support: this.o.support,
       vision: proposal.vision,

@@ -90,6 +90,7 @@ export class ClaudeTransport implements AgentTransport {
       .filter(Boolean)
       .join("\n\n");
     if (opts.cwd) args.push("--add-dir", opts.cwd);
+    for (const d of opts.dirs ?? []) args.push("--add-dir", d);
     if (system) args.push("--append-system-prompt", system);
     if (opts.sessionId) args.push("--resume", opts.sessionId);
     if (opts.mcp) {

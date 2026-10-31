@@ -212,6 +212,8 @@ func renderSetupChat(s *setupModel, th theme.Theme, width int, spin string) stri
 			b = append(b, fg(th.Info).Bold(true).Render("assistant")+"\n"+renderMarkdown(m.text, width, th))
 		case "error":
 			b = append(b, fg(th.Err).Render(ansi.Wrap("✗ "+m.text, width, "")))
+		case "system":
+			b = append(b, fg(th.Muted).Render(ansi.Wrap("✓ "+m.text, width, "")))
 		}
 	}
 	if s.waiting {
@@ -417,6 +419,11 @@ func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		s.in.Reset()
+		if paths, ok := strings.CutPrefix(text, "/read "); ok {
+			// Lets the assistant read folders outside the project; it can't ask for access itself.
+			a.call("setup.read", map[string]any{"paths": strings.Fields(paths)})
+			return nil
+		}
 		s.msgs = append(s.msgs, noteItem{kind: "you", text: text})
 		s.waiting, s.follow = true, true
 		params := map[string]any{"text": text}

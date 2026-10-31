@@ -73,6 +73,7 @@ export class KimiTransport extends SubprocessTransport {
     const args = ["--output-format", "stream-json"];
     if (this.o.model) args.push("-m", this.o.model);
     if (opts.cwd) args.push("--add-dir", opts.cwd);
+    for (const d of opts.dirs ?? []) args.push("--add-dir", d);
     if (opts.sessionId) args.push("-S", opts.sessionId);
     else args.push("--agent-file", agentFile(opts.systemPrompt ?? "", opts.readOnly !== false));
     args.push("-p", promptArg(opts.sessionId ? prompt : repoNote(opts) + prompt));

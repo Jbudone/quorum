@@ -419,7 +419,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return { key, role: pe.role, body: pe.body };
       }
       case "room.read":
-        return { reading: needRoom().setReading(Array.isArray(p.paths) ? p.paths.map(String) : []) };
+        return needRoom().read(Array.isArray(p.paths) ? p.paths.map(String) : []);
       case "room.ask": {
         const r = needRoom();
         const text = withImages(p);
@@ -435,6 +435,10 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         if (s && args && p.accept) checkEdit(s.action, s.args, args);
         side(() => r.resolve(Number(p.id), Boolean(p.accept), args));
         return {};
+      }
+      case "setup.read": {
+        if (!setup) throw new Error("no setup: call setup.start first");
+        return { dirs: (Array.isArray(p.paths) ? p.paths.map(String) : []).map((x: string) => setup!.allowRead(x)) };
       }
       case "room.swap":
         needRoom().swapModel(String(p.id ?? ""), String(p.cli ?? "") as CliName, p.model ? String(p.model) : undefined);

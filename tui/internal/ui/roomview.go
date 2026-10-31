@@ -182,6 +182,8 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		out = event("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
 	case "agent.left":
 		out = event("−", th.Muted, e.Agent+" left"+suffix(" · memo: ", firstLine(e.Memo)))
+	case "access.granted":
+		out = event("⌂", th.Info, "everyone can now read "+e.Path)
 	case "agent.swapped":
 		out = event("⇄", th.Info, fmt.Sprintf("%s now runs on %s", e.Agent, strings.TrimSpace(e.CLI+" "+e.Model)))
 	case "budget":

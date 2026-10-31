@@ -489,6 +489,8 @@ func suggestionLabel(s rpc.RoomEvent) string {
 		if len(s.Args) > 1 {
 			return "mail " + s.Args[0] + ": " + s.Args[1]
 		}
+	case "read":
+		return "let everyone read " + args
 	case "pointer":
 		return "tell the project's agents about Quorum mail (add a note to " + args + ")"
 	}
@@ -536,7 +538,8 @@ Channel:
 
 Typing works as in a terminal: ctrl+a/e start/end, ctrl+u/k delete to start/end,
 ctrl+w delete word, alt+b/f by word, alt+enter new line.
-  /read <path>…     set the reading list members work through (folders or files)
+  /read <path>…     set the reading list members work through (folders or files);
+                    a folder outside the project lets everyone read it
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document
   /add <member> <cli> [model]   (quick add)   /remove <member>   /rejoin <member>

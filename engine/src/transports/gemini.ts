@@ -69,6 +69,7 @@ export class GeminiTransport extends SubprocessTransport {
     const args = ["-o", "stream-json", "--approval-mode", opts.readOnly === false ? "auto_edit" : "plan", "-p", " "];
     if (this.o.model) args.push("-m", this.o.model);
     if (opts.cwd) args.push("--include-directories", opts.cwd);
+    for (const d of opts.dirs ?? []) args.push("--include-directories", d);
     return { cmd: this.o.bin ?? "gemini", args, stdin: repoNote(opts) + withPersona(prompt, { ...opts, sessionId: undefined }) };
   }
 }

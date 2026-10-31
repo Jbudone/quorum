@@ -31,6 +31,8 @@ type (
 		// Mail sent to the project's agents: its file in .quorum/mail/.
 		File    string `json:"file"`
 		Subject string `json:"subject"`
+		// access.granted: a folder outside the project everyone may now read.
+		Path string `json:"path"`
 
 		Slug    string   `json:"slug"`
 		Title   string   `json:"title"`

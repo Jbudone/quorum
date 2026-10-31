@@ -168,6 +168,14 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 		if u.setup != nil {
 			u.setup.ready = true
 		}
+	case "setup.read":
+		var res struct {
+			Dirs []string `json:"dirs"`
+		}
+		if rpc.DecodeResult(r.Result, &res) == nil && u.setup != nil && len(res.Dirs) > 0 {
+			u.setup.msgs = append(u.setup.msgs, noteItem{kind: "system", text: "The assistant can now read " + strings.Join(res.Dirs, ", ") + ", and so will the channel."})
+			u.setup.follow = true
+		}
 	case "setup.create", "room.open":
 		var s rpc.RoomSnapshot
 		if err := rpc.DecodeResult(r.Result, &s); err != nil {
@@ -210,10 +218,15 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 	case "room.read":
 		var res struct {
 			Reading []string `json:"reading"`
+			Dirs    []string `json:"dirs"`
 		}
 		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
 			u.room.reading = res.Reading
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Reading list: " + strings.Join(res.Reading, ", ") + ". Members read what's new on their next turn."})
+			if len(res.Dirs) > 0 {
+				u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Everyone can now read " + strings.Join(res.Dirs, ", ") + ", from their next turn."})
+			} else {
+				u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Reading list: " + strings.Join(res.Reading, ", ") + ". Members read what's new on their next turn."})
+			}
 		}
 	case "room.doc":
 		var d rpc.RoomDocText

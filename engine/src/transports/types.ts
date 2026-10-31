@@ -26,6 +26,8 @@ export interface SendOptions {
   sessionId?: string;
   /** Working directory the agent runs in (target repo). */
   cwd?: string;
+  /** Other folders the agent may read, besides cwd (absolute paths). */
+  dirs?: string[];
   /** Persona / role instructions appended to the system prompt. */
   systemPrompt?: string;
   /** Read-only repo access (default true). */

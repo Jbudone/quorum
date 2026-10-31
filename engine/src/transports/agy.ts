@@ -86,6 +86,7 @@ export class AgyTransport extends SubprocessTransport {
       opts.readOnly === false ? "accept-edits" : "plan",
     ];
     if (opts.cwd) args.push("--add-dir", opts.cwd);
+    for (const d of opts.dirs ?? []) args.push("--add-dir", d);
     if (this.o.model) args.push("--model", this.o.model);
     if (opts.sessionId) args.push("--conversation", opts.sessionId);
     const persona = opts.systemPrompt

@@ -27,6 +27,7 @@ var suggestionFields = map[string][]string{
 	"export":   {"document", "path"},
 	"mail":     {"to", "subject", "body"},
 	"pointer":  {"file"},
+	"read":     {"folder"},
 }
 
 // Fields long enough to need a few lines.

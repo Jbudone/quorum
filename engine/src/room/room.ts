@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentTransport, McpServerSpec } from "../transports/index.js";
@@ -8,6 +9,7 @@ import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
 import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
+  accessNote,
   assistantActions,
   assistantAsk,
   assistantContext,
@@ -107,6 +109,8 @@ export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
   support?: Partial<RoomConfig["support"]>;
   name?: string;
   reading?: string[];
+  /** Folders outside the repo everyone may read. */
+  dirs?: string[];
   /** Members who speak once when the channel opens (their first take), instead of waiting for the floor; true for all. */
   kickoff?: boolean | string[];
   vision?: string;
@@ -154,6 +158,7 @@ export const SUGGESTION_FIELDS: Record<SuggestionAction, string[]> = {
   export: ["document", "path"],
   mail: ["to", "subject", "body"],
   pointer: ["file"],
+  read: ["folder"],
 };
 
 /** The human's edit of a suggestion, checked: same fields, the required ones filled in. */
@@ -168,6 +173,29 @@ export function checkEdit(action: SuggestionAction, was: string[], edited: strin
   if (action === "parallel" && !(Number(args[0]) >= 1)) throw new Error("parallel needs a number, 1 or more");
   return args;
 }
+/**
+ * A folder the human may let a channel read: it must exist and lie outside the repo (the repo is
+ * readable already). A file grants the folder it's in; `~` is the home folder.
+ */
+export function grantableDir(path: string, repo: string): string {
+  const raw = expandHome(path);
+  if (!raw) throw new Error("say which folder");
+  let dir = resolve(repo, raw);
+  if (!existsSync(dir)) throw new Error(`there's no ${dir}`);
+  if (!statSync(dir).isDirectory()) dir = dirname(dir);
+  const rel = relative(resolve(repo), dir);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) throw new Error(`${dir} is inside the project, which everyone can read already`);
+  return dir;
+}
+
+const expandHome = (p: string) => p.trim().replace(/^~(?=$|\/)/, homedir());
+
+/** Whether a path the human typed points outside the repo. */
+function isOutside(path: string, repo: string): boolean {
+  const rel = relative(resolve(repo), resolve(repo, expandHome(path)));
+  return rel.startsWith("..") || isAbsolute(rel);
+}
+
 /** Messages in a side thread (including one that starts a thread) stay out of the main conversation. */
 const inMain = (e: RoomEvent) => e.type !== "message" || e.thread === undefined;
 
@@ -177,7 +205,7 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw"] as const;
+const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw", "read"] as const;
 /** Assistant actions that carry a multi-line body, closed by `>> end`. */
 const ASSISTANT_BLOCKS = ["write", "mail"] as const;
 /** How often a running room looks for mail from the project's agents. */
@@ -237,6 +265,7 @@ export class Room {
     const store = RoomStore.create(o.repo, {
       ...(o.name ? { name: o.name } : {}),
       ...(o.reading?.length ? { reading: o.reading } : {}),
+      ...(o.dirs?.length ? { dirs: o.dirs } : {}),
       ...(o.independent ? { independent: true } : {}),
       ...(o.vision ? { vision: o.vision } : {}),
       ...(o.considerations?.length ? { considerations: o.considerations } : {}),
@@ -474,6 +503,17 @@ export class Room {
   }
 
   /** Sets the channel's reading list; members are told about entries they haven't read on their next turn. */
+  /**
+   * `/read`: paths inside the repo become the reading list; folders outside it are granted to
+   * everyone, since nobody could read them otherwise.
+   */
+  read(paths: string[]): { reading: string[]; dirs: string[] } {
+    const outside = paths.filter((p) => isOutside(p, this.o.repo));
+    const dirs = outside.map((p) => this.allowRead(p, "human"));
+    const inside = paths.filter((p) => !outside.includes(p));
+    return { reading: inside.length || !outside.length ? this.setReading(inside) : (this.store.config().reading ?? []), dirs };
+  }
+
   setReading(paths: string[]): string[] {
     const clean = [...new Set(paths.map((p) => readingPath(this.o.repo, p)))];
     this.store.setReading(clean);
@@ -711,6 +751,21 @@ export class Room {
    * Moves a member, or a support role, to another harness or model. A member keeps its notebook
    * and what it has read; its vendor sessions are dropped, so its next turn rebuilds its context.
    */
+  /** Folders outside the repo everyone in the channel may read. */
+  dirs(): string[] {
+    return this.store.config().dirs ?? [];
+  }
+
+  /** Lets everyone in the channel read a folder outside the repo, from their next turn. Returns it, resolved. */
+  allowRead(path: string, by: string): string {
+    const dir = grantableDir(path, this.o.repo);
+    if (!this.dirs().includes(dir)) {
+      this.store.setDirs([...this.dirs(), dir]);
+      this.log({ type: "access.granted", path: dir, by });
+    }
+    return dir;
+  }
+
   swapModel(id: string, cli: CliName, model?: string): void {
     if (this.o.clis && !this.o.clis.includes(cli)) throw new Error(`${cli} isn't available here; use ${this.o.clis.join(", ")}`);
     const c = this.store.config();
@@ -752,6 +807,9 @@ export class Room {
         return;
       case "pointer":
         this.addMailPointer(args[0]);
+        return;
+      case "read":
+        this.allowRead(args[0], "human");
         return;
       case "steer":
         this.post(args[0]);
@@ -1109,7 +1167,8 @@ export class Room {
       try {
         for await (const e of transport.send(prompt, {
           cwd: this.o.repo,
-          systemPrompt: this.personas.get(agent)?.body,
+          dirs: this.dirs(),
+          systemPrompt: [this.personas.get(agent)?.body, accessNote(this.o.repo, this.dirs())].filter(Boolean).join("\n\n"),
           readOnly: this.o.readOnly ?? true,
           sessionId: session,
           signal: ctrl.signal,
@@ -1361,7 +1420,8 @@ export class Room {
     let text = "";
     let failed: string | undefined;
     try {
-      for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, systemPrompt, readOnly: true, sessionId, signal })) {
+      const access = accessNote(this.o.repo, this.dirs(), id === "assistant");
+      for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: `${systemPrompt}\n\n${access}`, readOnly: true, sessionId, signal })) {
         if (e.type === "text") {
           text += e.delta;
           onDelta?.(e.delta);
@@ -1541,6 +1601,10 @@ export class Room {
         const [cli, model] = cliModel.split(/\s+/);
         const id = (d.args[0] ?? "").toLowerCase();
         if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) && cli && role && persona) this.suggest("assistant", "hire", [id, cli, model ?? "", role, persona], why.join(" | "));
+      } else if (d.verb === "read") {
+        // >> read: folder | why
+        const folder = d.args.join(" ").trim();
+        if (folder) this.suggest("assistant", "read", [folder], d.why);
       } else if (d.verb === "swap") {
         // >> swap: member | cli [model] | why
         const [cliModel = "", ...why] = d.why.split("|").map((x) => x.trim());

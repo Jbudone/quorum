@@ -101,7 +101,11 @@ export class OpencodeTransport extends SubprocessTransport {
     const agentConfig = {
       mode: "primary",
       ...(opts.systemPrompt ? { prompt: opts.systemPrompt } : {}),
-      permission: readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {},
+      permission: {
+        ...(readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {}),
+        // Folders outside the project are asked about, and a headless run can't answer; these were granted.
+        ...(opts.dirs?.length ? { external_directory: Object.fromEntries(opts.dirs.map((d) => [`${d}/**`, "allow"])) } : {}),
+      },
     };
     // --standalone runs a private server, so the inline config below applies to this turn only
     // (the shared background service would ignore it). Opencode 2 has no --dir; the project is the cwd.
