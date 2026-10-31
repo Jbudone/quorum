@@ -37,7 +37,7 @@ describe("probe", () => {
 
 describe("installedClis", () => {
   it("skips the retired gemini CLI when agy is installed, but keeps it otherwise", () => {
-    expect(installedClis(() => true)).toEqual(["claude", "codex", "agy", "opencode"]);
+    expect(installedClis(() => true)).toEqual(["claude", "codex", "agy", "opencode", "kimi", "zcode"]);
     expect(installedClis((b) => b === "gemini" || b === "claude")).toEqual(["claude", "gemini"]);
   });
 });

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "smol-toml";
 
-export type CliName = "claude" | "codex" | "gemini" | "agy" | "opencode" | "mock";
+export type CliName = "claude" | "codex" | "gemini" | "agy" | "opencode" | "kimi" | "zcode" | "mock";
 export type PauseMode = "round" | "message" | "auto";
 
 export interface AgentSpec {
@@ -47,7 +47,7 @@ export function userDir(): string {
   return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "quorum");
 }
 
-const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "mock"];
+export const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode", "mock"];
 const PAUSES: PauseMode[] = ["round", "message", "auto"];
 
 function fail(msg: string): never {

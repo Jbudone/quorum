@@ -6,7 +6,7 @@ import type { TransportFactory } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
 
 /** CLIs tried, in order, for the roles that need judgment (assistant, Chair) when settings.toml names none. */
-const BEST_FIRST: CliName[] = ["claude", "codex", "gemini", "opencode", "agy"];
+const BEST_FIRST: CliName[] = ["claude", "codex", "gemini", "opencode", "kimi", "zcode", "agy"];
 
 /**
  * Who runs the support roles. settings.toml wins; otherwise the assistant and Chair get the most

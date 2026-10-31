@@ -3,9 +3,11 @@ import { AgyTransport } from "./agy.js";
 import { ClaudeTransport } from "./claude.js";
 import { CodexTransport } from "./codex.js";
 import { GeminiTransport } from "./gemini.js";
+import { KimiTransport } from "./kimi.js";
 import { OpencodeTransport } from "./opencode.js";
 import { MockTransport, type MockOptions } from "./mock.js";
 import type { AgentTransport } from "./types.js";
+import { ZcodeTransport } from "./zcode.js";
 
 export type { AgentEvent, AgentTransport, McpServerSpec, SendOptions } from "./types.js";
 
@@ -32,5 +34,9 @@ export function createTransport(req: TransportRequest): AgentTransport {
       return new AgyTransport(req.id, { model: req.model });
     case "opencode":
       return new OpencodeTransport(req.id, { model: req.model });
+    case "kimi":
+      return new KimiTransport(req.id, { model: req.model });
+    case "zcode":
+      return new ZcodeTransport(req.id, { model: req.model });
   }
 }

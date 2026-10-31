@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { CliName, CouncilConfig } from "./config.js";
 import { createTransport, type AgentTransport } from "./transports/index.js";
 
-export const REAL_CLIS: CliName[] = ["claude", "codex", "agy", "opencode", "gemini"];
+export const REAL_CLIS: CliName[] = ["claude", "codex", "agy", "opencode", "kimi", "zcode", "gemini"];
 const HEALTH_TTL_MS = 24 * 3600_000;
 
 export interface CliHealth {
@@ -141,6 +141,8 @@ export const MODEL_SUGGESTIONS: Record<CliName, string[]> = {
   opencode: [],
   gemini: [],
   mock: [],
+  kimi: [],
+  zcode: [],
   agy: [
     "gemini-4-argon-low",
     "gemini-4-argon-medium",

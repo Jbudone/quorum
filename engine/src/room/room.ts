@@ -142,7 +142,7 @@ const inMain = (e: RoomEvent) => e.type !== "message" || e.thread === undefined;
 /** Log events members aren't shown: bookkeeping that would only distract them. */
 const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.failed", "paused", "resumed"]);
 
-const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode"];
+const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
 const ASSISTANT_VERBS = ["steer", "add", "hire", "remove", "focus", "close", "parallel", "pause", "export", "withdraw"] as const;

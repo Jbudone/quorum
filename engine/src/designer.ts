@@ -175,7 +175,7 @@ export const mockDesigner: Ask = async () =>
     ],
   });
 
-const DESIGNER_PREFERENCE: CliName[] = ["claude", "codex", "agy", "opencode", "gemini"];
+const DESIGNER_PREFERENCE: CliName[] = ["claude", "codex", "agy", "opencode", "kimi", "zcode", "gemini"];
 
 /** An Ask backed by one CLI turn: read-only, with a time limit so a stuck CLI cannot hang the UI. */
 export function askVia(cli: CliName, model: string | undefined, repo: string, system: string, timeoutMs = 120_000): Ask {

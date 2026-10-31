@@ -12,7 +12,7 @@ import {
 } from "./config.js";
 import { getProtocol } from "./protocols/index.js";
 
-const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "mock"];
+const CLIS: CliName[] = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode", "mock"];
 const PAUSES: PauseMode[] = ["round", "message", "auto"];
 
 /** Everything wrong with a council config, as human-readable sentences (empty when valid). */
