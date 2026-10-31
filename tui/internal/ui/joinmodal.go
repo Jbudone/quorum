@@ -106,7 +106,7 @@ func (m *joinModal) prefill(s rpc.RoomEvent) {
 func (m *joinModal) whoOptions() []string {
 	opts := []string{"+ someone new"}
 	for _, w := range m.members {
-		opts = append(opts, fmt.Sprintf("%s  %s · %s", w.ID, w.Role, strings.TrimSpace(w.CLI+" "+w.Model)))
+		opts = append(opts, fmt.Sprintf("%s  %s · %s", w.ID, w.Role, strings.TrimSpace(w.CLI+" "+modelOr(m.clis, w.CLI, w.Model))))
 	}
 	return opts
 }

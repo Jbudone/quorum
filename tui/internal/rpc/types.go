@@ -178,6 +178,7 @@ type (
 		Error            string   `json:"error"`
 		QuotaUtilization *float64 `json:"quotaUtilization"`
 		Models           []string `json:"models"`
+		DefaultModel     string   `json:"defaultModel"`
 	}
 	// DesignResult is the council a model proposed for a topic, with its reasoning.
 	DesignResult struct {

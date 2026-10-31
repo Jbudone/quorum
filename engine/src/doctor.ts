@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CliName, CouncilConfig } from "./config.js";
+import { defaultModel } from "./models.js";
 import { createTransport, type AgentTransport } from "./transports/index.js";
 
 export const REAL_CLIS: CliName[] = ["claude", "codex", "agy", "opencode", "kimi", "zcode", "gemini"];
@@ -160,6 +161,8 @@ export interface CliInfo {
   error?: string;
   quotaUtilization?: number;
   models: string[];
+  /** What it runs when given no model, from its own settings (models.defaultModel). */
+  defaultModel?: string;
 }
 
 /** Installed agent CLIs and whether they are usable, from the cached health probes (spends no quota). */
@@ -171,5 +174,6 @@ export function cliInfo(installed = installedClis(), health = readHealth()): Cli
     error: health[cli]?.ok === false ? health[cli]?.error : undefined,
     quotaUtilization: health[cli]?.quotaUtilization,
     models: MODEL_SUGGESTIONS[cli],
+    ...(defaultModel(cli) ? { defaultModel: defaultModel(cli) } : {}),
   }));
 }

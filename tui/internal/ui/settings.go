@@ -306,8 +306,11 @@ func (s *settings) update(k tea.KeyPressMsg) (closeIt bool, save string, cmd tea
 
 func (s *settings) label(r row) (name, value, hint string) {
 	d := s.draft
-	orDefault := func(m string) string {
+	orDefault := func(cli, m string) string {
 		if m == "" {
+			if def := modelOr(s.clis, cli, ""); def != "" {
+				return def + " (its default)"
+			}
 			return "default"
 		}
 		return m
@@ -326,14 +329,14 @@ func (s *settings) label(r row) (name, value, hint string) {
 	case rowChairCLI:
 		return "chair", d.Chair.CLI, ""
 	case rowChairModel:
-		return "  model", orDefault(d.Chair.Model), ""
+		return "  model", orDefault(d.Chair.CLI, d.Chair.Model), ""
 	case rowPersona:
 		a := d.Agents[r.member]
 		return a.ID, a.Persona, a.Role
 	case rowMemberCLI:
 		return "  runs on", d.Agents[r.member].CLI, ""
 	}
-	return "  model", orDefault(d.Agents[r.member].Model), ""
+	return "  model", orDefault(d.Agents[r.member].CLI, d.Agents[r.member].Model), ""
 }
 
 func (s *settings) view(th theme.Theme, w, h int) string {

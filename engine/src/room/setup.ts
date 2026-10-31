@@ -1,6 +1,7 @@
 import type { CliName } from "../config.js";
 import { CHEAP_FIRST, readSettings, type HelperModel, type UserSettings } from "../settings.js";
 import { createTransport } from "../transports/index.js";
+import { defaultModel } from "../models.js";
 import { mockRoomTransports } from "./mock.js";
 import type { TransportFactory } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
@@ -34,7 +35,8 @@ export const MOCK_SUPPORT: Required<RoomConfig["support"]> = { assistant: { cli:
 /** Transports for a room: the real CLIs, and the scripted cast (keyed by persona) for the mock CLI. */
 export function roomTransports(personaOf: (id: string) => string, delayMs?: number): TransportFactory {
   const mock = mockRoomTransports(personaOf, delayMs);
-  return (spec) => (spec.cli === "mock" ? mock(spec) : createTransport({ id: spec.id, cli: spec.cli, model: spec.model }));
+  // A member with no model runs the harness's default as Quorum shows it, not whatever the CLI picks on its own.
+  return (spec) => (spec.cli === "mock" ? mock(spec) : createTransport({ id: spec.id, cli: spec.cli, model: spec.model || defaultModel(spec.cli) }));
 }
 
 /** The persona behind a room member, or the role name for support roles. */

@@ -150,3 +150,14 @@ func TestSuggestionLabelNamesTheModel(t *testing.T) {
 		}
 	}
 }
+
+func TestBlankModelsShowTheHarnessDefault(t *testing.T) {
+	clis := []rpc.CLIInfo{{CLI: "opencode", DefaultModel: "openrouter/nvidia/nemotron-3-ultra"}, {CLI: "gemini", DefaultModel: "gemini-2.5-pro"}}
+	if modelOr(clis, "opencode", "") != "openrouter/nvidia/nemotron-3-ultra" || modelOr(clis, "gemini", "") != "gemini-2.5-pro" || modelOr(clis, "opencode", "x") != "x" || modelOr(clis, "kimi", "") != "" {
+		t.Fatal("modelOr")
+	}
+	m := &joinModal{clis: clis, members: []rpc.WorkspaceMember{{ID: "innovator", Role: "boundary-pusher", CLI: "opencode"}}}
+	if got := m.whoOptions()[1]; got != "innovator  boundary-pusher · opencode openrouter/nvidia/nemotron-3-ultra" {
+		t.Fatalf("join list %q", got)
+	}
+}

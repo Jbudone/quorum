@@ -75,6 +75,19 @@ func (a *App) openEdit(s rpc.RoomEvent) {
 	}
 }
 
+// modelOr is model, or else the one the harness runs by default when the engine knows it.
+func modelOr(clis []rpc.CLIInfo, cli, model string) string {
+	if model != "" {
+		return model
+	}
+	for _, c := range clis {
+		if c.CLI == cli {
+			return c.DefaultModel
+		}
+	}
+	return ""
+}
+
 func arg(args []string, i int) string {
 	if i < len(args) {
 		return args[i]
