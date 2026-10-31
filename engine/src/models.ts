@@ -9,6 +9,8 @@ import type { CliName } from "./config.js";
 export interface ModelInfo {
   id: string;
   label?: string;
+  /** The model's catalog key (`provider/model`, as models.dev names it), when the id alone doesn't say. */
+  key?: string;
 }
 
 /** Claude's CLI takes aliases for the latest of each family, or full model ids. */
@@ -60,7 +62,7 @@ export function codexModels(file = join(homedir(), ".codex", "models_cache.json"
 export function kimiModels(file = join(homedir(), ".kimi-code", "config.toml")): ModelInfo[] {
   try {
     const d = parse(readFileSync(file, "utf8")) as any;
-    const out: ModelInfo[] = Object.entries(d?.models ?? {}).map(([id, m]: [string, any]) => ({ id, ...(m?.provider && m?.model ? { label: `${m.model} via ${m.provider}` } : {}) }));
+    const out: ModelInfo[] = Object.entries(d?.models ?? {}).map(([id, m]: [string, any]) => ({ id, ...(m?.provider && m?.model ? { label: `${m.model} via ${m.provider}`, key: `${m.provider}/${m.model}` } : {}) }));
     const def = typeof d?.default_model === "string" ? d.default_model : undefined;
     return def ? [...out.filter((m) => m.id === def), ...out.filter((m) => m.id !== def)] : out;
   } catch {
@@ -97,13 +99,17 @@ export function zcodeModels(root = join(homedir(), ".zcode", "v2")): ModelInfo[]
     if (typeof id === "string") providers.set(id, typeof p?.templateId === "string" ? p.templateId : undefined);
   }
   const out: ModelInfo[] = [];
-  const add = (id: string, label?: string) => out.some((m) => m.id === id) || out.push({ id, ...(label ? { label } : {}) });
-  if (typeof def?.providerId === "string" && typeof def?.modelId === "string") add(`${def.providerId}/${def.modelId}`, "ZCode's default");
-  for (const [id, template] of providers) {
-    // A Z.AI coding-plan login ("account:zai-…") offers the Z.AI API's models.
-    const t = template ?? (id.startsWith("account:zai") ? "zai-api" : id.replace(/^account:/, ""));
-    for (const m of table.get(t) ?? []) add(`${id}/${m}`);
-  }
+  // Which models.dev provider a ZCode provider is, so the catalog can match its models.
+  const catalogProvider = (id: string, t: string) =>
+    id.startsWith("account:zai") ? "zai-coding-plan" : t.startsWith("zai") ? "zai" : t.startsWith("bigmodel") ? "zhipuai" : t.startsWith("moonshot") ? "moonshotai" : t.replace(/-(chat|messages|responses)$/, "");
+  const add = (provider: string, t: string, model: string, label?: string) => {
+    const id = `${provider}/${model}`;
+    if (!out.some((m) => m.id === id)) out.push({ id, key: `${catalogProvider(provider, t)}/${model.toLowerCase()}`, ...(label ? { label } : {}) });
+  };
+  // A Z.AI coding-plan login ("account:zai-…") offers the Z.AI API's models.
+  const templateOf = (id: string, template?: string) => template ?? (id.startsWith("account:zai") ? "zai-api" : id.replace(/^account:/, ""));
+  if (typeof def?.providerId === "string" && typeof def?.modelId === "string") add(def.providerId, templateOf(def.providerId, providers.get(def.providerId)), def.modelId, "ZCode's default");
+  for (const [id, template] of providers) for (const m of table.get(templateOf(id, template)) ?? []) add(id, templateOf(id, template), m);
   return out;
 }
 

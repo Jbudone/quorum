@@ -1,4 +1,5 @@
 import { parseJson, SubprocessTransport, type Invocation, type LineMapper } from "./subprocess.js";
+import { readProviders, type ProvidersFile } from "../providers.js";
 import type { AgentEvent, SendOptions } from "./types.js";
 
 /**
@@ -52,6 +53,32 @@ export interface OpencodeOptions {
   bin?: string;
   /** provider/model, e.g. "anthropic/claude-sonnet-5-5". */
   model?: string;
+  /** The human's providers (read from providers.toml when absent). */
+  providers?: ProvidersFile;
+}
+
+/**
+ * Opencode config for the model's provider when opencode doesn't know it: one of the human's custom
+ * OpenAI-compatible providers, or a local ollama.
+ */
+export function customProvider(model: string | undefined, f: ProvidersFile): { provider?: Record<string, unknown> } {
+  const slash = model?.indexOf("/") ?? -1;
+  if (!model || slash <= 0) return {};
+  const id = model.slice(0, slash);
+  const name = model.slice(slash + 1);
+  const p = f.providers[id];
+  const baseURL = p?.baseUrl ?? (id === "ollama" ? "http://localhost:11434/v1" : undefined);
+  if (!baseURL) return {};
+  return {
+    provider: {
+      [id]: {
+        npm: "@ai-sdk/openai-compatible",
+        name: p?.name ?? id,
+        options: { baseURL, ...(p?.env ? { apiKey: `{env:${p.env}}` } : {}) },
+        models: Object.fromEntries([...new Set([...(p?.models ?? []), name])].map((m) => [m, {}])),
+      },
+    },
+  };
 }
 
 /** Drives `opencode run --format json`. The persona becomes a real system prompt via a read-only agent. */
@@ -89,6 +116,7 @@ export class OpencodeTransport extends SubprocessTransport {
       env: {
         OPENCODE_CONFIG_CONTENT: JSON.stringify({
           agent: { quorum: agentConfig },
+          ...customProvider(this.o.model, this.o.providers ?? readProviders()),
           ...(opts.mcp
             ? {
                 mcp: {

@@ -15,6 +15,8 @@ import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/set
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
 import { listModels } from "../models.js";
+import { getCatalog, mockCatalog, resetCatalog } from "../catalog.js";
+import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
 
 /**
@@ -30,7 +32,9 @@ import { personaFor, Workspace } from "../room/workspace.js";
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
  * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
- * persona.draft {line}, persona.get {key}, models.list {cli}. setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
+ * persona.draft {line}, persona.get {key}, models.list {cli}, catalog.list {refresh?, mock?} (every model and how to run it),
+ * catalog.favourite {key, on?}, catalog.used {key}, providers.get, providers.set {id, name?, env?, baseUrl?, models?, hidden?, remove?},
+ * harnesses.order {order}. setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
  * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
  *
  * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
@@ -345,6 +349,51 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "models.list":
         return listModels(String(p.cli) as CliName);
+      case "catalog.list":
+        return p.mock ? mockCatalog(readProviders(), readRecent()) : getCatalog(Boolean(p.refresh));
+      case "catalog.favourite": {
+        const key = String(p.key ?? "");
+        if (!key) throw new Error("which model?");
+        return updateProviders((f) => {
+          f.favourites = f.favourites.filter((k) => k !== key);
+          if (p.on !== false) f.favourites.unshift(key);
+        });
+      }
+      case "catalog.used":
+        if (p.key) noteRecent(String(p.key));
+        return {};
+      case "providers.get":
+        return readProviders();
+      case "providers.set": {
+        const id = String(p.id ?? "").trim();
+        if (!/^[\w.:-]+$/.test(id)) throw new Error("a provider id is letters, digits, dots, dashes or colons");
+        const f = updateProviders((f) => {
+          if (p.remove) {
+            delete f.providers[id];
+            return;
+          }
+          const cur = f.providers[id] ?? {};
+          const str = (v: unknown) => (v === undefined ? undefined : String(v).trim() || undefined);
+          f.providers[id] = {
+            ...cur,
+            ...(p.name !== undefined ? { name: str(p.name) } : {}),
+            ...(p.env !== undefined ? { env: str(p.env) } : {}),
+            ...(p.baseUrl !== undefined ? { baseUrl: str(p.baseUrl) } : {}),
+            ...(p.models !== undefined ? { models: (Array.isArray(p.models) ? p.models : String(p.models).split(/[\s,]+/)).map(String).filter(Boolean) } : {}),
+            ...(p.hidden !== undefined ? { hidden: Boolean(p.hidden) } : {}),
+          };
+        });
+        resetCatalog();
+        return f;
+      }
+      case "harnesses.order": {
+        const order: CliName[] = Array.isArray(p.order) ? p.order.map(String) : [];
+        const f = updateProviders((f) => {
+          f.harnesses = [...order.filter((c) => f.harnesses.includes(c)), ...f.harnesses.filter((c) => !order.includes(c))];
+        });
+        resetCatalog();
+        return f;
+      }
       case "persona.draft":
         return needRoom().draftPersona(String(p.line ?? ""));
       case "persona.get": {
