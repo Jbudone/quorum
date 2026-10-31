@@ -138,6 +138,55 @@ function findBuiltin(dir: string): any {
   return undefined;
 }
 
+/**
+ * The model a harness runs when it isn't given one, read from its own settings (undefined when
+ * they don't say). Claude's aliases resolve to the newest full id of that family.
+ */
+export function defaultModel(cli: CliName, home = homedir(), env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const json = (f: string): any => {
+    try {
+      // opencode's .jsonc allows comments.
+      return JSON.parse(readFileSync(join(home, f), "utf8").replace(/^\s*\/\/.*$/gm, ""));
+    } catch {
+      return undefined;
+    }
+  };
+  const toml = (f: string): any => {
+    try {
+      return parse(readFileSync(join(home, f), "utf8"));
+    } catch {
+      return undefined;
+    }
+  };
+  const str = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
+  switch (cli) {
+    case "claude": {
+      const m = str(env.ANTHROPIC_MODEL) ?? str(json(".claude/settings.json")?.model);
+      return m && (CLAUDE.find((c) => c.id.startsWith(`claude-${m}-`))?.id ?? m);
+    }
+    case "codex":
+      return str(toml(".codex/config.toml")?.model);
+    case "agy": {
+      // Antigravity saves the model's display name ("Gemini 4 Argon (Medium)"); the flag takes its id.
+      const name = str(json(".gemini/antigravity-cli/settings.json")?.model);
+      if (!name) return undefined;
+      const listed = cache.get("agy")?.models.find((m) => m.label === name || m.id === name);
+      return listed?.id ?? name.toLowerCase().replace(/[()]/g, "").trim().replace(/\s+/g, "-");
+    }
+    case "kimi":
+      return str(toml(".kimi-code/config.toml")?.default_model);
+    case "zcode": {
+      const d = json(".zcode/v2/provider_config.json")?.config?.defaultModelSelection;
+      return str(d?.providerId) && str(d?.modelId) ? `${d.providerId}/${d.modelId}` : undefined;
+    }
+    case "opencode":
+      return str(json(".config/opencode/opencode.json")?.model) ?? str(json(".config/opencode/opencode.jsonc")?.model);
+    case "gemini":
+      return str(json(".gemini/settings.json")?.model?.name);
+  }
+  return undefined;
+}
+
 const cache = new Map<string, { at: number; models: ModelInfo[] }>();
 const FRESH_MS = 10 * 60_000;
 

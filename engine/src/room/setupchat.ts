@@ -63,7 +63,16 @@ export class SetupChat {
       else this.drafts.push(doc);
     }
     const { prose, questions, proposal } = parseSetup(rest);
-    if (proposal) this.proposal = proposal;
+    if (proposal) {
+      // Spell out the model a member would get by default, so the plan shows what will run.
+      // A returning member keeps the model it had.
+      const known = new Map(new Workspace(this.o.repo).members().map((w) => [w.id, w]));
+      for (const m of proposal.members) {
+        const model = m.cli && !m.model && !known.get(m.id)?.model ? this.o.defaultModel?.(m.cli) : undefined;
+        if (model) m.model = model;
+      }
+      this.proposal = proposal;
+    }
     this.history.push({ from: "assistant", text: reply.trim() });
     return { text: prose, questions, ...(proposal ? { proposal } : {}) };
   }

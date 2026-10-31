@@ -95,3 +95,35 @@ describe("Model guidance", () => {
     expect(call.prompt + (call.opts?.systemPrompt ?? "")).toContain("- mock opus — the strong one");
   });
 });
+
+describe("Spelling out the default model", () => {
+  it("fills in the harness's default where the assistant named no model", async () => {
+    const r = setup({ member: () => "PASS", assistant: ["x\n>> hire: qa | mock | QA lead | Breaks things. | nobody tests\n>> swap: arch | mock | cheaper"] });
+    const room = r.create({ defaultModel: (cli) => (cli === "mock" ? "mock-large" : undefined) });
+    await room.ask("who's missing?");
+    expect(room.pending().map((s) => s.args.slice(0, 3))).toEqual([["qa", "mock", "mock-large"], ["arch", "mock", "mock-large"]]);
+  });
+
+  it("reads each harness's default from its own settings", async () => {
+    const { defaultModel } = await import("../src/models.js");
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const home = mkdtempSync(join(tmpdir(), "qhome-"));
+    const put = (f: string, text: string) => (mkdirSync(join(home, f, ".."), { recursive: true }), writeFileSync(join(home, f), text));
+    put(".claude/settings.json", `{"model": "opus"}`);
+    put(".codex/config.toml", `model = "gpt-6-astra"\n`);
+    put(".gemini/antigravity-cli/settings.json", `{"model": "Gemini 4 Argon (Medium)"}`);
+    put(".kimi-code/config.toml", `default_model = "k3"\n`);
+    put(".zcode/v2/provider_config.json", `{"config":{"defaultModelSelection":{"providerId":"account:zai","modelId":"GLM-5.3"}}}`);
+    put(".config/opencode/opencode.jsonc", `{\n  // mine\n  "model": "openrouter/qwen/qwen3"\n}`);
+    expect(defaultModel("claude", home, {})).toBe("claude-opus-5-5");
+    expect(defaultModel("claude", home, { ANTHROPIC_MODEL: "claude-sonnet-5-5" })).toBe("claude-sonnet-5-5");
+    expect(defaultModel("codex", home, {})).toBe("gpt-6-astra");
+    expect(defaultModel("agy", home, {})).toBe("gemini-4-argon-medium");
+    expect(defaultModel("kimi", home, {})).toBe("k3");
+    expect(defaultModel("zcode", home, {})).toBe("account:zai/GLM-5.3");
+    expect(defaultModel("opencode", home, {})).toBe("openrouter/qwen/qwen3");
+    expect(defaultModel("gemini", home, {})).toBeUndefined();
+  });
+});

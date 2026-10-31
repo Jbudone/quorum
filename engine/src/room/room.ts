@@ -95,6 +95,8 @@ export interface RoomOptions {
   clis?: string[];
   /** Models the assistant can pick from, for its prompt (see catalog.modelMenu). */
   modelMenu?: () => string | undefined;
+  /** The model a harness runs by default, filled into suggestions that don't name one (see models.defaultModel). */
+  defaultModel?: (cli: string) => string | undefined;
 }
 
 export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
@@ -536,7 +538,8 @@ export class Room {
   addMember(o: { persona: string; cli: CliName; model?: string; id?: string; why?: string; quiet?: boolean }): string {
     const c = this.store.config();
     const back = (c.left ?? []).find((a) => a.id === (o.id ?? o.persona));
-    if (back && !o.id && back.cli === o.cli && back.model === o.model) return this.rejoin(back.id);
+    const model = (m?: string) => m ?? this.o.defaultModel?.(o.cli);
+    if (back && !o.id && back.cli === o.cli && model(back.model) === model(o.model)) return this.rejoin(back.id);
     const ws = new Workspace(this.o.repo);
     const known = ws.members().find((m) => m.id === (o.id ?? o.persona));
     const personaKey = known?.persona ?? o.persona;
@@ -837,6 +840,13 @@ export class Room {
   }
 
   private suggest(from: string, action: SuggestionAction, args: string[], why: string): void {
+    // A member's model is always spelled out, so the human sees what they approve and it stays put if the default changes.
+    if ((action === "hire" || action === "add" || action === "swap") && args[1] && !args[2]) {
+      // Someone coming back on the same harness keeps the model they had.
+      const before = action === "add" ? [...(this.store.config().left ?? []), ...new Workspace(this.o.repo).members()].find((m) => m.id === args[0] && m.cli === args[1]) : undefined;
+      const model = before?.model ?? this.o.defaultModel?.(args[1]);
+      if (model) args = [args[0], args[1], model, ...args.slice(3)];
+    }
     if (this.pending().some((p) => p.action === action && p.args.join(" ") === args.join(" "))) return;
     const id = 1 + Math.max(0, ...this.store.events().flatMap((e) => (e.type === "suggestion" ? [e.id] : [])));
     this.log({ type: "suggestion", id, from, action, args, why });

@@ -14,7 +14,7 @@ import { checkEdit, Room, type TransportFactory } from "../room/room.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
-import { listModels } from "../models.js";
+import { defaultModel, listModels } from "../models.js";
 import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
@@ -142,6 +142,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
     };
   };
 
+  // Fills in each harness's default model where a suggestion names none (never for mock channels).
+  const defaultsFor = (clis: string[]) => (clis.includes("mock") ? undefined : (cli: string) => defaultModel(cli as CliName));
+
   const need = (): Engine => {
     if (!engine) throw new Error("no session: call session.start first");
     return engine;
@@ -262,7 +265,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
             transports: transportsFor(personaIn(() => r.store.config())),
             assetsDir: opts.assetsDir,
             clis: r.clis,
-            modelMenu: menuFor(r.clis),
+            modelMenu: menuFor(r.clis), defaultModel: defaultsFor(r.clis),
             support: { ...c.support, floor: c.support.floor ?? c.support.scribe },
             room: r,
           });
@@ -277,7 +280,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor((id) => (room ? personaIn(() => room!.store.config())(id) : id)),
           assetsDir: opts.assetsDir,
           clis: usable,
-          modelMenu: menuFor(usable),
+          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable),
           support: fake ? MOCK_SUPPORT : supportFor(usable),
         });
         return {};
@@ -319,7 +322,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           transports: transportsFor(personaIn(() => r.store.config())),
           assetsDir: opts.assetsDir,
           clis: usable,
-          modelMenu: menuFor(usable),
+          modelMenu: menuFor(usable), defaultModel: defaultsFor(usable),
           topic: p.topic ? String(p.topic) : undefined,
           agents,
           support: fake ? MOCK_SUPPORT : supportFor(usable),
@@ -333,7 +336,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const store = RoomStore.open(String(p.repo), String(p.id));
         const fake = Boolean(opts.roomTransports) || Object.values(store.config().support).every((x) => x?.cli === "mock");
         const clis: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
-        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis) });
+        const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis), defaultModel: defaultsFor(clis) });
         await adopt(r);
         return snapshot(r);
       }
