@@ -49,13 +49,24 @@ const LINES: Record<string, Line[]> = {
 const GENERIC: Line[] = [{ say: "Whatever we pick, we need a metric that tells us when it's wrong; hit rate alone won't." }];
 
 const SETUP = [
-  "Got it. Is there a folder of earlier notes they should read first, or are they starting fresh?",
-  `Here's who I'd bring in. Tell me if you want anyone else.
+  `Got it. Two things will shape who I bring in.
+>> question: Goal | What matters most right now?
+>> option: Ship something soon (recommended) | a working cache this quarter
+>> option: Get it right first | correctness over speed, even if it takes longer
+>> question: Docs | Is there earlier work they should read?
+>> option: Starting fresh (recommended) | no notes yet
+>> option: There are notes | I'll point you at them`,
+  `Here's the plan. Tell me if you want anyone else or a different start.
 >> channel: product-cache | Should we add a cache to the product API, and how?
+>> vision: A product API that answers the common reads from memory without ever showing a customer a wrong price.
+>> consider: how stale a price may be
+>> consider: bulk imports that rewrite thousands of rows
+>> consider: tenants sharing one cache
 >> read: docs
 >> member: perf-researcher | mock | performance researcher | Studies read paths and latency; proposes designs and backs them with numbers.
 >> member: reliability-scientist | mock | reliability scientist | Hunts for consistency and failure modes; won't accept a design without a staleness bound.
->> member: product-engineer | mock | product engineer | Has to build and run it; keeps scope and operational cost honest.`,
+>> member: product-engineer | mock | product engineer | Has to build and run it; keeps scope and operational cost honest.
+>> topic: Edge cases for cached prices | a ranked list of cases the design must survive | reliability-scientist, product-engineer`,
 ];
 
 /** Shared script state, so the floor knows who still has something to say. */
@@ -105,7 +116,7 @@ class ScriptedRoomMock implements AgentTransport {
 
   async *send(prompt: string, opts: SendOptions = {}): AsyncIterable<AgentEvent> {
     const c = this.cast;
-    if (this.role === "assistant" && /setting up a new channel|propose the channel/.test(prompt)) {
+    if (this.role === "assistant" && /helping plan a channel/.test(opts.systemPrompt ?? "")) {
       yield* this.stream(SETUP[Math.min(c.setups++, SETUP.length - 1)], opts.signal);
     } else if (this.role === "floor") yield* this.stream(this.floor(prompt), opts.signal);
     else if (this.role === "scribe" && /side threads/.test(opts.systemPrompt ?? "")) yield* this.stream("They agreed 30 s is fine for product pages since checkout re-reads prices.", opts.signal);

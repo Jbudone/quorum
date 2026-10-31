@@ -47,6 +47,9 @@ type (
 		Picks []RoomPick `json:"picks"`
 		// Floor tags: what each message did to the discussion.
 		Items []MessageTag `json:"items"`
+		// Workstreams: what done looks like, and who owns it.
+		Done    string   `json:"done"`
+		Members []string `json:"members"`
 	}
 	RoomPick struct {
 		Agent    string `json:"agent"`
@@ -74,14 +77,40 @@ type (
 		Delta string `json:"delta"`
 	}
 	SetupReply struct {
-		Text     string         `json:"text"`
-		Proposal *SetupProposal `json:"proposal"`
+		Text      string         `json:"text"`
+		Questions []PlanQuestion `json:"questions"`
+		Proposal  *SetupProposal `json:"proposal"`
+	}
+	// PlanQuestion is a choice card the assistant asks during planning.
+	PlanQuestion struct {
+		Header  string       `json:"header"`
+		Text    string       `json:"text"`
+		Multi   bool         `json:"multi"`
+		Options []PlanOption `json:"options"`
+	}
+	PlanOption struct {
+		Label       string `json:"label"`
+		Description string `json:"description"`
 	}
 	SetupProposal struct {
-		Name    string        `json:"name,omitempty"`
-		Topic   string        `json:"topic,omitempty"`
-		Reading []string      `json:"reading"`
-		Members []SetupMember `json:"members"`
+		Name           string        `json:"name,omitempty"`
+		Topic          string        `json:"topic,omitempty"`
+		Vision         string        `json:"vision,omitempty"`
+		Considerations []string      `json:"considerations"`
+		Reading        []string      `json:"reading"`
+		Members        []SetupMember `json:"members"`
+		Topics         []PlanTopic   `json:"topics"`
+		Steer          string        `json:"steer,omitempty"`
+	}
+	PlanTopic struct {
+		Title   string   `json:"title"`
+		Done    string   `json:"done,omitempty"`
+		Members []string `json:"members"`
+	}
+	// ModelInfo is a model a CLI can run.
+	ModelInfo struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
 	}
 	SetupMember struct {
 		ID      string `json:"id"`

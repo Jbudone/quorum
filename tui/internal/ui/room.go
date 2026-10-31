@@ -241,6 +241,9 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 	case "tags":
 		r.tags = append(r.tags, e.Items...)
 		return
+	case "workstream":
+		r.thread(e.Thread).title = "Workstream: " + e.Title
+		return
 	case "thread.summary":
 		r.thread(e.Thread).summary = e.Text
 	case "budget":
@@ -465,6 +468,8 @@ Your assistant (right box):
 Channel:
   ctrl+k            switch channel or thread, or start a new channel
   ctrl+a            bring someone in: who, role, model, onboarding (or /add)
+  ctrl+g            plan next steps with your assistant: it asks, then proposes
+                    members, workstreams and what to consider (or /plan)
   ctrl+p            pause / resume           ctrl+o   documents and notes
   ctrl+t            show / hide the stats strip
   /read <path>…     set the reading list members work through (folders or files)
@@ -513,6 +518,8 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{local: "switch"}
 	case in == "/new":
 		return roomCommand{local: "new"}
+	case in == "/plan":
+		return roomCommand{local: "plan"}
 	case in == "/resume":
 		return roomCommand{method: "room.resume", params: map[string]any{}}
 	case strings.HasPrefix(in, "/pause"):

@@ -3,6 +3,7 @@ package ui
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -83,6 +84,32 @@ func (h *roomHarness) callTo(method string) call {
 	return call{}
 }
 
+// pick moves the open list to the entry containing text and opens it.
+func (h *roomHarness) pick(text string) {
+	h.t.Helper()
+	for _, d := range h.app.rm.room.overlay.list {
+		if strings.Contains(d.label, text) {
+			h.press("enter")
+			return
+		}
+		h.press("down")
+	}
+	h.t.Fatalf("nothing in the list says %q", text)
+}
+
+// review enters review mode and moves to the suggestion with this id.
+func (h *roomHarness) review(id int) {
+	h.t.Helper()
+	h.press("ctrl+n")
+	for _, p := range h.app.rm.room.pending {
+		if p.ID == id {
+			return
+		}
+		h.press("down")
+	}
+	h.t.Fatalf("no pending suggestion %d", id)
+}
+
 func (h *roomHarness) event(e rpc.RoomEvent) {
 	h.send(engineMsg{rpc.Event{Name: "room.event", Data: e}})
 }
@@ -105,7 +132,7 @@ func (h *roomHarness) setup() {
 	contains(h.t, s, "new channel")
 	contains(h.t, s, "What should this channel work on?")
 	if h.app.w >= 90 {
-		contains(h.t, s, "The lineup appears here") // beside the chat; on narrow screens it waits for a lineup
+		contains(h.t, s, "The plan appears here") // beside the chat; on narrow screens it waits for a plan
 	}
 	lacks(h.t, s, "RECENT") // no channel, no stats, until the human approves a lineup
 
@@ -116,17 +143,47 @@ func (h *roomHarness) setup() {
 	}
 	contains(h.t, h.screen(), "typing…") // the assistant visibly working
 	h.answer(h.fc.last().id, 3)
-	for _, ev := range h.setupEv {
+	// The first reply asks two choice-card questions; answering both sends them together.
+	first := 0
+	for i, ev := range h.setupEv {
+		if ev.Name == "setup.reply" {
+			first = i
+			break
+		}
+	}
+	for _, ev := range h.setupEv[:first+1] {
+		h.send(engineMsg{ev})
+	}
+	s = h.screen()
+	contains(h.t, s, "GOAL  1 of 2")
+	contains(h.t, s, "Ship something soon (recommended)")
+	contains(h.t, s, "type your own…")
+	lacks(h.t, s, ">> option")
+	h.press("enter") // the recommended answer
+	contains(h.t, h.screen(), "DOCS  2 of 2")
+	h.press("down", "down", "enter")
+	h.typ("notes are in docs/")
+	h.press("enter")
+	if c := h.expectCall("setup.say"); c.params["text"] != "Goal: Ship something soon\nDocs: notes are in docs/" {
+		h.t.Fatalf("answers: %q", c.params["text"])
+	}
+	h.answer(h.fc.last().id, 4)
+	for _, ev := range h.setupEv[first+1:] {
 		h.send(engineMsg{ev})
 	}
 	s = h.screen()
 	contains(h.t, s, "#product-cache")
 	contains(h.t, s, "perf-researcher · mock")
-	contains(h.t, s, "performance researcher")
-	contains(h.t, s, "ctrl+s open the channel")
+	contains(h.t, s, "Edge cases for cached prices")
+	contains(h.t, s, "ctrl+s review and apply")
 	lacks(h.t, s, ">> member") // action lines never show as prose
 
+	// The plan form: everything included until left out.
 	h.press("ctrl+s")
+	s = h.screen()
+	contains(h.t, s, "THE PLAN")
+	contains(h.t, s, "[x] tenants sharing one cache")
+	h.press("enter")
 	create := h.expectCall("setup.create")
 	if p, ok := create.params["proposal"].(*rpc.SetupProposal); !ok || p.Name != "product-cache" || len(p.Members) != 3 {
 		h.t.Fatalf("create params: %#v", create.params)
@@ -151,15 +208,16 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "plan v2 accepted")
 	contains(t, s, "WHERE WE ARE") // the assistant's pinned status
 	contains(t, s, "Not on the reading list")
-	contains(t, s, "↳ thread: 1 reply · settled") // the thread under its message in the channel
-	lacks(t, s, "nobody pays a stale price")      // ...but not the thread's replies
+	contains(t, s, "↳ thread: ") // threads under their messages in the channel
+	contains(t, s, "· settled")
+	lacks(t, s, "nobody pays a stale price") // ...but not the thread's replies
 	lacks(t, s, ">> ")
 	lacks(t, s, "PASS")
 
 	// A suggestion waits in the "needs you" card; nothing is selected until ctrl+n.
 	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "steer", Args: []string{"Settle the TTL first."}, Why: "they keep circling"})
 	s = h.screen()
-	contains(t, s, "NEEDS YOU · 2") // the recorded steer is still waiting too
+	contains(t, s, fmt.Sprintf("NEEDS YOU · %d", len(h.app.rm.room.pending))) // recorded suggestions are still waiting too
 	contains(t, s, "steer the room: “Settle the TTL first.”")
 	contains(t, s, "ctrl+n to review")
 	lacks(t, s, "❯ steer")
@@ -176,7 +234,7 @@ func TestRoomJourney(t *testing.T) {
 	lacks(t, h.screen(), ">> pause")
 
 	// Reviewing: keys answer suggestions and never reach the text box.
-	h.press("ctrl+n", "down")
+	h.review(9)
 	contains(t, h.screen(), "❯ steer the room")
 	h.press("y")
 	if c := h.expectCall("room.resolve"); c.params["id"] != 9 || c.params["accept"] != true {
@@ -219,7 +277,9 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "esc back to the channel")
 	h.typ("thanks")
 	h.press("enter")
-	if c := h.expectCall("room.post"); c.params["thread"] != 39 {
+	var asked struct{ Seq int }
+	_ = json.Unmarshal(h.recorded[10].Result, &asked)
+	if c := h.expectCall("room.post"); c.params["thread"] != asked.Seq {
 		t.Fatalf("a reply in a thread should stay in it: %v", c.params)
 	}
 	h.press("esc")
@@ -261,11 +321,11 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "# product-cache  · here")
 	contains(t, s, "↳ How long can a price be stale?  · settled")
 	contains(t, s, "+ new channel")
-	h.press("down", "enter") // the thread
+	h.pick("How long can a price be stale?")
 	contains(t, h.screen(), "thread: How long can a price be stale?")
 	h.press("esc", "ctrl+k")
 	h.answer(h.expectCall("workspace.open").id, 12)
-	h.press("down", "down", "enter") // + new channel
+	h.pick("+ new channel")
 	h.expectCall("setup.start")
 	contains(t, h.screen(), "What should this channel work on?")
 }
@@ -304,8 +364,18 @@ func TestRoomJoinModal(t *testing.T) {
 
 	// Only the CLIs this channel runs on are offered (a mock channel never reaches a real CLI).
 	s = h.screen()
-	contains(t, s, "mock (its default model)")
-	lacks(t, s, "claude · sonnet")
+	contains(t, s, "❯ mock")
+	lacks(t, s, "claude")
+	h.press("enter")
+	if c := h.expectCall("models.list"); c.params["cli"] != "mock" {
+		t.Fatalf("models.list params: %v", c.params)
+	}
+	h.reply("models.list", `[{"id":"scripted","label":"scripted mock cast"},{"id":"other","label":"another"}]`)
+	contains(t, h.screen(), "(default)")
+	h.typ("scrip") // search narrows the list
+	s = h.screen()
+	contains(t, s, "❯ scripted")
+	lacks(t, s, "another")
 	h.press("enter")
 
 	// Onboarding: the brief is on by default; a first question is optional.
@@ -314,7 +384,7 @@ func TestRoomJoinModal(t *testing.T) {
 	h.typ("Are keys tenant-scoped?")
 	h.press("enter")
 	join := h.expectCall("room.join")
-	want := map[string]any{"id": "tenancy-auditor", "cli": "mock", "role": "multi-tenancy auditor", "persona": "Audits caches for leaks.", "brief": true, "question": "Are keys tenant-scoped?"}
+	want := map[string]any{"id": "tenancy-auditor", "cli": "mock", "model": "scripted", "role": "multi-tenancy auditor", "persona": "Audits caches for leaks.", "brief": true, "question": "Are keys tenant-scoped?"}
 	for k, v := range want {
 		if join.params[k] != v {
 			t.Fatalf("join %s = %v, want %v (%v)", k, join.params[k], v, join.params)
@@ -330,7 +400,8 @@ func TestRoomJoinModal(t *testing.T) {
 
 	// y on the assistant's "bring in" suggestion opens the modal filled in, ready to join as proposed.
 	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 90, ID: 9, From: "assistant", Action: "hire", Args: []string{"edge-case-hunter", "mock", "", "edge-case hunter", "Finds what breaks."}, Why: "nobody covers abuse"})
-	h.press("ctrl+n", "down", "y")
+	h.review(9)
+	h.press("y")
 	s = h.screen()
 	contains(t, s, "BRING SOMEONE IN")
 	contains(t, s, "edge-case-hunter on mock")

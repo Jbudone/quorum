@@ -14,6 +14,7 @@ import { Room, type TransportFactory } from "../room/room.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
+import { listModels } from "../models.js";
 import { personaFor, Workspace } from "../room/workspace.js";
 
 /**
@@ -29,7 +30,7 @@ import { personaFor, Workspace } from "../room/workspace.js";
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
  * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
- * persona.draft {line}, persona.get {key}. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
+ * persona.draft {line}, persona.get {key}, models.list {cli}. setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
  * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
  *
  * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
@@ -230,6 +231,20 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return { channels: ws.channels(), members: ws.members() };
       }
       case "setup.start": {
+        // Planning the next steps of the open channel: the plan is applied to it.
+        if (p.channel) {
+          const r = needRoom();
+          const c = r.store.config();
+          setup = new SetupChat({
+            repo: r.store.root,
+            transports: transportsFor(personaIn(() => r.store.config())),
+            assetsDir: opts.assetsDir,
+            clis: r.clis,
+            support: { ...c.support, floor: c.support.floor ?? c.support.scribe },
+            room: r,
+          });
+          return {};
+        }
         const fake = Boolean(p.mock) || Boolean(opts.roomTransports);
         const usable: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
         const repo = String(p.repo);
@@ -256,6 +271,11 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "setup.create": {
         if (!setup) throw new Error("no setup: call setup.start first");
+        if (room && setup.forRoom === room) {
+          const { skipped } = await setup.apply(p.proposal ?? undefined);
+          setup = undefined;
+          return { ...snapshot(room), skipped };
+        }
         const { room: r, skipped } = setup.create(p.proposal ?? undefined, { parallel: p.parallel ? Number(p.parallel) : undefined, turnCap: p.turnCap ? Number(p.turnCap) : undefined });
         setup = undefined;
         await adopt(r);
@@ -316,6 +336,8 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           }),
         };
       }
+      case "models.list":
+        return listModels(String(p.cli) as CliName);
       case "persona.draft":
         return needRoom().draftPersona(String(p.line ?? ""));
       case "persona.get": {

@@ -15,6 +15,7 @@ import {
   memberFresh,
   memberIncremental,
   memberThread,
+  describeRoom,
   parsePersonaDraft,
   parseWatch,
   personaDraftPrompt,
@@ -30,6 +31,7 @@ import {
   scribePrompt,
   type FloorReason,
   type RoomView,
+  type SetupProposal,
 } from "./prompts.js";
 import { computeSignals, describeSignals, looksStuck } from "./signals.js";
 import {
@@ -96,8 +98,10 @@ export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
   support?: Partial<RoomConfig["support"]>;
   name?: string;
   reading?: string[];
-  /** Every member speaks once when the channel opens (its first take), instead of waiting for the floor. */
-  kickoff?: boolean;
+  /** Members who speak once when the channel opens (their first take), instead of waiting for the floor; true for all. */
+  kickoff?: boolean | string[];
+  vision?: string;
+  considerations?: string[];
 }
 
 /** How many recent events a member without a live vendor session is shown. */
@@ -168,6 +172,8 @@ export class Room {
   private readonly warned = new Set<string>();
   private readonly busy = new Set<SupportRole | "watch">();
   private supportAbort = new AbortController();
+  /** Run once, the next time the room resumes. */
+  private resumeHooks: (() => void)[] = [];
   private _state: RoomState = "paused";
 
   private constructor(
@@ -190,6 +196,8 @@ export class Room {
       ...(o.name ? { name: o.name } : {}),
       ...(o.reading?.length ? { reading: o.reading } : {}),
       ...(o.independent ? { independent: true } : {}),
+      ...(o.vision ? { vision: o.vision } : {}),
+      ...(o.considerations?.length ? { considerations: o.considerations } : {}),
       topic,
       agents,
       left: [],
@@ -202,9 +210,10 @@ export class Room {
     if (topic) {
       openingTopic(store, topic);
       const first = store.append({ type: "message", from: "human", to: "room", text: topic });
-      if (o.kickoff && agents.length) {
+      const kick = o.kickoff === true ? agents : agents.filter((a) => Array.isArray(o.kickoff) && o.kickoff.includes(a.id));
+      if (o.kickoff) {
         const why = o.reading?.length ? "the channel just opened: read the reading list, then give your first take from your angle" : "the channel just opened: give your first take from your angle";
-        store.setMeta({ floorSeq: first.seq, wants: JSON.stringify(agents.map((a) => [a.id, { agent: a.id, why, replyTo: first.seq }])) });
+        store.setMeta({ floorSeq: first.seq, wants: JSON.stringify(kick.map((a) => [a.id, { agent: a.id, why, replyTo: first.seq }])) });
       }
     }
     return new Room(store, o);
@@ -279,7 +288,58 @@ export class Room {
   }
 
   view(): RoomView {
-    return { topic: this.store.config().topic, focus: this.focus(), topics: this.topics(), docs: this.docs(), members: this.members() };
+    const c = this.store.config();
+    return {
+      topic: c.topic,
+      focus: this.focus(),
+      topics: this.topics(),
+      docs: this.docs(),
+      members: this.members(),
+      ...(c.vision ? { vision: c.vision } : {}),
+      ...(c.considerations?.length ? { considerations: c.considerations } : {}),
+      ...(this.workstreams().length ? { workstreams: this.workstreams() } : {}),
+    };
+  }
+
+  /** Starter workstreams and whether each has settled. */
+  workstreams(): NonNullable<RoomView["workstreams"]> {
+    const settled = new Set(this.store.events().flatMap((e) => (e.type === "thread.summary" ? [e.thread] : [])));
+    return this.store.events().flatMap((e) => (e.type === "workstream" ? [{ thread: e.thread, title: e.title, ...(e.done ? { done: e.done } : {}), members: e.members, settled: settled.has(e.thread) }] : []));
+  }
+
+  /** Starts a workstream: a side thread the named members own, with what done looks like. */
+  workstream(title: string, done: string | undefined, owners: string[]): number {
+    const members = owners.filter((m) => this.personas.has(m));
+    if (!title.trim()) throw new Error("a workstream needs a title");
+    const who = members.length ? ` ${members.map((m) => `@${m}`).join(" ")}, this one's yours.` : "";
+    const e = this.post(`Workstream: ${title.trim()}.${done ? ` Done when: ${done}.` : ""}${who}`, "room", "new");
+    this.log({ type: "workstream", thread: e.seq, title: title.trim(), ...(done ? { done } : {}), members });
+    return e.seq;
+  }
+
+  /**
+   * Applies a plan from the planning session to this channel: new members join with an onboarding
+   * brief, the reading list grows, the vision and considerations are pinned (and said once in the
+   * channel), workstreams start, and the steer is posted.
+   */
+  async applyPlan(p: SetupProposal): Promise<void> {
+    const owned = new Set(p.topics.flatMap((t) => t.members));
+    const ws = new Workspace(this.o.repo);
+    for (const m of p.members) {
+      if (this.personas.has(m.id)) continue;
+      const known = ws.members().find((x) => x.id === m.id);
+      const cli = (m.cli ?? known?.cli) as CliName | undefined;
+      if (!cli) throw new Error(`${m.id} needs a CLI`);
+      await this.join({ id: m.id, cli, model: m.model ?? (m.persona ? undefined : known?.model), role: m.role, persona: m.persona, brief: true, quiet: owned.has(m.id) });
+    }
+    if (p.reading.length) this.setReading([...(this.store.config().reading ?? []), ...p.reading]);
+    if (p.vision || p.considerations.length) {
+      this.store.setPlan(p.vision, p.considerations);
+      const said = [p.vision, p.considerations.length ? `To keep in mind: ${p.considerations.join("; ")}.` : ""].filter(Boolean).join("\n\n");
+      this.post(said);
+    }
+    for (const t of p.topics) this.workstream(t.title, t.done, t.members);
+    if (p.steer) this.post(p.steer);
   }
 
   /** Suggestions the human hasn't answered yet. */
@@ -315,7 +375,21 @@ export class Room {
     this.supportAbort = new AbortController();
     this.log({ type: "resumed" });
     this.setState("running");
+    for (const h of this.resumeHooks.splice(0)) h();
     this.floorCheck();
+  }
+
+  /** Runs `fn` once, when the room next resumes. */
+  onResume(fn: () => void): void {
+    this.resumeHooks.push(fn);
+  }
+
+  /** Where the channel stands, for planning its next steps. */
+  brief(): string {
+    const recent = this.store.events().filter((e) => e.type === "message" && e.to === "room" && inMain(e)).slice(-15);
+    return [describeRoom(this.view()), this.digest() ? `The assistant's status: ${this.digest()}` : "", recent.length ? `Latest messages:\n\n${renderEvents(recent, this.focus())}` : ""]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   /** Stops waking members and aborts turns underway; aborted turns are redone after resume(). */
@@ -415,7 +489,7 @@ export class Room {
    * Brings a member into this channel: a workspace member (by id, with its memory), a new one built
    * on a persona, or one who left. It gets the floor at once to catch up.
    */
-  addMember(o: { persona: string; cli: CliName; model?: string; id?: string; why?: string }): string {
+  addMember(o: { persona: string; cli: CliName; model?: string; id?: string; why?: string; quiet?: boolean }): string {
     const c = this.store.config();
     const back = (c.left ?? []).find((a) => a.id === (o.id ?? o.persona));
     if (back && !o.id && back.cli === o.cli && back.model === o.model) return this.rejoin(back.id);
@@ -432,7 +506,8 @@ export class Room {
     if (!ws.members().some((m) => m.id === id)) ws.saveMember({ ...spec, role: persona.role });
     this.personas.set(id, persona);
     this.log({ type: "agent.joined", agent: id, persona: personaKey, cli: o.cli, ...(o.model ? { model: o.model } : {}) });
-    this.welcome(id, o.why);
+    if (o.quiet) this.kick();
+    else this.welcome(id, o.why);
     return id;
   }
 
@@ -452,6 +527,8 @@ export class Room {
     reading?: string[];
     question?: string;
     suggestion?: number;
+    /** Join without taking the floor (it has a workstream to start on instead). */
+    quiet?: boolean;
   }): Promise<string> {
     const id = o.id.trim().toLowerCase();
     // A channel only runs on the CLIs it was opened with (a mock channel never reaches a real CLI).
@@ -478,7 +555,7 @@ export class Room {
     // Someone who left this channel comes back on whatever CLI was picked now.
     const c = this.store.config();
     if ((c.left ?? []).some((a) => a.id === id)) this.store.setRoster(c.agents, (c.left ?? []).filter((a) => a.id !== id));
-    const joined = this.addMember({ persona: o.persona?.trim() ? id : (known?.persona ?? id), id, cli: o.cli, model: o.model, why: question ? `you just joined, and the human asks you to start with: ${question}` : undefined });
+    const joined = this.addMember({ persona: o.persona?.trim() ? id : (known?.persona ?? id), id, cli: o.cli, model: o.model, why: question ? `you just joined, and the human asks you to start with: ${question}` : undefined, quiet: o.quiet });
     if (o.suggestion !== undefined && this.pending().some((p) => p.id === o.suggestion)) this.log({ type: "suggestion.resolved", id: o.suggestion, accepted: true });
     return joined;
   }

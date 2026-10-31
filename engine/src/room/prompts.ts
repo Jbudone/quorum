@@ -3,6 +3,9 @@ import type { RoomEvent } from "./store.js";
 /** What a room looks like right now, as every prompt describes it. */
 export interface RoomView {
   topic: string;
+  vision?: string;
+  considerations?: string[];
+  workstreams?: { thread: number; title: string; done?: string; members: string[]; settled: boolean }[];
   focus?: string;
   topics: { slug: string; title: string; closed: boolean }[];
   docs: { slug: string; version: number; kind: string; accepted?: number }[];
@@ -22,6 +25,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     }
     case "thread.summary":
       return `[#${e.seq}] — side thread #${e.thread} settled: ${e.text}`;
+    case "workstream":
+      return "";
     case "tags":
       return "";
     case "topic.raised":
@@ -83,6 +88,12 @@ export function describeRoom(v: RoomView): string {
       `Documents: ${v.docs.map((d) => `${d.slug} (${d.kind}) v${d.version}${d.accepted ? `, v${d.accepted} accepted` : ""}`).join("; ")}`,
     );
   lines.push(`Members: ${v.members.join(", ") || "none"}`);
+  if (v.vision) lines.push(`Vision: ${v.vision}`);
+  if (v.considerations?.length) lines.push(`Keep in mind: ${v.considerations.join("; ")}`);
+  if (v.workstreams?.length)
+    lines.push(
+      `Workstreams (side threads): ${v.workstreams.map((w) => `#${w.thread} ${w.title} (${w.members.join(", ")}; ${w.settled ? "settled" : "open"}${w.done ? `; done when ${w.done}` : ""})`).join("; ")}`,
+    );
   return lines.join("\n");
 }
 
@@ -313,57 +324,113 @@ Then, only if something shifted that the human should hear about (a decision lan
   ].join("\n\n");
 }
 
-export const SETUP_SYSTEM = `You are the human's assistant in Quorum, setting up a new channel: a long-lived team chat where AI members work on a hard problem with the human, possibly for weeks. Your job now is to understand the problem and assemble the right people.
+export const SETUP_SYSTEM = `You are the human's assistant in Quorum, helping plan a channel: a long-lived team chat where AI members work on a hard problem with the human, possibly for weeks. You act as an advisor: you help the human think the problem through, then assemble the right group and give it a good start.
 
-Write like a colleague in a chat: one to three short sentences per reply, plain words, no headings or bullet lists. Ask at most one question at a time, and only when the answer changes who you'd bring in or what they should read.
+Talk like a sharp colleague: one to three short sentences, plain words, no headings or bullet lists in your prose.
 
-Choose members the way you'd staff a research group, not a review board: real specialties that fit this problem (for example a research scientist in the relevant field, a UX researcher, someone who brings realistic use cases and edge cases, an engineer who has to build it). Three to six members, each with a distinct angle. Mix CLIs where it helps, since different models catch different things; put the strongest model on the roles that need the most judgment. Reuse existing workspace members when they fit; they bring their memory.`;
+Work in two phases. First narrow down, by asking the human questions as choice cards (see the format below), one to three at a time: what they're really trying to achieve, constraints, what success looks like, what's already been tried, where earlier notes live. Ask only questions whose answers change the plan, and stop asking once you know enough. Then propose the plan.
 
-export function setupPrompt(o: { repo: string; members: { id: string; role?: string; persona: string; cli: string; model?: string }[]; channels: string[]; clis: string[]; history: { from: "human" | "assistant"; text: string }[] }): string {
+A good plan treats a hard, open problem like a research program. It names the things that must be considered. It staffs a group the way you'd staff a research lab rather than a review board: real specialties that fit this problem, for example a research lead who treats it as a research problem, specialists in the relevant fields, a UX researcher, someone who brings real use cases, an edge-case hunter, a feasibility analyst who maps what's impossible, and an engineer who'd have to build it. Use three to seven members with distinct angles, mixing CLIs where it helps and putting the strongest models on the roles that need the most judgment. Reuse workspace members when they fit, since they bring their memory. It also sets starter workstreams that are prerequisites for the main discussion, each owned by two or three members working in parallel: finding edge cases, collecting real use cases, generating feature ideas, formalizing the vision, mapping what's impossible and which boundaries to push.`;
+
+export function setupPrompt(o: {
+  repo: string;
+  members: { id: string; role?: string; persona: string; cli: string; model?: string }[];
+  channels: string[];
+  clis: string[];
+  personas: string[];
+  history: { from: "human" | "assistant"; text: string }[];
+  /** Planning for a channel that already exists: where it stands. */
+  channel?: string;
+}): string {
   return [
     `The project is at ${o.repo}. You can read files there to find the docs the human mentions.`,
-    o.channels.length ? `Existing channels: ${o.channels.map((c) => `#${c}`).join(", ")}.` : "This is the first channel.",
+    o.channel ? `You're planning the next steps for an existing channel. Where it stands:\n${o.channel}` : o.channels.length ? `Existing channels: ${o.channels.map((c) => `#${c}`).join(", ")}.` : "This will be the first channel.",
     o.members.length ? `Workspace members you can reuse:\n${o.members.map((m) => `- ${m.id}: ${m.role ?? m.persona} (${m.cli}${m.model ? ` ${m.model}` : ""})`).join("\n")}` : "",
+    `Persona templates you can adapt: ${o.personas.join(", ")}.`,
     `The conversation so far:\n\n${o.history.map((h) => `${h.from}: ${h.text}`).join("\n\n")}`,
-    `Reply to the human. When you know enough, propose the channel with these lines at the end of your reply (repeat the full set whenever you change it; the human sees it as a card and can ask you to change anything):
->> channel: <short-name> | <one-sentence topic>
->> read: <path relative to the project>         one line per folder or file the members should read first
+    `Reply to the human. To ask questions, add choice cards after your prose; the human picks with the keyboard or types their own answer:
+>> question: <short header> | <the question> [| multi]      add "multi" when several answers can apply
+>> option: <label> | <one-line description>                 two to five per question; put your recommendation first and end its label with (recommended)
+
+When you know enough, propose the plan with these lines at the end of your reply (repeat the whole plan whenever you change it; the human sees it as an editable form):
+${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision: <two to four sentences: what the group is trying to achieve and what great looks like>
+>> consider: <one thing that must be considered>          one line each, three to eight
+>> read: <path relative to the project>                    folders or files everyone reads first
 >> member: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think>
->> member: <existing-id>                         to reuse a workspace member as they are
-Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}.`,
+>> member: <existing-id>                                   to reuse a workspace member as they are
+>> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
+>> steer: <optional first instruction to the whole group>
+Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.`,
   ]
     .filter(Boolean)
     .join("\n\n");
 }
 
-/** A proposed channel, read from the setup assistant's action lines. */
+/** A question the assistant asks as a choice card. */
+export interface PlanQuestion {
+  header: string;
+  text: string;
+  multi: boolean;
+  options: { label: string; description: string }[];
+}
+
+/** A proposed plan, read from the assistant's action lines. */
 export interface SetupProposal {
   name?: string;
   topic?: string;
+  vision?: string;
+  considerations: string[];
   reading: string[];
   members: { id: string; cli?: string; model?: string; role?: string; persona?: string }[];
+  topics: { title: string; done?: string; members: string[] }[];
+  steer?: string;
 }
 
-/** Reads `>> channel/read/member` lines. Returns undefined when the reply proposes nothing. */
-export function parseSetup(text: string): { prose: string; proposal?: SetupProposal } {
+/** Reads choice cards and plan lines. A reply without plan lines has no proposal. */
+export function parseSetup(text: string): { prose: string; questions: PlanQuestion[]; proposal?: SetupProposal } {
   const prose: string[] = [];
-  const p: SetupProposal = { reading: [], members: [] };
+  const questions: PlanQuestion[] = [];
+  const p: SetupProposal = { considerations: [], reading: [], members: [], topics: [] };
   let any = false;
   for (const line of text.split("\n")) {
-    const m = /^\s*>>\s*(channel|read|member)\s*:\s*(.*)$/i.exec(line);
+    const m = /^\s*>>\s*(channel|read|member|vision|consider|topic|steer|question|option)\s*:\s*(.*)$/i.exec(line);
     if (!m) {
       prose.push(line);
       continue;
     }
-    any = true;
     const parts = m[2].split("|").map((x) => x.trim());
-    switch (m[1].toLowerCase()) {
+    const verb = m[1].toLowerCase();
+    if (verb === "question") {
+      const multi = parts.length > 2 && parts.at(-1)!.toLowerCase() === "multi";
+      const body = multi ? parts.slice(0, -1) : parts;
+      if (body[0]) questions.push({ header: body.length > 1 ? body[0].slice(0, 24) : "Question", text: body.length > 1 ? body.slice(1).join(" | ") : body[0], multi, options: [] });
+      continue;
+    }
+    if (verb === "option") {
+      const q = questions.at(-1);
+      if (q && parts[0] && q.options.length < 6) q.options.push({ label: parts[0], description: parts.slice(1).join(" | ") });
+      continue;
+    }
+    any = true;
+    switch (verb) {
       case "channel":
         p.name = parts[0].toLowerCase().replace(/^#/, "").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || undefined;
         p.topic = parts.slice(1).join(" | ") || undefined;
         break;
+      case "vision":
+        p.vision = [p.vision, m[2].trim()].filter(Boolean).join(" ");
+        break;
+      case "consider":
+        if (m[2].trim()) p.considerations.push(m[2].trim());
+        break;
       case "read":
         if (parts[0]) p.reading.push(parts[0]);
+        break;
+      case "steer":
+        if (m[2].trim()) p.steer = m[2].trim();
+        break;
+      case "topic":
+        if (parts[0]) p.topics.push({ title: parts[0], ...(parts[1] ? { done: parts[1] } : {}), members: (parts[2] ?? "").split(/[,\s]+/).map((x) => x.replace(/^@/, "").toLowerCase()).filter(Boolean) });
         break;
       case "member": {
         const id = parts[0].toLowerCase();
@@ -374,7 +441,7 @@ export function parseSetup(text: string): { prose: string; proposal?: SetupPropo
       }
     }
   }
-  return { prose: prose.join("\n").trim(), ...(any ? { proposal: p } : {}) };
+  return { prose: prose.join("\n").trim(), questions: questions.filter((q) => q.options.length >= 2), ...(any ? { proposal: p } : {}) };
 }
 
 /** Splits a check-in into its digest and optional note. A reply without the markers is all note. */

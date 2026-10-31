@@ -67,12 +67,19 @@ func (a *App) startSetup() {
 	}
 	canLeave := a.rm != nil && len(a.rm.channels) > 0
 	a.newRoomUI("")
-	a.rm.setup = newSetup(a.th, canLeave)
+	a.rm.setup = newSetup(a.th, canLeave, false)
 	params := map[string]any{"repo": a.opts.Repo}
 	if a.opts.Mock {
 		params["mock"] = true
 	}
 	a.call("setup.start", params)
+}
+
+// startPlan opens a planning session for the open channel: the assistant asks, then proposes next steps.
+func (a *App) startPlan() {
+	u := a.rm
+	u.setup = newSetup(a.th, true, true)
+	a.call("setup.start", map[string]any{"repo": a.opts.Repo, "channel": true})
 }
 
 func (a *App) openRoom(id string) {
@@ -82,7 +89,7 @@ func (a *App) openRoom(id string) {
 
 // handleRoomResponse handles answers to workspace, setup and room requests. It reports whether it took the method.
 func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
-	if a.joinResponse(method, r) {
+	if a.planResponse(method, r) || a.joinResponse(method, r) {
 		return true
 	}
 	if !strings.HasPrefix(method, "room.") && !strings.HasPrefix(method, "setup.") && method != "workspace.open" {
@@ -252,47 +259,6 @@ func ansiCut(s string, n int) string {
 	return s
 }
 
-func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
-	s := a.rm.setup
-	switch k.String() {
-	case "esc":
-		if s.canLeave && len(a.rm.channels) > 0 {
-			a.openRoom(a.rm.channels[0].ID)
-		}
-		return nil
-	case "ctrl+s":
-		if s.proposal != nil && !s.creating && !s.waiting {
-			s.creating = true
-			a.call("setup.create", map[string]any{"proposal": s.proposal})
-		}
-		return nil
-	case "pgup", "ctrl+u":
-		s.vp.HalfPageUp()
-		s.follow = s.vp.AtBottom()
-		return nil
-	case "pgdown", "ctrl+d":
-		s.vp.HalfPageDown()
-		s.follow = s.vp.AtBottom()
-		return nil
-	case "enter":
-		text := strings.TrimSpace(s.in.Value())
-		if text == "" || s.waiting || s.creating {
-			return nil
-		}
-		s.in.Reset()
-		s.msgs = append(s.msgs, noteItem{kind: "you", text: text})
-		s.waiting, s.follow = true, true
-		a.call("setup.say", map[string]any{"text": text})
-		return nil
-	case "alt+enter", "shift+enter":
-		s.in.InsertString("\n")
-		return nil
-	}
-	var c tea.Cmd
-	s.in, c = s.in.Update(k)
-	return c
-}
-
 func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	u := a.rm
 	key := k.String()
@@ -404,6 +370,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+a":
 		a.openJoin(nil)
 		return nil
+	case "ctrl+g":
+		a.startPlan()
+		return nil
 	case "ctrl+p":
 		if r.state == "paused" {
 			a.call("room.resume", map[string]any{})
@@ -489,6 +458,9 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "join":
 		a.openJoin(nil)
+		return nil
+	case "plan":
+		a.startPlan()
 		return nil
 	case "thread":
 		r.view, u.feedFollow = cmd.params["seq"].(int), true

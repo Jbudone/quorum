@@ -20,12 +20,13 @@ import (
 type joinStep int
 
 const (
-	stepWho      joinStep = iota // a workspace member, or someone new
-	stepRole                     // a preset, or describe them in a line
-	stepDescribe                 // the one-line description the assistant drafts from
-	stepEdit                     // id, role and persona, editable
-	stepModel                    // CLI and model
-	stepOnboard                  // brief, reading, first question
+	stepWho       joinStep = iota // a workspace member, or someone new
+	stepRole                      // a preset, or describe them in a line
+	stepDescribe                  // the one-line description the assistant drafts from
+	stepEdit                      // id, role and persona, editable
+	stepModel                     // which CLI
+	stepModelPick                 // which of its models (searchable)
+	stepOnboard                   // brief, reading, first question
 	stepJoining
 )
 
@@ -52,6 +53,7 @@ type joinModal struct {
 	questionIn textarea.Model
 	field      int // stepEdit: 0 id, 1 role, 2 persona
 	cli, model string
+	picker     *modelPicker
 	rows       []joinRow
 	suggestion int // the assistant suggestion this answers, or -1
 	waiting    string
@@ -116,39 +118,37 @@ func (m *joinModal) roleOptions() []string {
 	return opts
 }
 
-type modelChoice struct{ cli, model string }
-
-func (m *joinModal) modelOptions() []modelChoice {
-	var out []modelChoice
-	listed := map[string]bool{}
+// cliOptions are the CLIs members can run on in this channel.
+func (m *joinModal) cliOptions() []string {
+	var out []string
 	for _, c := range m.clis {
-		if !c.Usable || len(m.allowed) > 0 && !slices.Contains(m.allowed, c.CLI) {
-			continue
-		}
-		listed[c.CLI] = true
-		out = append(out, modelChoice{c.CLI, ""})
-		for _, md := range c.Models {
-			out = append(out, modelChoice{c.CLI, md})
+		if c.Usable && (len(m.allowed) == 0 || slices.Contains(m.allowed, c.CLI)) {
+			out = append(out, c.CLI)
 		}
 	}
 	// CLIs the channel runs on that the health check doesn't list (the mock cast) still count.
 	for _, c := range m.allowed {
-		if !listed[c] {
-			out = append(out, modelChoice{c, ""})
+		if !slices.Contains(out, c) {
+			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// selectModel puts the cursor on the chosen CLI and model, if they're listed.
+// selectModel puts the cursor on the chosen CLI, if it's listed.
 func (m *joinModal) selectModel() {
-	for i, o := range m.modelOptions() {
-		if o.cli == m.cli && o.model == m.model {
-			m.cur = i
-			return
-		}
+	m.cur = max(slices.Index(m.cliOptions(), m.cli), 0)
+}
+
+// pickModel opens the model search for a CLI.
+func (a *App) pickModel(cli string) {
+	m := a.rm.join
+	current := ""
+	if cli == m.cli {
+		current = m.model
 	}
-	m.cur = 0
+	m.cli, m.picker, m.step = cli, newModelPicker(a.th, cli, current), stepModelPick
+	a.call("models.list", map[string]any{"cli": cli})
 }
 
 func (m *joinModal) name() string {
@@ -211,6 +211,14 @@ func (a *App) joinResponse(method string, r rpc.Response) bool {
 		var ps []rpc.Persona
 		if r.Err == "" && rpc.DecodeResult(r.Result, &ps) == nil {
 			m.presets = ps
+		}
+	case "models.list":
+		if m.picker != nil {
+			m.picker.loading = false
+			var ms []rpc.ModelInfo
+			if r.Err == "" && rpc.DecodeResult(r.Result, &ms) == nil {
+				m.picker.all = ms
+			}
 		}
 	case "clis.list":
 		var cs []rpc.CLIInfo
@@ -405,7 +413,7 @@ func (a *App) handleJoinKey(k tea.KeyPressMsg) tea.Cmd {
 		*ins[m.field], c = ins[m.field].Update(k)
 		return c
 	case stepModel:
-		opts := m.modelOptions()
+		opts := m.cliOptions()
 		if list(len(opts)) {
 			return nil
 		}
@@ -419,11 +427,22 @@ func (a *App) handleJoinKey(k tea.KeyPressMsg) tea.Cmd {
 			}
 		case "enter":
 			if m.cur < len(opts) {
-				m.cli, m.model = opts[m.cur].cli, opts[m.cur].model
-				m.step, m.cur = stepOnboard, 0
+				a.pickModel(opts[m.cur])
 			}
 		}
 		return nil
+	case stepModelPick:
+		if key == "esc" {
+			m.step, m.picker = stepModel, nil
+			m.selectModel()
+			return nil
+		}
+		picked, done, cmd := m.picker.key(k)
+		if done {
+			m.model, m.picker = picked, nil
+			m.step, m.cur = stepOnboard, 0
+		}
+		return cmd
 	case stepOnboard:
 		switch key {
 		case "esc":
@@ -508,7 +527,7 @@ func (a *App) submitJoin() {
 // renderJoin draws the modal for its current step.
 func renderJoin(m *joinModal, th theme.Theme, width int, spin string) string {
 	steps := []string{"who", "role", "model", "onboarding"}
-	at := map[joinStep]int{stepWho: 0, stepRole: 1, stepDescribe: 1, stepEdit: 1, stepModel: 2, stepOnboard: 3, stepJoining: 3}[m.step]
+	at := map[joinStep]int{stepWho: 0, stepRole: 1, stepDescribe: 1, stepEdit: 1, stepModel: 2, stepModelPick: 2, stepOnboard: 3, stepJoining: 3}[m.step]
 	var crumbs []string
 	for i, s := range steps {
 		switch {
@@ -552,20 +571,16 @@ func renderJoin(m *joinModal, th theme.Theme, width int, spin string) string {
 		lines = append(lines, label(0, "name"), m.idIn.View(), label(1, "role"), m.roleIn.View(), label(2, "persona"), m.personaIn.View())
 		keys = "tab next field · enter next · alt+enter new line · esc back"
 	case stepModel:
-		lines = append(lines, fg(th.Muted).Render("Mixing models helps: different models catch different things."), "")
-		var opts []string
-		for _, o := range m.modelOptions() {
-			if o.model == "" {
-				opts = append(opts, o.cli+fg(th.Subtle).Render(" (its default model)"))
-			} else {
-				opts = append(opts, o.cli+" · "+o.model)
-			}
-		}
+		lines = append(lines, fg(th.Muted).Render("Which CLI? Mixing models helps: different models catch different things."), "")
+		opts := m.cliOptions()
 		if len(opts) == 0 {
 			lines = append(lines, fg(th.Muted).Italic(true).Render(spin+" finding your CLIs…"))
 		}
 		pick(opts)
-		keys = "↑↓ choose · enter next · esc back"
+		keys = "↑↓ choose · enter pick a model · esc back"
+	case stepModelPick:
+		lines = append(lines, m.picker.view(th, width, spin))
+		keys = "type to search · ↑↓ choose · enter use it · esc back"
 	case stepOnboard, stepJoining:
 		who := m.name()
 		model := strings.TrimSpace(m.cli + " " + m.model)

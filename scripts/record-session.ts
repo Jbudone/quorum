@@ -32,6 +32,7 @@ async function record(out: string, script: (c: Client) => Promise<void>) {
   const client: Client = {
     send: (id, method, params = {}) => input.write(JSON.stringify({ id, method, params }) + "\n"),
     count: (pred) => lines.filter((l) => pred(JSON.parse(l))).length,
+    result: (id) => lines.map((l) => JSON.parse(l)).find((m) => m.id === id)?.result,
     until: async (pred) => {
       for (;;) {
         if (lines.some((l) => pred(JSON.parse(l)))) return;
@@ -49,6 +50,7 @@ async function record(out: string, script: (c: Client) => Promise<void>) {
 interface Client {
   send(id: number, method: string, params?: unknown): void;
   count(pred: (m: any) => boolean): number;
+  result(id: number): any;
   until(pred: (m: any) => boolean): Promise<void>;
 }
 
@@ -137,7 +139,9 @@ if (process.argv[4]) {
     c.send(9, "room.resume");
     await c.until((m) => m.id === 9);
     c.send(10, "room.post", { text: "How long can a price be stale?", to: "room", thread: "new" });
-    await c.until((m) => m.event === "room.event" && m.data.type === "thread.summary");
+    await c.until((m) => m.id === 10);
+    const asked = c.result(10).seq;
+    await c.until((m) => m.event === "room.event" && m.data.type === "thread.summary" && m.data.thread === asked);
     c.send(11, "room.pause", {});
     await c.until((m) => m.event === "room.state" && m.data.state === "paused");
     c.send(12, "workspace.open", { repo: dir });

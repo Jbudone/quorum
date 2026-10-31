@@ -267,14 +267,18 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.snapshot("room-0-setup")
 	tm.typ("Should we add a cache to the product API?")
 	tm.send("\r")
-	tm.waitFor("starting fresh?", 20*time.Second)
-	tm.typ("No docs yet")
+	tm.waitFor("GOAL  1 of 2", 20*time.Second) // the assistant asks with choice cards
+	tm.snapshot("room-1-question")
 	tm.send("\r")
-	tm.waitFor("ctrl+s open the channel", 20*time.Second)
-	tm.snapshot("room-1-lineup")
-	tm.send("\x13") // ctrl+s
+	tm.waitFor("DOCS  2 of 2", 5*time.Second)
+	tm.send("\r")
+	tm.waitFor("ctrl+s review and apply", 20*time.Second)
+	tm.snapshot("room-2-plan")
+	tm.send("\x13") // ctrl+s: the plan form
+	tm.waitFor("THE PLAN", 5*time.Second)
+	tm.send("\r") // apply
 	tm.waitFor("TALKING", 20*time.Second)
-	tm.snapshot("room-2-talking")
+	tm.snapshot("room-3-talking")
 	tm.waitFor("accepted by the chair", 60*time.Second)
 	tm.waitFor("PAUSED", 10*time.Second)
 	s := tm.waitFor("Plan v2 answers every objection", 10*time.Second) // the Chair speaks just after the milestone pause
@@ -293,11 +297,18 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.waitFor("nobody pays a stale price", 30*time.Second)
 	tm.waitFor("settled", 30*time.Second)
 	tm.snapshot("room-4-thread")
-	tm.send("\x1b") // back to the channel
+	tm.send("\x1b")                    // back to the channel
+	time.Sleep(200 * time.Millisecond) // an esc straight before the next key reads as alt+key
 	tm.waitFor("NEEDS YOU", 30*time.Second)
 	tm.send("\x0e") // ctrl+n: review
 	tm.waitFor("y approve", 5*time.Second)
 	tm.snapshot("room-5-review")
+	tm.send("\x1b")
+	time.Sleep(200 * time.Millisecond)
+	tm.send("\x07") // ctrl+g: plan next steps for this channel
+	tm.waitFor("plan next steps", 5*time.Second)
+	tm.send("\x1b")
+	time.Sleep(200 * time.Millisecond)
 	tm.send("\x03")
 	time.Sleep(300 * time.Millisecond)
 

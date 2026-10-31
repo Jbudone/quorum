@@ -297,11 +297,16 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 		a.handleResponse(v)
 	case rpc.Event:
 		if a.screen == screenRoom && a.rm != nil {
+			// The planning session gets its own events (and errors while it waits); the channel keeps the rest.
+			_, isErr := v.Data.(rpc.EngineError)
+			s := a.rm.setup
 			switch {
-			case a.rm.setup != nil:
-				a.rm.setup.apply(v)
+			case s != nil && (strings.HasPrefix(v.Name, "setup.") || isErr && (s.waiting || s.creating)):
+				s.apply(v)
 			case a.rm.room != nil:
 				a.rm.room.apply(v)
+			case s != nil:
+				s.apply(v)
 			}
 			return nil
 		}

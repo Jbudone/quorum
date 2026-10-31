@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MOCK_SUPPORT } from "../src/room/setup.js";
 import { SetupChat } from "../src/room/setupchat.js";
+import { parseSetup } from "../src/room/prompts.js";
 import { personaFor, Workspace } from "../src/room/workspace.js";
 import { AGENTS, messages, rig, types } from "./roomRig.js";
 
@@ -354,6 +355,54 @@ describe("Joining", () => {
   });
 });
 
+describe("Planning", () => {
+  it("reads choice-card questions and a full plan", () => {
+    const q = parseSetup("Two questions.\n>> question: Goal | What matters most? | multi\n>> option: Speed (recommended) | ship soon\n>> option: Rigor | get it right\n>> question: Lonely | no options here");
+    expect(q).toEqual({ prose: "Two questions.", questions: [{ header: "Goal", text: "What matters most?", multi: true, options: [{ label: "Speed (recommended)", description: "ship soon" }, { label: "Rigor", description: "get it right" }] }] });
+    const p = parseSetup(
+      "Plan.\n>> vision: Levels made by AI\n>> vision: that designers trust.\n>> consider: playability\n>> member: pcg | claude opus | PCG researcher | Knows PCG.\n>> topic: Edge cases | a ranked list | pcg, @ux\n>> steer: Start with the vision.",
+    ).proposal!;
+    expect(p).toMatchObject({ vision: "Levels made by AI that designers trust.", considerations: ["playability"], topics: [{ title: "Edge cases", done: "a ranked list", members: ["pcg", "ux"] }], steer: "Start with the vision." });
+  });
+
+  it("opens a channel with pinned vision and workstreams its owners start on", async () => {
+    const r = setup({ member: (a, _n, prompt) => (/You're in a side thread/.test(prompt) ? `${a} on edge cases` : `${a}: first take`), floor: () => [] });
+    const plan = ">> channel: levels | AI level design\n>> vision: Levels designers trust.\n>> consider: playability\n>> member: pcg | mock | PCG researcher | Knows PCG.\n>> member: ux | mock | UX researcher | Studies players.\n>> topic: Edge cases | a ranked list | ux";
+    const transports = (spec: any) => (spec.id === "assistant" ? { id: "assistant", async *send() { yield { type: "text" as const, delta: plan }; } } : r.transports(spec));
+    const chat = new SetupChat({ repo: r.repo, transports, clis: ["mock"], support: MOCK_SUPPORT, floor: r.floor, head: () => "abc" });
+    await chat.say("levels please");
+    const { room } = chat.create();
+    room.resume();
+    await room.settled();
+    const ws = room.workstreams();
+    expect(ws).toMatchObject([{ title: "Edge cases", done: "a ranked list", members: ["ux"] }]);
+    // pcg had no workstream, so it gave a first take; ux started on its workstream instead.
+    const calls = r.memberCalls();
+    expect(calls.find((c) => c.agent === "pcg")!.prompt).toContain("the channel just opened");
+    expect(calls.find((c) => c.agent === "ux")!.prompt).toContain("You're in a side thread");
+    expect(calls.find((c) => c.agent === "pcg")!.prompt).toContain("Vision: Levels designers trust.");
+    expect(calls.find((c) => c.agent === "pcg")!.prompt).toContain("Keep in mind: playability");
+    await room.close();
+  });
+
+  it("plans the next steps of an existing channel and applies them", async () => {
+    const r = setup({ member: () => "PASS", floor: () => [], scribe: ["Brief for the newcomer."] });
+    const room = r.create();
+    const plan = ">> vision: Pick a cache that never shows a wrong price.\n>> consider: tenants\n>> member: tenancy | mock | tenancy auditor | Audits isolation.\n>> topic: Tenant keys | a decision on key shape | tenancy, arch\n>> steer: Settle staleness first.";
+    const transports = (spec: any) => (spec.id === "assistant" ? { id: "assistant", async *send(prompt: string) { yield { type: "text" as const, delta: /existing channel/.test(prompt) ? plan : "?" }; } } : r.transports(spec));
+    const chat = new SetupChat({ repo: r.repo, transports, clis: ["mock"], support: MOCK_SUPPORT, room });
+    await chat.say("what next?");
+    await chat.apply();
+    expect(room.store.config()).toMatchObject({ vision: "Pick a cache that never shows a wrong price.", considerations: ["tenants"] });
+    expect(room.view().members).toContain("tenancy");
+    expect(room.store.agentState("tenancy").onboarding?.brief).toBe("Brief for the newcomer.");
+    expect(room.workstreams()).toMatchObject([{ title: "Tenant keys", members: ["tenancy", "arch"] }]);
+    const said = messages(room).map((e) => e.type === "message" && e.text);
+    expect(said).toContain("Settle staleness first.");
+    expect(said.some((t) => typeof t === "string" && t.startsWith("Workstream: Tenant keys. Done when: a decision on key shape. @tenancy @arch"))).toBe(true);
+  });
+});
+
 describe("Setup chat", () => {
   it("has no channel until the human approves a lineup, then every member gives a first take", async () => {
     const r = setup({ member: (a) => `${a}: first take`, floor: () => [] });
@@ -365,8 +414,8 @@ describe("Setup chat", () => {
     ];
     const transports = (spec: any) => (spec.id === "assistant" ? { id: "assistant", async *send() { yield { type: "text" as const, delta: replies.shift()! }; } } : r.transports(spec));
     const chat = new SetupChat({ repo: r.repo, transports, clis: ["mock"], support: MOCK_SUPPORT, floor: r.floor, head: () => "abc" });
-    expect(() => chat.create()).toThrow(/no lineup yet/);
-    expect(await chat.say("I want help with level generation")).toEqual({ text: "Got it. Any docs they should read?" });
+    expect(() => chat.create()).toThrow(/no plan yet/);
+    expect(await chat.say("I want help with level generation")).toEqual({ text: "Got it. Any docs they should read?", questions: [] });
     const second = await chat.say("docs are in notes/");
     expect(second.text).toBe("Here's who I'd bring in.");
     expect(second.proposal).toMatchObject({ name: "level-gen", topic: "AI-generated 2D levels", reading: ["notes", "missing"], members: [{ id: "pcg-researcher", role: "PCG researcher" }, { id: "ux-researcher" }] });

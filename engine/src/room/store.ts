@@ -24,6 +24,8 @@ export type RoomEventBody =
   | { type: "floor"; picks: { agent: string; why: string; replyTo?: number; thread?: number }[] }
   /** What each message did to the discussion, as the floor read it; feeds the stats panel. Members never see it. */
   | { type: "tags"; items: MessageTag[] }
+  /** A starter workstream: a side thread owned by a few members, with what done looks like. */
+  | { type: "workstream"; thread: number; title: string; done?: string; members: string[] }
   /** The outcome of a side conversation, posted back to the channel when it settles. */
   | { type: "thread.summary"; thread: number; text: string }
   | { type: "suggestion"; id: number; from: "assistant" | "chair"; action: SuggestionAction; args: string[]; why: string }
@@ -71,6 +73,10 @@ export interface RoomConfig {
   reading?: string[];
   /** Members picked together think without seeing each other's answers, then revise. */
   independent?: boolean;
+  /** What the group is trying to achieve, pinned for every member. */
+  vision?: string;
+  /** Things that must be considered, pinned for every member. */
+  considerations?: string[];
   /** Current members. Members who left are kept in `left` so they can be brought back. */
   agents: AgentSpec[];
   left?: AgentSpec[];
@@ -201,6 +207,10 @@ export class RoomStore {
 
   setTopic(topic: string): RoomConfig {
     return this.saveConfig({ ...this.config(), topic });
+  }
+
+  setPlan(vision: string | undefined, considerations: string[]): RoomConfig {
+    return this.saveConfig({ ...this.config(), ...(vision ? { vision } : {}), considerations });
   }
 
   setReading(reading: string[]): RoomConfig {
