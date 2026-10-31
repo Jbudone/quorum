@@ -1,7 +1,10 @@
 import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentTransport, McpServerSpec } from "../transports/index.js";
-import { parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
+import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
+import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
 import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
@@ -16,6 +19,7 @@ import {
   memberIncremental,
   memberThread,
   describeRoom,
+  splitDigest,
   parsePersonaDraft,
   parseWatch,
   personaDraftPrompt,
@@ -140,7 +144,11 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "hire", "remove", "focus", "close", "parallel", "pause"] as const;
+const ASSISTANT_VERBS = ["steer", "add", "hire", "remove", "focus", "close", "parallel", "pause", "export", "withdraw"] as const;
+/** Assistant actions that carry a multi-line body, closed by `>> end`. */
+const ASSISTANT_BLOCKS = ["write", "mail"] as const;
+/** How often a running room looks for mail from the project's agents. */
+const MAIL_POLL_MS = 5000;
 
 /**
  * A long-running discussion. Members are not processes: each is an identity with persisted state.
@@ -172,6 +180,7 @@ export class Room {
   private readonly warned = new Set<string>();
   private readonly busy = new Set<SupportRole | "watch">();
   private supportAbort = new AbortController();
+  private mailTimer?: ReturnType<typeof setInterval>;
   /** Run once, the next time the room resumes. */
   private resumeHooks: (() => void)[] = [];
   private _state: RoomState = "paused";
@@ -375,6 +384,10 @@ export class Room {
     this.supportAbort = new AbortController();
     this.log({ type: "resumed" });
     this.setState("running");
+    // Mail from the project's agents arrives while the channel is open.
+    this.checkMail();
+    this.mailTimer ??= setInterval(() => this.checkMail(), MAIL_POLL_MS);
+    this.mailTimer.unref?.();
     for (const h of this.resumeHooks.splice(0)) h();
     this.floorCheck();
   }
@@ -639,12 +652,31 @@ export class Room {
   async resolve(id: number, accept: boolean): Promise<void> {
     const s = this.pending().find((x) => x.id === id);
     if (!s) throw new Error(`no open suggestion ${id}`);
-    if (accept) await this.apply(s.action, s.args, s.why);
+    if (accept) await this.apply(s.action, s.args, s.why, s.from);
+    // Declining the mail pointer is remembered too, so it isn't offered again.
+    if (!accept && s.action === "pointer") new Workspace(this.o.repo).setFlag("mailPointer", "declined");
     this.log({ type: "suggestion.resolved", id, accepted: accept });
   }
 
-  private async apply(action: SuggestionAction, args: string[], why: string): Promise<void> {
+  /** Whoever made suggestions takes them back (they were replaced, or no longer stand). */
+  withdraw(ids: number[], by: string): void {
+    for (const id of ids) {
+      const s = this.pending().find((x) => x.id === id);
+      if (s && (s.from === by || by === "assistant")) this.log({ type: "suggestion.resolved", id, accepted: false, withdrawn: true });
+    }
+  }
+
+  private async apply(action: SuggestionAction, args: string[], why: string, from = "assistant"): Promise<void> {
     switch (action) {
+      case "export":
+        this.exportDoc(args[0], args[1]);
+        return;
+      case "mail":
+        this.sendMail(args[0], args[1], args[2] ?? "", from);
+        return;
+      case "pointer":
+        this.addMailPointer(args[0]);
+        return;
       case "steer":
         this.post(args[0]);
         return;
@@ -669,7 +701,76 @@ export class Room {
     }
   }
 
-  private suggest(from: "assistant" | "chair", action: SuggestionAction, args: string[], why: string): void {
+  /** Saves a channel document someone wrote (the assistant's records, for one). */
+  writeDoc(name: string, text: string, by: string, note?: string): { slug: string; version: number } {
+    const slug = slugify(name);
+    if (!text.trim()) throw new Error("the document is empty");
+    const kind = (this.docs().find((d) => d.slug === slug)?.kind ?? (/^(plan|issue|decision)/.exec(slug)?.[1] as DocKind | undefined) ?? "other") as DocKind;
+    const version = this.store.writeOutput(slug, text);
+    this.log({ type: "doc.revised", slug, version, kind, by, ...(note ? { note } : {}) });
+    return { slug, version };
+  }
+
+  /**
+   * Copies a channel document into the project. It won't overwrite a file Quorum didn't write
+   * itself; a file it exported before is updated in place.
+   */
+  exportDoc(slug: string, path: string): string {
+    const doc = this.docs().find((d) => d.slug === slugify(slug));
+    if (!doc) throw new Error(`no document "${slug}"`);
+    const rel = relative(this.o.repo, resolve(this.o.repo, path));
+    if (!rel || rel.startsWith("..") || isAbsolute(rel) || rel.split(sep)[0] === ".quorum") throw new Error(`${path} isn't a path in the project`);
+    const ws = new Workspace(this.o.repo);
+    const mine: string[] = JSON.parse(ws.flag("exported") ?? "[]");
+    if (existsSync(join(this.o.repo, rel)) && !mine.includes(rel)) throw new Error(`${rel} already exists and Quorum didn't write it; export somewhere else`);
+    mkdirSync(dirname(join(this.o.repo, rel)), { recursive: true });
+    writeFileSync(join(this.o.repo, rel), this.store.readOutput(doc.slug, doc.accepted ?? doc.version));
+    if (!mine.includes(rel)) ws.setFlag("exported", JSON.stringify([...mine, rel]));
+    this.log({ type: "aside", from: "assistant", text: `Exported ${doc.slug} to ${rel}.`, kind: "note" });
+    return rel;
+  }
+
+  /** Sends mail to the project's agents; the first mail offers to tell them where to find it. */
+  sendMail(to: string, subject: string, body: string, by: string, thread?: number): string {
+    if (!to.trim() || !subject.trim()) throw new Error("mail needs a recipient and a subject");
+    const box = new Mailbox(this.o.repo);
+    const m = box.send({ to: to.trim(), from: QUORUM, subject: subject.trim(), body, channel: this.channelName() });
+    this.log({ type: "mail.out", file: m.file, to: m.to, subject: m.subject, by, ...(thread ? { thread } : {}) });
+    const ws = new Workspace(this.o.repo);
+    if (!ws.flag("mailPointer")) {
+      ws.setFlag("mailPointer", "offered");
+      const target = ["AGENTS.md", "CLAUDE.md"].find((f) => existsSync(join(this.o.repo, f))) ?? "AGENTS.md";
+      this.suggest("assistant", "pointer", [target], `so the project's agents know to check .quorum/mail/ and how to reply`);
+    }
+    return m.file;
+  }
+
+  /** Adds a short section about Quorum mail to the project's agent notes. */
+  addMailPointer(file: string): void {
+    const path = join(this.o.repo, file);
+    const before = existsSync(path) ? readFileSync(path, "utf8") : "";
+    if (!before.includes("## Quorum mail")) writeFileSync(path, `${before.trimEnd()}${before ? "\n" : ""}${MAIL_POINTER}`);
+    new Workspace(this.o.repo).setFlag("mailPointer", "added");
+  }
+
+  /** Delivers mail from the project's agents into the channel: as a message, in the thread it answers if any. */
+  checkMail(): void {
+    const box = new Mailbox(this.o.repo);
+    const name = this.channelName();
+    const sent = new Map(this.store.events().flatMap((e) => (e.type === "mail.out" ? [[e.file, e] as const] : [])));
+    let any = false;
+    for (const m of box.undelivered(name)) {
+      if (m.channel && m.channel !== name && m.to === QUORUM) continue;
+      const replyTo = m.inReplyTo ? sent.get(m.inReplyTo) : undefined;
+      const text = `**Mail: ${m.subject}**${replyTo ? ` (reply to "${replyTo.subject}")` : ""}\n\n${m.body}\n\n_(.quorum/mail/${m.file})_`;
+      this.log({ type: "message", from: `mail:${m.from}`, to: "room", text, ...(replyTo?.thread ? { thread: replyTo.thread } : {}) });
+      box.markDelivered(m.file);
+      any = true;
+    }
+    if (any) this.floorCheck();
+  }
+
+  private suggest(from: string, action: SuggestionAction, args: string[], why: string): void {
     if (this.pending().some((p) => p.action === action && p.args.join(" ") === args.join(" "))) return;
     const id = 1 + Math.max(0, ...this.store.events().flatMap((e) => (e.type === "suggestion" ? [e.id] : [])));
     this.log({ type: "suggestion", id, from, action, args, why });
@@ -690,6 +791,7 @@ export class Room {
 
   /** Stops everything and the tool server; call when done with the room. */
   async close(): Promise<void> {
+    if (this.mailTimer) clearInterval(this.mailTimer);
     this.pause("closed");
     if (this.tools) await (await this.tools).close();
   }
@@ -1106,6 +1208,14 @@ export class Room {
         this.floorCheck();
         return `Sent privately to ${to} as #${e.seq}.`;
       }
+      case "mail_draft": {
+        const to = String(args.to ?? "").trim();
+        const subject = String(args.subject ?? "").trim();
+        const body = String(args.body ?? "").trim();
+        if (!to || !subject || !body) throw new Error("to, subject and body are required");
+        this.suggest(agent, "mail", [to, subject, body], typeof args.why === "string" ? args.why : "");
+        return "Drafted. The human approves it before it's sent; replies come back into the channel.";
+      }
       case "raise_topic": {
         const slug = this.raiseTopic(String(args.title ?? ""), agent, typeof args.why === "string" ? args.why : undefined);
         return `Raised as ${slug}. It is parked until the Chair and the human give it focus.`;
@@ -1321,10 +1431,26 @@ export class Room {
     return assistantActions(this.o.clis ?? DEFAULT_CLIS, others);
   }
 
-  /** Applies the assistant's action lines: a pause at once, everything else as a suggestion. */
-  private assistantActions(directives: Directive[]): void {
+  /**
+   * Applies what the assistant wrote: documents are saved at once, a pause takes effect at once,
+   * withdrawals clear its old suggestions, and everything else becomes a suggestion.
+   */
+  private assistantActions(directives: Directive[], blocks: Directive[] = []): void {
+    for (const b of blocks) {
+      try {
+        if (b.verb === "write") this.writeDoc(b.args[0], b.args.at(-1) ?? "", "assistant", b.args.length > 2 ? b.args[1] : b.why || undefined);
+        if (b.verb === "mail") this.suggest("assistant", "mail", [b.args[0], b.args.length > 2 ? b.args[1] : b.why, b.args.at(-1) ?? ""], "");
+      } catch {
+        // A malformed block is dropped rather than breaking the answer.
+      }
+    }
     for (const d of directives) {
       if (d.verb === "pause") this.pause(`assistant: ${d.args[0] || "pausing for you"}`);
+      else if (d.verb === "withdraw") this.withdraw(d.args.flatMap((a) => a.split(",")).map((x) => Number(x.replace(/^#/, ""))).filter(Number.isInteger), "assistant");
+      else if (d.verb === "export") {
+        const [path, ...why] = d.why.split("|").map((x) => x.trim());
+        if (d.args[0] && path) this.suggest("assistant", "export", [d.args[0], path], why.join(" | "));
+      }
       else if (d.verb === "hire") {
         // >> hire: id | cli [model] | role | persona | why
         const [cliModel = "", role = "", persona = "", ...why] = d.why.split("|").map((x) => x.trim());
@@ -1344,10 +1470,13 @@ export class Room {
     await this.job("assistant", async () => {
       const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions()), ASSISTANT_SYSTEM, onDelta);
       if (reply === undefined) return;
-      const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
-      answer = prose;
-      this.log({ type: "aside", from: "assistant", text: prose || "(no answer)", kind: "answer" });
-      this.assistantActions(directives);
+      const { rest, blocks } = parseBlocks(reply, ASSISTANT_BLOCKS);
+      const { prose, directives } = parseDirectives(rest, ASSISTANT_VERBS);
+      const { answer: said, digest } = splitDigest(prose);
+      answer = said;
+      this.log({ type: "aside", from: "assistant", text: said || "(no answer)", kind: "answer" });
+      if (digest && digest !== this.digest()) this.log({ type: "aside", from: "assistant", text: digest, kind: "digest" });
+      this.assistantActions(directives, blocks);
     });
     return answer;
   }
@@ -1358,11 +1487,12 @@ export class Room {
       this.store.setMeta({ watchSeq: this.store.lastSeq });
       const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason, this.actions()), ASSISTANT_SYSTEM);
       if (reply === undefined) return;
-      const { prose, directives } = parseDirectives(reply, ASSISTANT_VERBS);
+      const { rest, blocks } = parseBlocks(reply, ASSISTANT_BLOCKS);
+      const { prose, directives } = parseDirectives(rest, ASSISTANT_VERBS);
       const { digest, note } = parseWatch(prose);
       if (digest && digest !== this.digest()) this.log({ type: "aside", from: "assistant", text: digest, kind: "digest" });
       if (note) this.log({ type: "aside", from: "assistant", text: note, kind: "note" });
-      this.assistantActions(directives);
+      this.assistantActions(directives, blocks);
     });
   }
 }

@@ -34,8 +34,30 @@ export class Workspace {
   saveMember(m: WorkspaceMember): void {
     if (!MEMBER_ID.test(m.id)) throw new Error(`bad member name "${m.id}": use lowercase letters, digits and dashes`);
     const all = this.members().filter((x) => x.id !== m.id);
+    let w: any = {};
+    try {
+      w = JSON.parse(readFileSync(join(this.dir, "workspace.json"), "utf8"));
+    } catch {}
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, "workspace.json"), JSON.stringify({ members: [...all, m] }, null, 2));
+    writeFileSync(join(this.dir, "workspace.json"), JSON.stringify({ ...w, members: [...all, m] }, null, 2));
+  }
+
+  /** A workspace-wide flag, e.g. whether the human was asked about the mail pointer. */
+  flag(name: string): string | undefined {
+    try {
+      return JSON.parse(readFileSync(join(this.dir, "workspace.json"), "utf8")).flags?.[name];
+    } catch {
+      return undefined;
+    }
+  }
+
+  setFlag(name: string, value: string): void {
+    let w: any = {};
+    try {
+      w = JSON.parse(readFileSync(join(this.dir, "workspace.json"), "utf8"));
+    } catch {}
+    mkdirSync(this.dir, { recursive: true });
+    writeFileSync(join(this.dir, "workspace.json"), JSON.stringify({ ...w, members: w.members ?? [], flags: { ...w.flags, [name]: value } }, null, 2));
   }
 
   /** Saves an invented persona under the member's id, so it can join other channels later. */

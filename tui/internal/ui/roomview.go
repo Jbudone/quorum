@@ -25,10 +25,13 @@ func (r *roomModel) colorOf(th theme.Theme, id string) color.Color {
 	return th.Speaker(r.color(id))
 }
 
-// displayName is how the feed names a speaker: the human is "you".
+// displayName is how the feed names a speaker: the human is "you", and a project agent's mail says so.
 func displayName(id string) string {
 	if id == "human" {
 		return "you"
+	}
+	if agent, ok := strings.CutPrefix(id, "mail:"); ok {
+		return agent + " ✉"
 	}
 	return id
 }
@@ -171,6 +174,8 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		out = event("✓", th.OK, "topic "+e.Slug+" closed"+suffix(": ", e.Why))
 	case "doc.revised":
 		out = event("✎", th.Accent, fmt.Sprintf("%s wrote %s v%d%s  · ctrl+o to read", e.By, e.Slug, e.Version, suffix(" — ", e.Note)))
+	case "mail.out":
+		out = event("✉", th.Info, fmt.Sprintf("mail to %s: “%s”  · .quorum/mail/%s", e.To, e.Subject, e.File))
 	case "doc.accepted":
 		out = fg(th.OK).Bold(true).Render(fmt.Sprintf("✓ %s v%d accepted by the %s", e.Slug, e.Version, e.By))
 	case "agent.joined":
@@ -296,16 +301,25 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-// renderDigest is the assistant's pinned "where we are", kept to a few lines.
-func renderDigest(r *roomModel, th theme.Theme, width, maxLines int) string {
+// renderNow is the top of the assistant column: what's being discussed and where it stands.
+func renderNow(r *roomModel, th theme.Theme, width, maxLines int) string {
+	now := r.focusTitle()
+	if r.view != 0 {
+		now = r.thread(r.view).title
+	}
+	if now == "" {
+		now = firstLine(r.topic)
+	}
+	lines := []string{fg(th.Info).Bold(true).Render("NOW ") + fg(th.Text).Bold(true).Render(ansi.Truncate(orDefault(now, "nothing yet"), width-4, "…"))}
 	if r.digest == "" {
-		return ""
+		lines = append(lines, fg(th.Subtle).Italic(true).Render("No summary yet. Ask me where things stand."))
+		return strings.Join(lines, "\n")
 	}
-	lines := strings.Split(renderMarkdown(r.digest, width, th), "\n")
-	if len(lines) > maxLines {
-		lines = append(lines[:max(maxLines-1, 1)], fg(th.Subtle).Render("… ask me for more"))
+	body := strings.Split(renderMarkdown(r.digest, width, th), "\n")
+	if len(body) > maxLines {
+		body = append(body[:max(maxLines-1, 1)], fg(th.Subtle).Render("… ask me for more"))
 	}
-	return fg(th.Info).Bold(true).Render("WHERE WE ARE") + "\n" + strings.Join(lines, "\n")
+	return strings.Join(append(lines, body...), "\n")
 }
 
 // renderAssistant draws the assistant's conversation with the human.
@@ -361,8 +375,12 @@ func renderSuggestions(r *roomModel, th theme.Theme, width int, compact bool) st
 			label = fg(th.Accent2).Bold(true).Render(suggestionLabel(s))
 		}
 		lines = append(lines, ansi.Truncate(mark+label, width, "…"))
-		if s.Why != "" && (!compact || r.review && i == r.sugCur) {
-			lines = append(lines, fg(th.Muted).Render(ansi.Truncate("  "+s.Why, width, "…")))
+		why := s.Why
+		if s.Action == "mail" && len(s.Args) > 2 {
+			why = firstLine(s.Args[2]) // what the mail says matters more than why
+		}
+		if why != "" && (!compact || r.review && i == r.sugCur) {
+			lines = append(lines, fg(th.Muted).Render(ansi.Truncate("  "+why, width, "…")))
 		}
 	}
 	if r.review {
@@ -472,7 +490,7 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	if r.pane == paneAssistant {
 		box = k("tab", "talk to the channel")
 	}
-	parts := []string{box, k("alt+g", "plan"), k("alt+k", "switch"), k("alt+a", "add someone"), pause, k("ctrl+o", "docs"), k("alt+s", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
+	parts := []string{box, k("alt+w", "widen"), k("alt+g", "plan"), k("alt+k", "switch"), k("alt+a", "add someone"), pause, k("ctrl+o", "docs"), k("alt+s", "stats"), k("/help", "commands"), k("ctrl+c", "quit")}
 	if r.view != 0 {
 		parts = append([]string{k("esc", "back to channel")}, parts...)
 	}

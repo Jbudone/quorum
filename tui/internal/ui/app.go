@@ -87,6 +87,12 @@ type App struct {
 	help       bool
 	frame      int    // animation clock
 	sideTop    string // roster, notes and plan title, rebuilt in refresh
+
+	sel       selection // text being selected with the mouse
+	lastLines []string  // the last frame drawn, for copying a selection out of it
+	toast     string    // a short message flashed in the footer
+	toastTo   int       // the frame the toast lasts until
+	images    []string  // pasted images, by the [image N] chips that stand for them
 }
 
 // animFPS is the animation clock. Every effect is counted in these ticks, so raising it speeds
@@ -191,6 +197,9 @@ func (a *App) fail(msg string) {
 
 // needsTick reports whether something on screen is animating.
 func (a *App) needsTick() bool {
+	if a.toast != "" && a.frame < a.toastTo {
+		return true
+	}
 	if a.screen == screenStart {
 		return true // the banner animates
 	}
@@ -241,6 +250,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.refresh()
 		return a, tea.Batch(a.listen(), c, a.tick())
 
+	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		used, c := a.mouseSelect(m)
+		if used {
+			return a, tea.Batch(c, a.tick())
+		}
+		return a, nil
+
+	case pastedImage:
+		if m.err != nil {
+			a.notify("Couldn't save the pasted image: " + m.err.Error())
+		} else {
+			a.attachImage(m.path)
+		}
+		a.refresh()
+		return a, a.tick()
+
+	case pastedText:
+		if in := a.focusedInput(); in != nil && m.text != "" {
+			in.InsertString(m.text)
+		}
+		a.refresh()
+		return a, nil
+
 	case tea.MouseWheelMsg:
 		if a.screen == screenRoom {
 			a.roomWheel(m)
@@ -251,6 +283,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyPressMsg:
+		a.sel.shown = false // any key clears a selection, as in a terminal
+		// ctrl+v pastes from the desktop clipboard, images included (terminal paste arrives as tea.PasteMsg).
+		if m.String() == "ctrl+v" && a.focusedInput() != nil {
+			return a, readClipboard(a.opts.Repo)
+		}
 		c := a.handleKey(m)
 		a.refresh()
 		if a.quitting {
@@ -798,7 +835,7 @@ func (a *App) View() tea.View {
 	} else {
 		content = a.sessionView()
 	}
-	v := tea.NewView(content)
+	v := tea.NewView(a.highlight(content))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "Quorum"

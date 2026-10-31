@@ -27,6 +27,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — side thread #${e.thread} settled: ${e.text}`;
     case "workstream":
       return "";
+    case "mail.out":
+      return `[#${e.seq}] — mail sent to ${e.to}: "${e.subject}" (.quorum/mail/${e.file})`;
     case "tags":
       return "";
     case "topic.raised":
@@ -148,13 +150,14 @@ export function memberRules(tools: boolean): string {
   return [
     "Your reply is what you say to the room: everyone sees it as it is written, so write it as a message, not as a report about what you did. Don't narrate reading files or calling tools.",
     tools
-      ? "Tools are for side actions only: dm one member (or the human) privately, raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing (then say in your reply what you changed), read_doc for documents and shared notes, read_room for older messages, notebook_read/notebook_write for private notes you want to keep."
+      ? "Tools are for side actions only: mail_draft to ask the project's own agents for something only they can do (code in a worktree, run a test or a probe; the human approves before it's sent), dm one member (or the human) privately, raise_topic for a question that deserves its own discussion, doc_draft to write or revise a document the room is producing (then say in your reply what you changed), read_doc for documents and shared notes, read_room for older messages, notebook_read/notebook_write for private notes you want to keep."
       : "",
     "Stay on the topic in focus.",
     "Add something each time you speak: a claim, evidence (cite files and lines), a sharp question, or a disagreement. Don't agree just to agree; push back when you see a flaw, and say so when the room is circling.",
     "Talk like a colleague in a meeting: short, a few sentences to a few paragraphs. Use @name only when you need a particular member to answer; whoever has something to add will be brought in anyway.",
     "When the room has converged, say so plainly and stop; don't restate agreement.",
     "If on reflection you have nothing new to add, reply with exactly PASS and nobody will see it.",
+    "When a message mentions an attached image by its path, look at it with your file-reading tool.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -276,12 +279,22 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
   ].join("\n\n");
 }
 
-export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum channel, where AI members work on a problem with the human present. You work only for the human: you say plainly what the members mean, answer questions about the discussion, suggest next steps, and say honestly when the room has tunnel vision or is missing someone. You don't speak in the channel yourself.
+export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum channel, where AI members work on a problem with the human present. You work only for the human: you say plainly what the members mean, answer questions about the discussion, suggest next steps, and say honestly when the room has tunnel vision or is missing someone. You don't speak in the channel yourself, but you can keep records: write documents in the channel (a plan you worked out with the human, decisions, a record of your conversation), export a document into the project, and draft mail to the project's own agents (who can write code, make worktrees and run tests). Never tell the human you can't write things down; write them.
 
 Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked. Cite a message number like #12 only when it helps the human check you. Never pad, never recap what the human just said.`;
 
 export function assistantActions(clis: string[], members: string[]): string {
-  return `To propose a change, end with action lines; the human approves or declines each, and nothing happens until they do.
+  return `To keep a record, write a channel document (no approval needed; it's versioned and the human can browse it):
+>> write: <doc-name> | <what changed>
+<the whole document, in markdown>
+>> end
+
+To propose a change, end with action lines; the human approves or declines each, and nothing happens until they do.
+>> export: <doc-name> | <path in the project, e.g. docs/research/plan.md> | <why>   copy a channel document into the project
+>> mail: <to: an agent's name, or all> | <subject>
+<the body: short and actionable, pointing at files>
+>> end                                     mail the project's own agents, e.g. to build a probe in a worktree
+>> withdraw: <suggestion numbers> | <why>  take back your own earlier suggestions that you've replaced or no longer stand by; always withdraw what you replace
 >> hire: <id> | <cli> [model] | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
                                    bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
 >> add: <member> <cli> [model] | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
@@ -309,7 +322,20 @@ export function assistantContext(o: { view: RoomView; signals: string; budget: s
 }
 
 export function assistantAsk(context: string, question: string, actions: string): string {
-  return [context, `The human asks you: ${question}`, "Answer in one to three short sentences.", actions].join("\n\n");
+  return [
+    context,
+    `The human asks you: ${question}`,
+    "Answer in one to three short sentences. If where things stand has changed from your current status, end your answer with a line that says exactly DIGEST: followed by a fresh one-to-two-line status.",
+    actions,
+  ].join("\n\n");
+}
+
+/** Splits an answer from the status line it may end with. */
+export function splitDigest(prose: string): { answer: string; digest?: string } {
+  const m = /^\s*DIGEST:\s*/im.exec(prose);
+  if (!m) return { answer: prose.trim() };
+  const digest = prose.slice(m.index + m[0].length).trim();
+  return { answer: prose.slice(0, m.index).trim(), ...(digest ? { digest } : {}) };
 }
 
 export function assistantWatch(context: string, reason: string, actions: string): string {
@@ -360,7 +386,12 @@ ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision
 >> member: <existing-id>                                   to reuse a workspace member as they are
 >> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
 >> steer: <optional first instruction to the whole group>
-Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.`,
+Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.
+
+When the human asks you to note something down, or you've worked out something worth keeping (a plan, decisions, a record of this conversation), write it as a channel document; never say you can't write things down:
+>> write: <doc-name> | <what it is>
+<the whole document, in markdown>
+>> end`,
   ]
     .filter(Boolean)
     .join("\n\n");

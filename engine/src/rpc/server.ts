@@ -49,6 +49,13 @@ export interface RpcOptions {
   mockDelayMs?: number;
 }
 
+/** A message's text with its pasted images, which the TUI saved under .quorum/attachments/, named by path. */
+function withImages(p: any): string {
+  const text = String(p.text ?? "");
+  const images: string[] = Array.isArray(p.images) ? p.images.map(String) : [];
+  return images.length ? `${text}${text ? "\n\n" : ""}${images.map((i) => `[image attached: ${i}]`).join("\n")}` : text;
+}
+
 /** Most log entries sent when a room is opened; older history stays on disk. */
 const SNAPSHOT_EVENTS = 1500;
 
@@ -261,7 +268,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "setup.say": {
         const s = setup;
         if (!s) throw new Error("no setup: call setup.start first");
-        const text = String(p.text ?? "");
+        const text = withImages(p);
         if (!text.trim()) throw new Error("say something first");
         side(async () => {
           const reply = await s.say(text, (delta) => write({ event: "setup.delta", data: { delta } }));
@@ -319,7 +326,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         needRoom().pause(p.reason ? String(p.reason) : undefined);
         return {};
       case "room.post":
-        return { seq: needRoom().post(String(p.text ?? ""), p.to ? String(p.to) : "room", p.thread === "new" ? "new" : p.thread ? Number(p.thread) : undefined).seq };
+        return { seq: needRoom().post(withImages(p), p.to ? String(p.to) : "room", p.thread === "new" ? "new" : p.thread ? Number(p.thread) : undefined).seq };
       case "room.join": {
         const r = needRoom();
         return {
@@ -349,7 +356,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         return { reading: needRoom().setReading(Array.isArray(p.paths) ? p.paths.map(String) : []) };
       case "room.ask": {
         const r = needRoom();
-        const text = String(p.text ?? "");
+        const text = withImages(p);
         if (!text.trim()) throw new Error("ask something first");
         side(() => r.ask(text, (delta) => write({ event: "room.assistant.delta", data: { delta } })));
         return {};

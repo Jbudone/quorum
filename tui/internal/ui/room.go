@@ -232,11 +232,14 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 	case "suggestion.resolved":
 		for i, p := range r.pending {
 			if p.ID == e.ID {
-				verdict := "declined"
-				if e.Accepted {
-					verdict = "approved"
+				switch {
+				case e.Withdrawn:
+					r.asides = append(r.asides, noteItem{kind: "system", text: fmt.Sprintf("Withdrawn by %s: %s", displayName(p.From), suggestionLabel(p))})
+				case e.Accepted:
+					r.asides = append(r.asides, noteItem{kind: "system", text: "You approved: " + suggestionLabel(p)})
+				default:
+					r.asides = append(r.asides, noteItem{kind: "system", text: "You declined: " + suggestionLabel(p)})
 				}
-				r.asides = append(r.asides, noteItem{kind: "system", text: fmt.Sprintf("You %s: %s", verdict, suggestionLabel(p))})
 				r.pending = append(r.pending[:i], r.pending[i+1:]...)
 				break
 			}
@@ -467,6 +470,16 @@ func suggestionLabel(s rpc.RoomEvent) string {
 		return "close topic " + args
 	case "parallel":
 		return "let " + args + " speak at once"
+	case "export":
+		if len(s.Args) > 1 {
+			return "export " + s.Args[0] + " to " + s.Args[1]
+		}
+	case "mail":
+		if len(s.Args) > 1 {
+			return "mail " + s.Args[0] + ": " + s.Args[1]
+		}
+	case "pointer":
+		return "tell the project's agents about Quorum mail (add a note to " + args + ")"
 	}
 	return s.Action + " " + args
 }
@@ -498,6 +511,7 @@ Channel:
                     members, workstreams and what to consider (or /plan)
   alt+p             pause / resume           ctrl+o   documents and notes
   alt+s             show / hide the stats strip
+  alt+w             widen / narrow your assistant's column
   pgup / pgdn       scroll (or the mouse wheel)
 
 Typing works as in a terminal: ctrl+a/e start/end, ctrl+u/k delete to start/end,

@@ -287,7 +287,7 @@ func TestRealBinaryMockRoom(t *testing.T) {
 			t.Fatalf("settled channel is missing %q:\n%s", want, s)
 		}
 	}
-	tm.waitFor("WHERE WE ARE", 10*time.Second)
+	tm.waitFor("Agreed on an in-process LRU", 10*time.Second)
 	tm.snapshot("room-3-milestone")
 
 	tm.send("\x1bp") // alt+p: carry on

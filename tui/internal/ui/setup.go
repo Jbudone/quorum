@@ -308,6 +308,7 @@ func (a *App) refreshSetup() {
 	s := a.rm.setup
 	side, chatW, cardW := a.setupLayout()
 	s.in.SetWidth(a.w - 4)
+	growInput(&s.in)
 	s.own.SetWidth(a.w - 12)
 	h := a.setupBodyH()
 	if !side && s.proposal != nil {
@@ -377,7 +378,7 @@ func (a *App) setupFooter() string {
 		}
 	}
 	keys = append(keys, k("ctrl+c", "quit"))
-	return ansi.Truncate(strings.Join(keys, fg(a.th.Subtle).Render(" · ")), a.w, "")
+	return a.withToast(ansi.Truncate(strings.Join(keys, fg(a.th.Subtle).Render(" · ")), a.w, ""))
 }
 
 func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
@@ -418,7 +419,11 @@ func (a *App) handleSetupKey(k tea.KeyPressMsg) tea.Cmd {
 		s.in.Reset()
 		s.msgs = append(s.msgs, noteItem{kind: "you", text: text})
 		s.waiting, s.follow = true, true
-		a.call("setup.say", map[string]any{"text": text})
+		params := map[string]any{"text": text}
+		if imgs := a.takeImages(text); len(imgs) > 0 {
+			params["images"] = imgs
+		}
+		a.call("setup.say", params)
 		return nil
 	case "alt+enter", "shift+enter":
 		s.in.InsertString("\n")

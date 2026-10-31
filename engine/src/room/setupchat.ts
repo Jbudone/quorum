@@ -1,4 +1,5 @@
 import { listPersonas, type AgentSpec, type CliName } from "../config.js";
+import { parseBlocks } from "./directives.js";
 import { parseSetup, setupPrompt, SETUP_SYSTEM, type PlanQuestion, type SetupProposal } from "./prompts.js";
 import { Room, type RoomOptions } from "./room.js";
 import type { RoomConfig, SupportSpec } from "./store.js";
@@ -13,6 +14,8 @@ import { readingPath, Workspace } from "./workspace.js";
 export class SetupChat {
   readonly history: { from: "human" | "assistant"; text: string }[] = [];
   proposal?: SetupProposal;
+  /** Records the assistant wrote before there was a channel to keep them in. */
+  private readonly drafts: { name: string; text: string; note?: string }[] = [];
 
   constructor(
     private readonly o: RoomOptions & { support: Required<RoomConfig["support"]>; clis: string[]; room?: Room },
@@ -48,7 +51,15 @@ export class SetupChat {
       } else if (e.type === "error") failed = e.message;
     }
     if (!reply.trim()) throw new Error(failed ?? "the assistant didn't answer");
-    const { prose, questions, proposal } = parseSetup(reply);
+    // Records it writes are kept: in the channel being planned, or until the new one opens.
+    const { rest, blocks } = parseBlocks(reply, ["write"]);
+    for (const b of blocks) {
+      const doc = { name: b.args[0], text: b.args.at(-1) ?? "", ...(b.why ? { note: b.why } : {}) };
+      if (!doc.name || !doc.text.trim()) continue;
+      if (room) room.writeDoc(doc.name, doc.text, "assistant", doc.note);
+      else this.drafts.push(doc);
+    }
+    const { prose, questions, proposal } = parseSetup(rest);
     if (proposal) this.proposal = proposal;
     this.history.push({ from: "assistant", text: reply.trim() });
     return { text: prose, questions, ...(proposal ? { proposal } : {}) };
@@ -107,6 +118,7 @@ export class SetupChat {
       considerations: proposal.considerations,
       kickoff: agents.filter((a) => !owned.has(a.id)).map((a) => a.id),
     });
+    for (const d of this.drafts) room.writeDoc(d.name, d.text, "assistant", d.note);
     // Workstreams and the steer go in once the channel runs, so their owners are woken by them.
     room.onResume(() => {
       for (const t of proposal.topics) room.workstream(t.title, t.done, t.members);

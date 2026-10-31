@@ -37,6 +37,41 @@ export function parseDirectives(text: string, verbs: readonly string[]): { prose
 }
 
 /**
+ * Multi-line action blocks: a header line, the body, and a closing `>> end`:
+ *
+ *   >> write: research-plan | first version
+ *   ...the whole document...
+ *   >> end
+ *
+ * Returns the reply with the blocks taken out, and the blocks.
+ */
+export function parseBlocks(text: string, verbs: readonly string[]): { rest: string; blocks: Directive[] } {
+  const rest: string[] = [];
+  const blocks: Directive[] = [];
+  let open: { d: Directive; body: string[] } | undefined;
+  for (const line of text.split("\n")) {
+    if (open) {
+      if (/^\s*>>\s*end\s*$/i.test(line)) {
+        blocks.push({ ...open.d, args: [...open.d.args, open.body.join("\n").trim()] });
+        open = undefined;
+      } else open.body.push(line);
+      continue;
+    }
+    const m = LINE.exec(line);
+    if (m && verbs.includes(m[1].toLowerCase())) {
+      const [head, ...tail] = m[2].split("|").map((x) => x.trim());
+      open = { d: { verb: m[1].toLowerCase(), args: [head, ...tail.slice(0, -1)], why: tail.at(-1) ?? "" }, body: [] };
+      if (tail.length === 0) open.d.args = [head];
+      continue;
+    }
+    rest.push(line);
+  }
+  // A block left open runs to the end of the reply.
+  if (open) blocks.push({ ...open.d, args: [...open.d.args, open.body.join("\n").trim()] });
+  return { rest: rest.join("\n"), blocks };
+}
+
+/**
  * The scribe answers with whole files:
  *
  *   === decisions.md ===

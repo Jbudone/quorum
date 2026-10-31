@@ -26,6 +26,11 @@ type (
 		Args     []string `json:"args"`
 		Why      string   `json:"why"`
 		Accepted bool     `json:"accepted"`
+		// Withdrawn: whoever suggested it took it back.
+		Withdrawn bool `json:"withdrawn"`
+		// Mail sent to the project's agents: its file in .quorum/mail/.
+		File    string `json:"file"`
+		Subject string `json:"subject"`
 
 		Slug    string   `json:"slug"`
 		Title   string   `json:"title"`

@@ -206,7 +206,7 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "DISCUSSIONS")
 	contains(t, s, "MEMBERS")
 	contains(t, s, "plan v2 accepted")
-	contains(t, s, "WHERE WE ARE") // the assistant's pinned status
+	contains(t, s, "NOW ") // the assistant's pinned status
 	contains(t, s, "Not on the reading list")
 	contains(t, s, "↳ thread: ") // threads under their messages in the channel
 	contains(t, s, "· settled")
@@ -457,7 +457,7 @@ func TestRoomNarrowKeepsTheAssistantOnScreen(t *testing.T) {
 	h.setup()
 	s := h.screen()
 	contains(t, s, "Plan v2 answers every objection")
-	contains(t, s, "WHERE WE ARE")
+	contains(t, s, "NOW ")
 }
 
 func TestRoomReopensTheLatestChannel(t *testing.T) {
@@ -473,7 +473,7 @@ func TestRoomReopensTheLatestChannel(t *testing.T) {
 	contains(t, s, "❚❚ PAUSED · you paused it.") // the status bar says so, with why
 	contains(t, s, "alt+p resume")
 	contains(t, s, "Paused · you can still write")
-	contains(t, s, "WHERE WE ARE")
+	contains(t, s, "NOW ")
 	if h.callTo("workspace.open").id == 1 {
 		t.Fatal("the switcher's channel list should refresh once the channel is open")
 	}
@@ -545,4 +545,82 @@ func TestParseRoomInput(t *testing.T) {
 	if got := r.parseRoomInput("/read docs/design notes.md"); len(got.params["paths"].([]string)) != 2 {
 		t.Errorf("/read takes several paths: %+v", got)
 	}
+}
+
+func TestRoomSelectCopyPasteAndGrow(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+
+	// Dragging over the feed highlights and copies just that pane's text.
+	lines := strings.Split(h.screen(), "\n")
+	y := -1
+	for i, l := range lines {
+		if strings.Contains(l, "Plan v2 answers every objection") {
+			y = i
+		}
+	}
+	if y < 0 {
+		t.Fatal("no Chair line on screen")
+	}
+	h.send(tea.MouseClickMsg{X: 0, Y: y, Button: tea.MouseLeft})
+	h.send(tea.MouseMotionMsg{X: 60, Y: y, Button: tea.MouseLeft})
+	_, cmd := h.app.Update(tea.MouseReleaseMsg{X: 60, Y: y, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("releasing a selection should copy it")
+	}
+	if got := h.app.selectedText(); !strings.HasPrefix(got, "Plan v2 answers every objection") || strings.Contains(got, "│") {
+		t.Fatalf("selected %q", got)
+	}
+	contains(t, h.screen(), "Copied ")
+	h.typ("x") // any key clears the highlight
+	if h.app.sel.shown {
+		t.Fatal("typing should clear the selection")
+	}
+	h.app.rm.roomIn.Reset()
+
+	// The box grows with what's typed.
+	if got := h.app.rm.roomIn.Height(); got != roomInputRows {
+		t.Fatalf("empty box height %d", got)
+	}
+	h.typ(strings.Repeat("a long thought that keeps going ", 12))
+	if got := h.app.rm.roomIn.Height(); got <= roomInputRows {
+		t.Fatalf("box didn't grow: %d", got)
+	}
+	h.app.rm.roomIn.Reset()
+
+	// A pasted image becomes a chip; sending carries its file.
+	h.send(pastedImage{path: ".quorum/attachments/shot.png"})
+	if v := h.app.rm.roomIn.Value(); v != "[image 1]" {
+		t.Fatalf("chip: %q", v)
+	}
+	h.typ(" what's wrong here?")
+	h.press("enter")
+	post := h.expectCall("room.post")
+	if imgs, _ := post.params["images"].([]string); len(imgs) != 1 || imgs[0] != ".quorum/attachments/shot.png" {
+		t.Fatalf("post params: %v", post.params)
+	}
+	h.send(pastedText{text: "pasted words"})
+	if v := h.app.rm.roomIn.Value(); v != "pasted words" {
+		t.Fatalf("pasted text: %q", v)
+	}
+}
+
+func TestRoomMailWithdrawAndNow(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	contains(t, h.screen(), "NOW ") // what's being discussed, at the top of the assistant's column
+
+	// The assistant takes back a suggestion it replaced; it leaves the card.
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 900, ID: 50, From: "assistant", Action: "steer", Args: []string{"old idea"}})
+	contains(t, h.screen(), "steer the room: “old idea”")
+	h.event(rpc.RoomEvent{Type: "suggestion.resolved", Seq: 901, ID: 50, Withdrawn: true})
+	lacks(t, h.screen(), "steer the room: “old idea”")
+	contains(t, h.screen(), "Withdrawn by assistant")
+
+	// Mail out and replies in.
+	h.event(rpc.RoomEvent{Type: "mail.out", Seq: 902, To: "devin", Subject: "Build the probe", File: "x.md", By: "assistant"})
+	contains(t, h.screen(), "mail to devin: “Build the probe”")
+	h.event(rpc.RoomEvent{Type: "message", Seq: 903, From: "mail:devin", To: "room", Text: "**Mail: done**\n\n9/10 pass."})
+	contains(t, h.screen(), "devin ✉")
+	contains(t, h.screen(), "9/10 pass.")
 }

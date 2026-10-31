@@ -23,6 +23,21 @@ export const ROOM_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "mail_draft",
+    description:
+      "Draft mail to the project's own agents (they can write code, make a worktree, build a probe, run tests). The human approves it before it's sent; replies come back into the channel.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "an agent's name, or all" },
+        subject: { type: "string" },
+        body: { type: "string", description: "short and actionable; point at files and say what done looks like" },
+        why: { type: "string", description: "why the human should send it" },
+      },
+      required: ["to", "subject", "body"],
+    },
+  },
+  {
     name: "raise_topic",
     description: "Propose a new question that deserves its own discussion. It starts parked; the Chair and the human decide when it gets focus.",
     inputSchema: {

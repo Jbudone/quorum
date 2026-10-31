@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jbud/quorum/tui/internal/rpc"
 )
@@ -29,6 +30,7 @@ type roomUI struct {
 	feedFollow bool
 	asstFollow bool
 	hideStats  bool
+	wideAssist bool   // alt+w: the assistant column takes most of the width
 	opening    string // what we're waiting for ("opening", "reopening"); "" once something is on screen
 	err        string // why nothing could be opened
 	switching  bool   // a workspace.open is for the switcher
@@ -37,8 +39,35 @@ type roomUI struct {
 
 const (
 	roomSideMin   = 64 // below this the assistant sits under the feed instead of beside it
-	roomInputRows = 2
+	roomInputRows = 2  // the boxes start this tall and grow with what's typed
+	maxInputRows  = 8
 )
+
+// growInput sets a text box's height to fit what's in it (wrapped lines included), within limits.
+func growInput(in *textarea.Model) {
+	w := max(in.Width(), 10)
+	rows := 0
+	for _, line := range strings.Split(in.Value(), "\n") {
+		rows += max(1, (ansi.StringWidth(line)+w)/w)
+	}
+	// One spare line, so the box grows before the text reaches its last line (it would scroll instead).
+	in.SetHeight(min(max(rows+1, roomInputRows), maxInputRows))
+}
+
+// inputRows is how tall the input row is: the taller of the two boxes when they sit side by side.
+func (a *App) inputRows() int {
+	u := a.rm
+	if u == nil {
+		return roomInputRows
+	}
+	if !a.roomSide() && u.room != nil && u.room.pane == paneAssistant {
+		return u.assistIn.Height()
+	}
+	if !a.roomSide() {
+		return u.roomIn.Height()
+	}
+	return max(u.roomIn.Height(), u.assistIn.Height())
+}
 
 func workspaceName(repo string) string { return filepath.Base(repo) }
 
@@ -360,6 +389,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		u.switching = true
 		a.call("workspace.open", map[string]any{"repo": a.opts.Repo})
 		return nil
+	case "alt+w":
+		u.wideAssist = !u.wideAssist
+		return nil
 	case "alt+s":
 		u.hideStats = !u.hideStats
 		return nil
@@ -422,7 +454,11 @@ func (a *App) submitRoom() tea.Cmd {
 		u.assistIn.Reset()
 		r.asking, r.answer = true, ""
 		u.asstFollow = true
-		a.call("room.ask", map[string]any{"text": q})
+		params := map[string]any{"text": q}
+		if imgs := a.takeImages(q); len(imgs) > 0 {
+			params["images"] = imgs
+		}
+		a.call("room.ask", params)
 		return nil
 	}
 	cmd := r.parseRoomInput(u.roomIn.Value())
@@ -471,6 +507,11 @@ func (a *App) submitRoom() tea.Cmd {
 	if cmd.method == "room.post" && r.view != 0 && cmd.params["to"] == nil && cmd.params["thread"] == nil {
 		cmd.params["thread"] = r.view
 	}
+	if cmd.method == "room.post" {
+		if imgs := a.takeImages(fmt.Sprint(cmd.params["text"])); len(imgs) > 0 {
+			cmd.params["images"] = imgs
+		}
+	}
 	if cmd.echo != "" {
 		r.asides = append(r.asides, noteItem{kind: "system", text: cmd.echo})
 	}
@@ -484,9 +525,30 @@ func (a *App) submitRoom() tea.Cmd {
 // roomSide reports whether the assistant sits beside the feed (wide enough) or under it.
 func (a *App) roomSide() bool { return a.w >= roomSideMin }
 
+// assistWide reports whether the assistant column gets most of the width: toggled with alt+w, and
+// automatically while no member has spoken yet (there's nothing in the feed to read).
+func (a *App) assistWide() bool {
+	u := a.rm
+	if u == nil || u.room == nil {
+		return false
+	}
+	if u.wideAssist {
+		return true
+	}
+	for _, from := range u.room.authors {
+		if from != "human" {
+			return false
+		}
+	}
+	return len(u.room.live) == 0
+}
+
 func (a *App) assistW() int {
 	if !a.roomSide() {
 		return a.w
+	}
+	if a.assistWide() {
+		return a.w * 60 / 100
 	}
 	if a.w >= 100 {
 		return min(max(34, a.w*34/100), 60)
@@ -508,7 +570,7 @@ func (a *App) statsShown() bool {
 
 func (a *App) roomBodyH() int {
 	// header, status bar, spacer, roster line, input boxes (rows + border), footer
-	h := a.h - 1 - 1 - 1 - 1 - (roomInputRows + 2) - 1
+	h := a.h - 1 - 1 - 1 - 1 - (a.inputRows() + 2) - 1
 	if a.statsShown() {
 		h -= statsHeight()
 	}
@@ -525,7 +587,8 @@ func (a *App) paneHeights() (feed, assist int) {
 	return feed, max(bh-feed-1, 3)
 }
 
-// assistantColumn lays out the assistant pane top to bottom: what needs the human, where things stand, the chat.
+// assistantColumn lays out the assistant pane top to bottom: what needs the human, what's being
+// discussed and where it stands, the latest happenings, then the chat.
 func (a *App) assistantColumn(width, height int) (top string, vpH int) {
 	r := a.rm.room
 	var parts []string
@@ -535,11 +598,16 @@ func (a *App) assistantColumn(width, height int) (top string, vpH int) {
 		}
 		parts = append(parts, sug)
 	}
-	if d := renderDigest(r, a.th, width, 3); d != "" {
-		parts = append(parts, d)
-	}
-	if len(parts) == 0 {
-		return "", height
+	parts = append(parts, renderNow(r, a.th, width, 3))
+	// The stats strip already shows the latest happenings when it's on screen.
+	if !a.statsShown() {
+		if latest := recentLines(r, a.th, 3); len(latest) > 0 {
+			lines := []string{fg(a.th.Info).Bold(true).Render("LATEST")}
+			for _, l := range latest {
+				lines = append(lines, ansi.Truncate(l, width, "…"))
+			}
+			parts = append(parts, strings.Join(lines, "\n"))
+		}
 	}
 	parts = append(parts, fg(a.th.Subtle).Render(strings.Repeat("─", width)))
 	top = strings.Join(parts, "\n\n")
@@ -561,6 +629,16 @@ func (a *App) refreshRoom() {
 	r := u.room
 	spin := a.spin.View()
 	fw, aw := a.feedW(), a.assistW()
+	// The boxes come first: how tall they've grown decides how much room the panes get.
+	if a.roomSide() {
+		u.roomIn.SetWidth(fw - 4)
+		u.assistIn.SetWidth(max(aw-4, 10))
+	} else {
+		u.roomIn.SetWidth(a.w - 4)
+		u.assistIn.SetWidth(a.w - 4)
+	}
+	growInput(&u.roomIn)
+	growInput(&u.assistIn)
 	fh, ah := a.paneHeights()
 	u.feedVP.SetWidth(fw)
 	u.feedVP.SetHeight(fh)
@@ -581,12 +659,7 @@ func (a *App) refreshRoom() {
 		u.overlayVP.SetHeight(a.roomBodyH())
 		u.overlayVP.SetContent(renderOverlay(r.overlay, a.th, a.w-4))
 	}
-	roomBox, assistBox := fw-4, aw-4
-	if !a.roomSide() {
-		roomBox, assistBox = a.w-4, a.w-4
-	}
-	u.roomIn.SetWidth(roomBox)
-	u.assistIn.SetWidth(max(assistBox, 10))
+
 	switch {
 	case r.state == "paused":
 		u.roomIn.Placeholder = "Paused · you can still write; members answer once you resume (alt+p)"
@@ -756,6 +829,6 @@ func (a *App) roomView() string {
 	if a.statsShown() {
 		rows = append(rows, renderStats(r, a.th, a.w), "")
 	}
-	rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, roomFooter(r, a.th, a.w))
+	rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }

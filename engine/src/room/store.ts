@@ -6,7 +6,7 @@ import type { AgentSpec, CliName } from "../config.js";
 export type Recipient = "room" | string;
 
 /** What a proposed change does; the human approves or declines each one. */
-export type SuggestionAction = "steer" | "add" | "hire" | "remove" | "focus" | "close" | "parallel";
+export type SuggestionAction = "steer" | "add" | "hire" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer";
 
 export type DocKind = "plan" | "issue" | "decision" | "other";
 
@@ -28,8 +28,12 @@ export type RoomEventBody =
   | { type: "workstream"; thread: number; title: string; done?: string; members: string[] }
   /** The outcome of a side conversation, posted back to the channel when it settles. */
   | { type: "thread.summary"; thread: number; text: string }
-  | { type: "suggestion"; id: number; from: "assistant" | "chair"; action: SuggestionAction; args: string[]; why: string }
-  | { type: "suggestion.resolved"; id: number; accepted: boolean }
+  /** Something only the human may approve. `from` is the assistant, the Chair, or a member. */
+  | { type: "suggestion"; id: number; from: string; action: SuggestionAction; args: string[]; why: string }
+  /** `withdrawn`: whoever suggested it took it back. */
+  | { type: "suggestion.resolved"; id: number; accepted: boolean; withdrawn?: boolean }
+  /** Mail sent to the project's agents (in .quorum/mail/). */
+  | { type: "mail.out"; file: string; to: string; subject: string; by: string; thread?: number }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }
   | { type: "topic.focus"; slug: string; by: string }
   | { type: "topic.closed"; slug: string; by: string; why?: string }
