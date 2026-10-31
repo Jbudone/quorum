@@ -372,10 +372,21 @@ export function buildCatalog(i: CatalogInputs): Omit<Catalog, "source"> {
 }
 
 let cached: { at: number; catalog: Catalog } | undefined;
+let building: Promise<Catalog> | undefined;
 const FRESH_MS = 5 * 60_000;
 
 /** The catalog, built from what's installed now (cached a few minutes; `refresh` rebuilds it). */
 export async function getCatalog(refresh = false): Promise<Catalog> {
+  // Callers arriving while a build runs share it.
+  if (building && !refresh) return building;
+  if (refresh || !cached || Date.now() - cached.at >= FRESH_MS) {
+    building = buildFresh(refresh).finally(() => (building = undefined));
+    return building;
+  }
+  return buildFresh(false);
+}
+
+async function buildFresh(refresh: boolean): Promise<Catalog> {
   if (!refresh && cached && Date.now() - cached.at < FRESH_MS) {
     // Favourites and recents change between builds; re-apply them without re-asking every CLI.
     const config = readProviders();

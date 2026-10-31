@@ -131,11 +131,16 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
   const side = (fn: () => Promise<unknown>) =>
     void fn().catch((e) => write({ event: "error", data: { message: e instanceof Error ? e.message : String(e) } }));
 
-  // The assistant's model menu, from the catalog once it's built (never for mock channels).
-  const menuFor = (clis: string[]) => (clis.includes("mock") ? undefined : () => {
-    const c = cachedCatalog();
-    return c ? modelMenu(c, clis) : undefined;
-  });
+  // The assistant's model menu, from the catalog once it's built (never for mock channels). Asking
+  // for it starts the build, so the first model search a real channel opens doesn't wait for it.
+  const menuFor = (clis: string[]) => {
+    if (clis.includes("mock")) return undefined;
+    void cachedCatalog();
+    return () => {
+      const c = cachedCatalog();
+      return c ? modelMenu(c, clis) : undefined;
+    };
+  };
 
   const need = (): Engine => {
     if (!engine) throw new Error("no session: call session.start first");
