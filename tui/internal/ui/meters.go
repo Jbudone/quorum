@@ -145,6 +145,9 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 		if when := untilReset(w.ResetsAt, now); when != "" {
 			line += fg(th.Subtle).Render(" · resets " + when)
 		}
+		if d, reset, ok := r.quotaMoved(h, w); ok && r.scope == scopeSitting {
+			line += fg(th.Info).Render(" · " + fmtMoved(d, reset))
+		}
 		// A longer window that's nearly spent matters more than the short one.
 		for _, x := range m.Windows[1:] {
 			if x.Used >= 0.75 {
@@ -153,17 +156,24 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 		}
 		lines = append(lines, line)
 	}
+	// What this sitting, channel or project used: billed, and at API prices.
+	if s := r.scoped(r.scope); s != nil && s.Total.Turns+s.Total.Input > 0 {
+		t := s.Total
+		line := fg(th.Text).Bold(true).Render(fmtUSD(t.USD)) + fg(th.Muted).Render(" billed · ") + fg(th.Text).Bold(true).Render("≈"+fmtUSD(t.ListUSD)) + fg(th.Muted).Render(" at API · "+fmtTok(t.Input+t.Output)+" tok")
+		lines = append(lines, line+fg(th.Subtle).Render("  alt+v · alt+u"))
+	} else if r.scope == scopeProject && r.project == nil {
+		lines = append(lines, fg(th.Subtle).Italic(true).Render("adding up the project…"))
+	} else if r.usage != nil {
+		lines = append(lines, fg(th.Subtle).Render("nothing used "+scopeNames[r.scope]+" yet  alt+v · alt+u"))
+	}
 	if r.meters != nil {
 		for _, b := range r.meters.Balances {
 			left := fg(th.Text).Render(fmtUSD(b.RemainingUSD)) + fg(th.Muted).Render(" left")
 			if b.LimitUSD != nil && *b.LimitUSD > 0 {
-				left = meterBar(th, 1-b.RemainingUSD / *b.LimitUSD, barW) + " " + left + fg(th.Muted).Render(" of "+fmtUSD(*b.LimitUSD))
+				left = meterBar(th, 1 - b.RemainingUSD / *b.LimitUSD, barW) + " " + left + fg(th.Muted).Render(" of "+fmtUSD(*b.LimitUSD))
 			}
 			lines = append(lines, fg(th.Text).Render(b.Name)+" "+left)
 		}
-	}
-	if usd, ok := r.channelUSD(); ok {
-		lines = append(lines, fg(th.Muted).Render("this channel ")+fg(th.Text).Bold(true).Render(fmtUSD(usd))+fg(th.Subtle).Render(" on pay-per-token models"))
 	}
 	switch {
 	case r.meters != nil && r.meters.Source == "none":
@@ -177,17 +187,4 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 		lines = lines[:n]
 	}
 	return lines
-}
-
-// channelUSD is what the channel's pay-per-token members have cost, when any have.
-func (r *roomModel) channelUSD() (float64, bool) {
-	var sum float64
-	any := false
-	for _, s := range r.spend {
-		if s.USD != nil {
-			sum += *s.USD
-			any = true
-		}
-	}
-	return sum, any
 }

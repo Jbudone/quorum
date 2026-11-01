@@ -10,7 +10,8 @@ import { councilFromWire, savePreset } from "../library.js";
 import { createTransport } from "../transports/index.js";
 import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
-import { checkEdit, Room, type TransportFactory } from "../room/room.js";
+import { checkEdit, METERED_CLIS, Room, type TransportFactory } from "../room/room.js";
+import { projectScope } from "../room/ledger.js";
 import { MOCK_SUPPORT, personaIn, roomTransports, supportFor } from "../room/setup.js";
 import { RoomStore } from "../room/store.js";
 import { SetupChat } from "../room/setupchat.js";
@@ -18,7 +19,6 @@ import { defaultModel, listModels } from "../models.js";
 import { meters } from "../usage.js";
 
 /** Harnesses whose models are paid per token, so their members' turns are priced. */
-const METERED = ["opencode", "kimi"];
 import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
@@ -86,7 +86,7 @@ function snapshot(r: Room) {
     topics: r.topics(),
     docs: r.docs(),
     pending: r.pending(),
-    spend: r.store.spend(),
+    usage: r.usageReport(),
     events: r.store.events().slice(-SNAPSHOT_EVENTS),
   };
 }
@@ -127,6 +127,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
     if (room) await room.close();
     room = r;
     r.on((e) => write(e));
+    // Opening a channel starts a sitting; the quota windows then are what this sitting is measured against.
+    const m = r.clis.includes("mock") ? undefined : await meters().catch(() => undefined);
+    r.startSitting(m?.harnesses.length ? Object.fromEntries(m.harnesses.map((h) => [h.cli, h.windows])) : undefined);
   };
 
   const transportsFor = (personaOf: (id: string) => string): TransportFactory =>
@@ -152,9 +155,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
     clis.includes("mock")
       ? undefined
       : (cli: string, model?: string) => {
-          if (!METERED.includes(cli) || !model) return undefined;
+          if (!model) return undefined;
           const m = cachedCatalog()?.models.find((x) => x.routes.some((r) => r.harness === cli && r.id === model));
-          return m?.cost && (m.cost.input || m.cost.output) ? { input: m.cost.input, output: m.cost.output } : undefined;
+          return m?.cost && (m.cost.input || m.cost.output) ? { input: m.cost.input, output: m.cost.output, billed: METERED_CLIS.has(cli) } : undefined;
         };
 
   // Fills in each harness's default model where a suggestion names none (never for mock channels).
@@ -457,6 +460,10 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
       case "usage.meters":
         return meters(Boolean(p.refresh));
+      case "usage.report": {
+        const r = needRoom();
+        return { ...r.usageReport(), ...(p.project ? { project: projectScope(r.store.root) } : {}) };
+      }
       case "room.swap":
         needRoom().swapModel(String(p.id ?? ""), String(p.cli ?? "") as CliName, p.model ? String(p.model) : undefined);
         return {};

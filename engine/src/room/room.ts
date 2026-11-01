@@ -57,6 +57,7 @@ import {
   type SuggestionAction,
   type SupportSpec,
 } from "./store.js";
+import { legacyTally, report, type Sitting, type UsageReport } from "./ledger.js";
 import { newToken, ToolServer, type ToolHandler } from "./tools.js";
 import { noteVendorSession } from "./vendorlog.js";
 import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
@@ -73,7 +74,7 @@ export type RoomEmit =
   | { event: "room.support"; data: { role: SupportRole | "watch"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
   /** What a member has used in this channel so far, after each of its turns. */
-  | { event: "room.spend"; data: { agent: string; cli: string; spend: Spend } };
+  | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } };
 
 /** paused: nobody is woken. running: turns underway. idle: running, but nobody has anything new to answer. */
 export type RoomState = "paused" | "running" | "idle";
@@ -100,8 +101,8 @@ export interface RoomOptions {
   clis?: string[];
   /** Models the assistant can pick from, for its prompt (see catalog.modelMenu). */
   modelMenu?: () => string | undefined;
-  /** USD per million tokens for a harness and model billed per token; undefined for subscriptions. */
-  price?: (cli: string, model?: string) => { input: number; output: number } | undefined;
+  /** A model's list price in USD per million tokens, and whether this harness bills per token (false for subscriptions). */
+  price?: (cli: string, model?: string) => { input: number; output: number; billed: boolean } | undefined;
   /** The model a harness runs by default, filled into suggestions that don't name one (see models.defaultModel). */
   defaultModel?: (cli: string) => string | undefined;
 }
@@ -132,6 +133,8 @@ const REFRESH = 12;
 const CATCHUP = 60;
 /** Member messages between runs of each support role. */
 const EVERY = { scribe: 8, chair: 10, watch: 8 };
+/** Harnesses that bill per token through an API key; the rest run on a subscription's quota. */
+export const METERED_CLIS = new Set(["opencode", "kimi"]);
 
 /** A turn in progress that may call the room tools. */
 interface LiveTurn {
@@ -1263,19 +1266,48 @@ export class Room {
     return { paths, changed };
   }
 
-  /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
-  /** Adds a turn's tokens to the member's spend, priced when its model is paid per token. */
+  /** Records a turn's usage: billed when its harness charges per token, and at list price either way. */
   private spent(agent: string, spec: { cli: CliName; model?: string }, e: Extract<AgentEvent, { type: "usage" }>): void {
     const input = e.inputTokens ?? 0;
     const output = e.outputTokens ?? 0;
-    if (!input && !output && e.costUsd === undefined) return;
-    const p = this.o.price?.(spec.cli, spec.model || this.o.defaultModel?.(spec.cli));
-    const usd = e.costUsd ?? (p ? (input * p.input + output * p.output) / 1e6 : undefined);
+    const cacheRead = e.cacheReadTokens ?? 0;
+    const cacheWrite = e.cacheWriteTokens ?? 0;
+    if (!input && !output && !cacheRead && e.costUsd === undefined) return;
+    const model = spec.model || this.o.defaultModel?.(spec.cli);
+    const p = this.o.price?.(spec.cli, model);
+    // Cache reads cost a tenth of fresh input and writes a quarter more, as most providers price them.
+    const list = p ? (input * p.input + cacheRead * p.input * 0.1 + cacheWrite * p.input * 1.25 + output * p.output) / 1e6 : undefined;
+    const billed = p?.billed ?? METERED_CLIS.has(spec.cli);
     const id = agent.split("@")[0]; // a side thread counts toward its member
-    const spend = this.store.addSpend(id, { input, output, ...(usd !== undefined ? { usd } : {}) });
-    this.emit({ event: "room.spend", data: { agent: id, cli: spec.cli, spend } });
+    const usd = billed ? (e.costUsd ?? list) : undefined;
+    const listUsd = billed ? usd : (e.costUsd ?? list);
+    this.store.addUsage({
+      ts: new Date().toISOString(),
+      agent: id,
+      role: this.personas.has(id) ? "member" : "support",
+      cli: spec.cli,
+      ...(model ? { model } : {}),
+      input,
+      output,
+      ...(cacheRead ? { cacheRead } : {}),
+      ...(cacheWrite ? { cacheWrite } : {}),
+      ...(usd !== undefined ? { usd } : {}),
+      ...(listUsd !== undefined ? { listUsd } : {}),
+    });
+    this.emit({ event: "room.spend", data: { agent: id, cli: spec.cli, usage: this.usageReport() } });
   }
 
+  /** A new sitting: the human opened the channel. `quota` is where each harness's windows stood. */
+  startSitting(quota?: Sitting["quota"]): void {
+    this.store.startSitting({ start: new Date().toISOString(), ...(quota ? { quota } : {}) });
+  }
+
+  /** What this sitting and the whole channel used. */
+  usageReport(): UsageReport {
+    return report(this.store.usageRows(), this.store.sittings(), legacyTally(this.store.spend()));
+  }
+
+  /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
   private usage(agent: string, cli: string, q: number | undefined, rateLimited: boolean | undefined): void {
     if (q === undefined && !rateLimited) return;
     this.emit({ event: "room.usage", data: { agent, cli, quotaUtilization: q, rateLimited } });

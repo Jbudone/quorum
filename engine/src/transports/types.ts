@@ -6,10 +6,14 @@ export type AgentEvent =
       type: "usage";
       inputTokens?: number;
       outputTokens?: number;
+      /** Input read from the prompt cache, not counted in inputTokens. */
+      cacheReadTokens?: number;
+      /** Input written to the prompt cache, not counted in inputTokens. */
+      cacheWriteTokens?: number;
       rateLimited?: boolean;
       /** Subscription quota used in the current window, 0..1, when the CLI reports it. */
       quotaUtilization?: number;
-      /** What the turn cost in USD, when the CLI reports it (pay-per-token providers). */
+      /** What the turn cost in USD, when the CLI reports it: billed on a pay-per-token harness, at list price on a subscription. */
       costUsd?: number;
     }
   | { type: "done"; sessionId?: string }

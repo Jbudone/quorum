@@ -1,3 +1,4 @@
+import { projectScope } from "../src/room/ledger.js";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,17 +59,48 @@ describe("Turn usage the CLIs keep to themselves", () => {
   });
 });
 
-describe("What members spend in a channel", () => {
-  it("adds up each member's tokens, priced when its model is paid per token", async () => {
-    const r = rig({ member: () => "a reply", extra: () => [{ type: "usage", inputTokens: 1000, outputTokens: 100 }] });
+describe("What a channel uses", () => {
+  it("records each turn billed or at list price, splits sittings, and keeps old totals", async () => {
+    const r = rig({ member: () => "a reply", extra: () => [{ type: "usage", inputTokens: 1000, outputTokens: 100, cacheReadTokens: 1000 }] });
     cleanup.push(r.closeAll);
-    const room = r.create({ price: (cli) => (cli === "mock" ? { input: 1, output: 2 } : undefined) });
+    const room = r.create({ price: () => ({ input: 1, output: 2, billed: false }) });
+    writeFileSync(join(room.store.dir, "spend.json"), JSON.stringify({ old: { input: 5, output: 5, usd: 0.5 } }));
+    room.startSitting({ claude: [{ label: "5h", used: 0.4 }] });
     room.post("go");
     room.resume();
     await room.settled();
-    const spoke = r.memberCalls()[0].agent;
-    const s = room.store.spend()[spoke];
-    expect(s.input % 1000).toBe(0);
-    expect(s.usd).toBeCloseTo((s.input * 1 + s.output * 2) / 1e6, 10);
+    const first = room.usageReport();
+    const rows = room.store.usageRows();
+    expect(rows.length).toBeGreaterThan(0);
+    // A subscription turn has no bill, only what it would cost at list price (cache reads at a tenth).
+    expect(rows[0]).toMatchObject({ input: 1000, output: 100, cacheRead: 1000 });
+    expect(rows[0].usd).toBeUndefined();
+    expect(rows[0].listUsd).toBeCloseTo((1000 + 100 + 200) / 1e6, 10);
+    expect(first.sitting).toMatchObject({ n: 1, quota: { claude: [{ label: "5h", used: 0.4 }] } });
+    expect(first.sitting.total.turns).toBe(rows.length);
+    expect(first.channel.legacy).toMatchObject({ usd: 0.5 });
+    expect(first.channel.total.usd).toBeCloseTo(0.5, 10);
+    expect(first.channel.byAgent.map((a) => a.role)).toContain("member");
+
+    await new Promise((ok) => setTimeout(ok, 5));
+    room.pause();
+    room.startSitting();
+    const next = room.usageReport();
+    expect(next.sitting.n).toBe(2);
+    expect(next.sitting.total.turns).toBe(0);
+    expect(next.channel.total.turns).toBe(rows.length);
+    expect(next.sittings.map((x) => x.n)).toEqual([1, 2]);
+    expect(projectScope(r.repo).byChannel).toHaveLength(1);
+  });
+
+  it("bills a pay-per-token turn what its harness reports", async () => {
+    const r = rig({ member: () => "a reply", extra: () => [{ type: "usage", inputTokens: 10, outputTokens: 10, costUsd: 0.25 }] });
+    cleanup.push(r.closeAll);
+    const room = r.create({ price: () => ({ input: 1, output: 2, billed: true }) });
+    room.post("go");
+    room.resume();
+    await room.settled();
+    const row = room.store.usageRows().find((x) => x.role === "member")!;
+    expect(row).toMatchObject({ usd: 0.25, listUsd: 0.25 });
   });
 });

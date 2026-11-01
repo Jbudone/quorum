@@ -29,8 +29,10 @@ export class CodexMapper implements LineMapper {
       case "turn.completed":
         this.usage = {
           type: "usage",
-          inputTokens: j.usage?.input_tokens,
+          // Codex counts cached input inside input_tokens.
+          inputTokens: j.usage?.input_tokens === undefined ? undefined : j.usage.input_tokens - (j.usage.cached_input_tokens ?? 0),
           outputTokens: j.usage?.output_tokens,
+          ...(j.usage?.cached_input_tokens ? { cacheReadTokens: j.usage.cached_input_tokens } : {}),
         };
         return [];
       case "turn.failed":

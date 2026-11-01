@@ -144,16 +144,54 @@ type (
 		Name   string `json:"name"`
 		Thread int    `json:"thread"`
 	}
-	// Spend is what a member has used in a channel: tokens, and USD when its model is paid per token.
-	Spend struct {
-		Input  int      `json:"input"`
-		Output int      `json:"output"`
-		USD    *float64 `json:"usd"`
+	// Tally is usage added up: tokens, what was billed (pay-per-token harnesses) and what it would
+	// cost at API list prices (every harness).
+	Tally struct {
+		Turns     int     `json:"turns"`
+		Input     int     `json:"input"`
+		Output    int     `json:"output"`
+		CacheRead int     `json:"cacheRead"`
+		USD       float64 `json:"usd"`
+		ListUSD   float64 `json:"listUsd"`
+	}
+	// UsageLine is one member, support role, model or channel's share.
+	UsageLine struct {
+		Tally
+		ID    string `json:"id"`
+		Role  string `json:"role"`
+		CLI   string `json:"cli"`
+		Model string `json:"model"`
+	}
+	UsageScope struct {
+		Total     Tally       `json:"total"`
+		ByAgent   []UsageLine `json:"byAgent"`
+		ByModel   []UsageLine `json:"byModel"`
+		ByChannel []UsageLine `json:"byChannel"`
+		Legacy    *Tally      `json:"legacy"`
+	}
+	// SittingScope is this visit to the channel: when it started, and the quota windows then.
+	SittingScope struct {
+		UsageScope
+		N     int                      `json:"n"`
+		Start string                   `json:"start"`
+		Quota map[string][]QuotaWindow `json:"quota"`
+	}
+	SittingTotal struct {
+		N       int     `json:"n"`
+		Start   string  `json:"start"`
+		USD     float64 `json:"usd"`
+		ListUSD float64 `json:"listUsd"`
+	}
+	UsageReport struct {
+		Sitting  SittingScope   `json:"sitting"`
+		Channel  UsageScope     `json:"channel"`
+		Sittings []SittingTotal `json:"sittings"`
+		Project  *UsageScope    `json:"project"`
 	}
 	RoomSpend struct {
-		Agent string `json:"agent"`
-		CLI   string `json:"cli"`
-		Spend Spend  `json:"spend"`
+		Agent string      `json:"agent"`
+		CLI   string      `json:"cli"`
+		Usage UsageReport `json:"usage"`
 	}
 	// Meters are quota left per harness and money left per provider, from OpenUsage.
 	Meters struct {
@@ -216,26 +254,26 @@ type (
 	}
 	// RoomSnapshot is what room.start and room.open return: the room as it stands, with recent history.
 	RoomSnapshot struct {
-		ID            string           `json:"id"`
-		Dir           string           `json:"dir"`
-		Name          string           `json:"name"`
-		Topic         string           `json:"topic"`
-		Reading       []string         `json:"reading"`
-		Skipped       []string         `json:"skipped"`
-		State         string           `json:"state"`
-		Agents        []PresetAgent    `json:"agents"`
-		Left          []PresetAgent    `json:"left"`
-		Support       RoomSupport      `json:"support"`
-		CLIs          []string         `json:"clis"`
-		Digest        string           `json:"digest"`
-		Tuning        RoomTuning       `json:"tuning"`
-		Focus         string           `json:"focus"`
-		Topics        []RoomTopic      `json:"topics"`
-		Docs          []RoomDoc        `json:"docs"`
-		Pending       []RoomEvent      `json:"pending"`
-		Spend         map[string]Spend `json:"spend"`
-		Events        []RoomEvent      `json:"events"`
-		Substitutions []Substitution   `json:"substitutions"`
+		ID            string         `json:"id"`
+		Dir           string         `json:"dir"`
+		Name          string         `json:"name"`
+		Topic         string         `json:"topic"`
+		Reading       []string       `json:"reading"`
+		Skipped       []string       `json:"skipped"`
+		State         string         `json:"state"`
+		Agents        []PresetAgent  `json:"agents"`
+		Left          []PresetAgent  `json:"left"`
+		Support       RoomSupport    `json:"support"`
+		CLIs          []string       `json:"clis"`
+		Digest        string         `json:"digest"`
+		Tuning        RoomTuning     `json:"tuning"`
+		Focus         string         `json:"focus"`
+		Topics        []RoomTopic    `json:"topics"`
+		Docs          []RoomDoc      `json:"docs"`
+		Pending       []RoomEvent    `json:"pending"`
+		Usage         *UsageReport   `json:"usage"`
+		Events        []RoomEvent    `json:"events"`
+		Substitutions []Substitution `json:"substitutions"`
 	}
 	RoomListItem struct {
 		ID      string `json:"id"`

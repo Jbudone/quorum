@@ -418,6 +418,12 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	case "alt+s":
 		u.hideStats = !u.hideStats
 		return nil
+	case "alt+v":
+		a.cycleScope()
+		return nil
+	case "alt+u":
+		a.openUsage()
+		return nil
 	case "alt+a":
 		a.openJoin(nil)
 		return nil
@@ -513,6 +519,9 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "providers":
 		a.openProviders()
+		return nil
+	case "usage":
+		a.openUsage()
 		return nil
 	case "swap":
 		id, _ := cmd.params["id"].(string)

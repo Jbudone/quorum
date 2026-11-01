@@ -98,6 +98,7 @@ type App struct {
 	catalogAsked bool
 	meters       *rpc.Meters // quota and balances, polled while a channel is open
 	prov         *providersScreen // the Providers & models screen (alt+o), over whatever is open
+	usage        *usageScreen     // the usage & cost screen (alt+u), over the channel
 }
 
 // animFPS is the animation clock. Every effect is counted in these ticks, so raising it speeds
@@ -406,7 +407,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
-	if a.metersResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
+	if a.metersResponse(method, r) || a.usageResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
 		return
 	}
 	if r.Err != "" {
@@ -503,6 +504,12 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if a.prov != nil {
 		return a.handleProvKey(k)
+	}
+	if a.usage != nil {
+		if a.screen == screenRoom && a.rm != nil && a.rm.room != nil {
+			return a.handleUsageKey(k)
+		}
+		a.usage = nil
 	}
 	if key == "alt+o" && (a.screen == screenStart || a.screen == screenRoom && a.rm != nil && a.rm.setup == nil && a.rm.join == nil) {
 		a.openProviders()
@@ -875,6 +882,8 @@ func (a *App) View() tea.View {
 	var content string
 	if a.prov != nil {
 		content = a.providersView()
+	} else if a.usage != nil && a.screen == screenRoom && a.rm != nil && a.rm.room != nil {
+		content = a.usageView()
 	} else if a.screen == screenStart {
 		repo := a.opts.Repo
 		content = a.start.view(a.th, a.w, a.h, repo, !a.loaded && a.engineErr == "", a.spin.View(), a.frame)

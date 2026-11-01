@@ -253,8 +253,8 @@ func memberLines(r *roomModel, th theme.Theme, width, n int) []string {
 		line := fg(r.colorOf(th, m.id)).Render(padRight(m.id, nameW)) + " " + fg(r.colorOf(th, m.id)).Render(padRight(bar, barW)) +
 			fg(th.Muted).Render(fmt.Sprintf(" %2d", m.said)) +
 			count(th.Info, "+", m.ideas) + count(th.Err, "✗", m.critiques) + count(th.Warn, "↻", m.conceded)
-		if s, ok := r.spend[m.id]; ok && s.USD != nil {
-			line += fg(th.Subtle).Render(" " + fmtUSD(*s.USD))
+		if l, ok := r.agentUsage(m.id); ok {
+			line += fg(th.Subtle).Render(" " + costOf(l.Tally))
 		}
 		lines = append(lines, line)
 	}
@@ -296,6 +296,7 @@ func renderStats(r *roomModel, th theme.Theme, width int) string {
 	cols[1].lines = discussionLines(r, th, statsRows)
 	cols[2].lines = memberLines(r, th, colW, statsRows)
 	cols[3].lines = budgetLines(r, th, colW, statsRows, time.Now())
+	cols[3].title = "budget · " + scopeNames[r.scope]
 	var shown []col
 	for _, i := range keep {
 		shown = append(shown, cols[i])

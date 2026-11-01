@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentSpec, CliName } from "../config.js";
+import { appendJsonl, readJsonl, type Sitting, type UsageRow } from "./ledger.js";
 
 /** Who a message is for: everyone in the room, or one agent (a DM). */
 export type Recipient = "room" | string;
@@ -286,7 +287,7 @@ export class RoomStore {
     writeFileSync(join(this.dir, "agents", `${id}.json`), JSON.stringify(s, null, 2));
   }
 
-  /** What each member (and support role) has used in this channel. Kept apart from agent state, which a running turn rewrites. */
+  /** Running totals per member from before turns were recorded one by one; nothing adds to them now. */
   spend(): Record<string, Spend> {
     try {
       return JSON.parse(readFileSync(join(this.dir, "spend.json"), "utf8"));
@@ -295,14 +296,21 @@ export class RoomStore {
     }
   }
 
-  addSpend(id: string, d: Spend): Spend {
-    const all = this.spend();
-    const was = all[id] ?? { input: 0, output: 0 };
-    const now: Spend = { input: was.input + d.input, output: was.output + d.output };
-    if (was.usd !== undefined || d.usd !== undefined) now.usd = (was.usd ?? 0) + (d.usd ?? 0);
-    all[id] = now;
-    writeFileSync(join(this.dir, "spend.json"), JSON.stringify(all, null, 2));
-    return now;
+  /** Each turn's usage, one row per turn (see ledger.ts). */
+  usageRows(): UsageRow[] {
+    return readJsonl<UsageRow>(join(this.dir, "usage.jsonl"));
+  }
+
+  addUsage(row: UsageRow): void {
+    appendJsonl(join(this.dir, "usage.jsonl"), row);
+  }
+
+  sittings(): Sitting[] {
+    return readJsonl<Sitting>(join(this.dir, "sittings.jsonl"));
+  }
+
+  startSitting(s: Sitting): void {
+    appendJsonl(join(this.dir, "sittings.jsonl"), s);
   }
 
   // ---- shared docs (scribe) ----

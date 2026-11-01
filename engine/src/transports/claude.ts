@@ -37,7 +37,14 @@ export function mapClaudeLine(line: string): AgentEvent[] {
       if (j.is_error) return [{ type: "error", message: String(j.result ?? j.subtype) }];
       const u = j.usage ?? {};
       return [
-        { type: "usage", inputTokens: u.input_tokens, outputTokens: u.output_tokens },
+        {
+          type: "usage",
+          inputTokens: u.input_tokens,
+          outputTokens: u.output_tokens,
+          ...(u.cache_read_input_tokens ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
+          ...(u.cache_creation_input_tokens ? { cacheWriteTokens: u.cache_creation_input_tokens } : {}),
+          ...(typeof j.total_cost_usd === "number" ? { costUsd: j.total_cost_usd } : {}),
+        },
         { type: "done", sessionId: j.session_id },
       ];
     }

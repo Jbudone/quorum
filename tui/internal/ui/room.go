@@ -108,8 +108,10 @@ type roomModel struct {
 	asking  bool
 	answer  string // the assistant's answer as it streams
 	quota   map[string]float64
-	spend   map[string]rpc.Spend // per member (and support role) in this channel
-	meters  *rpc.Meters          // quota and balances from OpenUsage, polled
+	usage   *rpc.UsageReport // this sitting and the whole channel
+	project *rpc.UsageScope  // every channel in the project, once asked for
+	scope   int              // which the budget column shows: 0 this sitting, 1 the channel, 2 the project
+	meters  *rpc.Meters      // quota and balances from OpenUsage, polled
 	pane    roomPane
 	overlay *docOverlay
 	edit    *sugEdit // a suggestion being edited before it is approved
@@ -122,10 +124,7 @@ func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
-		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, spend: map[string]rpc.Spend{}, calm: calm,
-	}
-	for id, sp := range s.Spend {
-		r.spend[id] = sp
+		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, usage: s.Usage, calm: calm,
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -202,7 +201,8 @@ func (r *roomModel) apply(ev rpc.Event) {
 			r.quota[v.CLI] = *v.QuotaUtilization
 		}
 	case rpc.RoomSpend:
-		r.spend[v.Agent] = v.Spend
+		u := v.Usage
+		r.usage = &u
 	case rpc.AssistantDelta:
 		r.answer += v.Delta
 	case rpc.EngineError:
@@ -539,6 +539,8 @@ Channel:
                     members, workstreams and what to consider (or /plan)
   alt+p             pause / resume           ctrl+o   documents and notes
   alt+s             show / hide the stats strip
+  alt+v             budget column: this sitting, this channel, or the whole project
+  alt+u             usage & cost: quotas and resets, members, support roles, models
   alt+w             widen / narrow your assistant's column
   alt+o             providers & models: favourites, harness order, keys
   pgup / pgdn       scroll (or the mouse wheel)
@@ -552,6 +554,7 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /add <member> <cli> [model]   (quick add)   /remove <member>   /rejoin <member>
   /swap <member>    move a member (or assistant, chair, scribe, floor) to another model
   /models           providers & models: favourites, harness order, keys (or alt+o)
+  /usage            usage & cost in full (or alt+u)
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -594,6 +597,8 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{local: "switch"}
 	case in == "/new":
 		return roomCommand{local: "new"}
+	case in == "/usage" || in == "/spend" || in == "/cost":
+		return roomCommand{local: "usage"}
 	case in == "/models" || in == "/providers":
 		return roomCommand{local: "providers"}
 	case strings.HasPrefix(in, "/swap"):
