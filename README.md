@@ -110,3 +110,7 @@ cli = "claude"
 model = "haiku"
 ```
 
+
+## License
+
+MIT. See [LICENSE](LICENSE).
