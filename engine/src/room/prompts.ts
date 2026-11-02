@@ -302,10 +302,10 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
 }
 
 /** The assistant's brief of a version up for review: what the human reads before the document itself. */
-export function docBriefPrompt(o: { slug: string; version: number; text: string; base?: number; diff?: string; topic?: string }): string {
+export function docBriefPrompt(o: { slug: string; version: number; text: string; base?: number; diff?: string; topic?: string; accepted?: boolean }): string {
   return [
     o.topic ? `The channel is working on: ${o.topic}` : "",
-    `${o.slug} v${o.version} is up for the human's review. They haven't followed the discussion and won't read the whole document first. Write them a brief of it.`,
+    `${o.slug} v${o.version} ${o.accepted ? "was approved, and the human is reading it again" : "is up for the human's review"}. They haven't followed the discussion and won't read the whole document first. Write them a brief of it.`,
     `The document:\n\n${clip(o.text, 24000)}`,
     o.diff ? `What changed since v${o.base}, the version they last reviewed:\n\n${clip(o.diff, 4000)}` : "",
     `Write exactly this, in plain words a newcomer understands. No message numbers, citations, file paths or line numbers, and no terms the document invents unless you explain them in a few words.
@@ -313,7 +313,7 @@ export function docBriefPrompt(o: { slug: string; version: number; text: string;
 **What it is:** one sentence: what kind of document this is, and plainly whether it records things already done or proposes things nobody has done yet.
 **What it says:**
 - three to six bullets, the main points, most important first, one short sentence each
-**If you approve:** one sentence on what approving means and what still has to happen after (for example, someone still has to carry the changes out).${o.diff ? `
+${o.accepted ? "**Now that it's approved:** one sentence on what still has to happen (for example, someone still has to carry the changes out)." : "**If you approve:** one sentence on what approving means and what still has to happen after (for example, someone still has to carry the changes out)."}${o.diff ? `
 **Changed since v${o.base}:**
 - one to three bullets` : ""}`,
   ]

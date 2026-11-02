@@ -171,6 +171,27 @@ describe("after approval", () => {
     expect(room.ensureBrief("plan", 1)).toBe(true);
   });
 
+  it("an export from before the event existed still counts", async () => {
+    const { room } = await underReview();
+    room.review("plan", "approve");
+    (room as any).log({ type: "aside", from: "assistant", text: "Exported plan to docs/old/plan.md.", kind: "note" });
+    expect(room.handoff("plan").path).toBe("docs/old/plan.md");
+    expect((room as any).exportPathFor("plan")).toBe("docs/old/plan.md");
+  });
+
+  it("an approved version's brief says what's left, not what approving would mean", async () => {
+    const r = setup({ member: author, chair: ["Agreed.\n>> accept: plan v1", "PASS"] });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    room.review("plan", "approve");
+    room.ensureBrief("plan", 1);
+    await room.settled();
+    const prompt = r.calls.filter((c) => c.agent === "assistant" && c.prompt.includes("Write them a brief")).at(-1)!.prompt;
+    expect(prompt).toContain("was approved, and the human is reading it again");
+    expect(prompt).toContain("**Now that it's approved:**");
+  });
+
   it("without an export, the mail points at the channel's own copy", async () => {
     const { room } = await underReview();
     room.review("plan", "approve");

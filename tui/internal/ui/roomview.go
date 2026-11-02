@@ -415,6 +415,8 @@ func renderAssistant(r *roomModel, th theme.Theme, width int, spin string) strin
 		b = append(b, head)
 	case r.busy["watch"] || r.busy["assistant"]:
 		b = append(b, fg(th.Muted).Italic(true).Render(spin+" assistant is catching up on the channel…"))
+	case r.busy["brief"]:
+		b = append(b, fg(th.Muted).Italic(true).Render(spin+" assistant is writing a brief of the document…"))
 	}
 	return strings.Join(b, "\n\n")
 }

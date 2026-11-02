@@ -376,7 +376,7 @@ export class Room {
     const answering = (w: FloorReason) => (w.replyTo ? ` answering #${w.replyTo}` : "") + (w.to ? ` (privately, to ${w.to})` : "") + (w.thread ? ` in thread #${w.thread}` : "");
     const speaking = [...this.running.values()];
     const queued = [...this.wants.values()];
-    const support = [...this.busy];
+    const support = [...this.busy].map((b) => (b === "brief" ? "assistant (writing a brief)" : b));
     const ws = this.workstreams();
     const open = ws.filter((w) => !w.settled);
     const docs = this.docs();
@@ -433,7 +433,7 @@ export class Room {
       if (!d) return;
       const text = this.store.readOutput(slug, version);
       const base = d.reviewed && d.reviewed < version ? d.reviewed : undefined;
-      const prompt = docBriefPrompt({ slug, version, text, topic: this.store.config().topic, ...(base ? { base, diff: unifiedDiff(this.store.readOutput(slug, base), text) } : {}) });
+      const prompt = docBriefPrompt({ slug, version, text, topic: this.store.config().topic, accepted: d.accepted === version, ...(base ? { base, diff: unifiedDiff(this.store.readOutput(slug, base), text) } : {}) });
       const brief = (await this.oneShot("assistant", prompt, ASSISTANT_SYSTEM))?.trim();
       if (brief && brief !== "NOTHING") this.log({ type: "doc.brief", slug, version, text: brief });
     });
@@ -500,7 +500,12 @@ export class Room {
 
   /** The project path a document was last exported to. */
   private exportedTo(slug: string): string | undefined {
-    for (const e of [...this.store.events()].reverse()) if (e.type === "doc.exported" && e.slug === slug) return e.path;
+    for (const e of [...this.store.events()].reverse()) {
+      if (e.type === "doc.exported" && e.slug === slug) return e.path;
+      // Exports from before the event existed were only noted as an aside.
+      const old = e.type === "aside" && e.kind === "note" ? /^Exported (\S+) to (\S+)\.$/.exec(e.text) : null;
+      if (old && old[1] === slug) return old[2];
+    }
     return undefined;
   }
 
