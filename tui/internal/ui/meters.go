@@ -127,11 +127,11 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 			byCLI[h.CLI] = h
 		}
 	}
-	barW := max(min(width-nameW-22, 10), 4)
+	barW := max(min(width-nameW-30, 10), 4)
 	var metered []string
 	for _, h := range names {
-		m, ok := byCLI[h]
-		if !ok || len(m.Windows) == 0 {
+		wins := r.harnessWindows(h)
+		if len(wins) == 0 {
 			// No quota reading: the room's own figure from the last turn, if the CLI reported one.
 			if q, ok := r.quota[h]; ok {
 				lines = append(lines, padRight(h, nameW)+" "+meterBar(th, q, barW)+fg(th.Muted).Render(fmt.Sprintf(" %d%%", int(q*100+0.5))))
@@ -140,26 +140,33 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 			}
 			continue
 		}
-		w := m.Windows[0]
-		line := padRight(h, nameW) + " " + meterBar(th, w.Used, barW) + fg(th.Muted).Render(fmt.Sprintf(" %d%% %s", int(w.Used*100+0.5), w.Label))
-		if when := untilReset(w.ResetsAt, now); when != "" {
-			line += fg(th.Subtle).Render(" · resets " + when)
-		}
-		if d, reset, ok := r.quotaMoved(h, w); ok && r.scope == scopeSitting {
-			line += fg(th.Info).Render(" · " + fmtMoved(d, reset))
-		}
-		// A longer window that's nearly spent matters more than the short one.
-		for _, x := range m.Windows[1:] {
+		// Every window, each with how far this sitting moved it: "5h 24% +11 · 7d 11% +1".
+		w := wins[0]
+		line := padRight(h, nameW) + " " + meterBar(th, w.Used, barW)
+		for i, x := range wins {
+			c := th.Muted
 			if x.Used >= 0.75 {
-				line += fg(th.Warn).Render(fmt.Sprintf(" · %s %d%%", x.Label, int(x.Used*100+0.5)))
+				c = th.Warn
 			}
+			sep := " "
+			if i > 0 {
+				sep = " · "
+			}
+			line += fg(th.Subtle).Render(sep) + fg(c).Render(fmt.Sprintf("%s %d%%", x.Label, int(x.Used*100+0.5)))
+			if d, reset, ok := r.quotaMoved(h, x); ok && r.scope == scopeSitting {
+				line += fg(th.Info).Render(" " + fmtMoved(d, reset))
+			}
+		}
+		if when := untilReset(w.ResetsAt, now); when != "" {
+			line += fg(th.Subtle).Render(" · " + w.Label + " resets " + when)
 		}
 		lines = append(lines, line)
 	}
-	// What this sitting, channel or project used: billed, and at API prices.
+	// What this sitting, channel or project used: money only where it's billed (pay-per-token
+	// harnesses); subscriptions show as quota above. API-price estimates are in alt+u.
 	if s := r.scoped(r.scope); s != nil && s.Total.Turns+s.Total.Input > 0 {
 		t := s.Total
-		line := fg(th.Text).Bold(true).Render(fmtUSD(t.USD)) + fg(th.Muted).Render(" billed · ") + fg(th.Text).Bold(true).Render("≈"+fmtUSD(t.ListUSD)) + fg(th.Muted).Render(" at API · "+fmtTok(t.Input+t.Output)+" tok")
+		line := fg(th.Text).Bold(true).Render(fmtUSD(t.USD)) + fg(th.Muted).Render(" billed "+scopeNames[r.scope]+" · "+fmtTok(t.Input+t.Output)+" tok")
 		lines = append(lines, line+fg(th.Subtle).Render("  alt+v · alt+u"))
 	} else if r.scope == scopeProject && r.project == nil {
 		lines = append(lines, fg(th.Subtle).Italic(true).Render("adding up the project…"))
@@ -187,4 +194,58 @@ func budgetLines(r *roomModel, th theme.Theme, width, n int, now time.Time) []st
 		lines = lines[:n]
 	}
 	return lines
+}
+
+// harnessWindows are a harness's quota windows: the ones it reported with its latest turn, else
+// OpenUsage's reading.
+func (r *roomModel) harnessWindows(cli string) []rpc.QuotaWindow {
+	if w := r.windows[cli]; len(w) > 0 {
+		return w
+	}
+	if r.meters != nil {
+		for _, h := range r.meters.Harnesses {
+			if h.CLI == cli {
+				return h.Windows
+			}
+		}
+	}
+	return nil
+}
+
+// quotaShare is a subscription member's rough share of its harness's shortest quota window this
+// sitting: how far the window moved since the sitting began, split by each member's share of the
+// harness's tokens at API prices (the vendors don't report it per turn).
+func (r *roomModel) quotaShare(id, cli string) (string, bool) {
+	wins := r.harnessWindows(cli)
+	if r.usage == nil || len(wins) == 0 {
+		return "", false
+	}
+	d, _, ok := r.quotaMoved(cli, wins[0])
+	if !ok {
+		return "", false
+	}
+	weight := func(l rpc.UsageLine) float64 {
+		if l.ListUSD > 0 {
+			return l.ListUSD
+		}
+		return float64(l.Input + l.Output)
+	}
+	var mine, all float64
+	for _, l := range r.usage.Sitting.ByAgent {
+		if l.CLI != cli {
+			continue
+		}
+		all += weight(l)
+		if l.ID == id {
+			mine = weight(l)
+		}
+	}
+	if all == 0 || mine == 0 {
+		return "", false
+	}
+	pct := max(d, 0) * mine / all * 100
+	if pct < 1 {
+		return "<1% " + wins[0].Label, true
+	}
+	return fmt.Sprintf("≈%d%% %s", int(pct+0.5), wins[0].Label), true
 }

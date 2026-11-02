@@ -2,7 +2,8 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLines } from "./spawn.js";
-import type { AgentEvent, AgentTransport, SendOptions } from "./types.js";
+import type { QuotaWindow } from "../usage.js";
+import type { AgentEvent, AgentTransport, SendOptions, UsageLimit } from "./types.js";
 
 /** Maps one `claude -p --output-format stream-json` line to zero or more normalized events. */
 export function mapClaudeLine(line: string): AgentEvent[] {
@@ -23,16 +24,8 @@ export function mapClaudeLine(line: string): AgentEvent[] {
       }
       return [];
     }
-    case "rate_limit_event": {
-      const info = j.rate_limit_info;
-      return [
-        {
-          type: "usage",
-          rateLimited: info?.status !== "allowed",
-          quotaUtilization: info?.unifiedWindows?.five_hour?.utilization,
-        },
-      ];
-    }
+    case "rate_limit_event":
+      return [claudeLimit(j.rate_limit_info)];
     case "result": {
       if (j.is_error) return [{ type: "error", message: String(j.result ?? j.subtype) }];
       const u = j.usage ?? {};
@@ -126,4 +119,38 @@ export class ClaudeTransport implements AgentTransport {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     }
   }
+}
+
+const WINDOW_LABEL: Record<string, string> = { five_hour: "5h", seven_day: "7d" };
+const iso = (secs: unknown) => (typeof secs === "number" ? new Date(secs * 1000).toISOString() : undefined);
+
+/**
+ * Reads Claude Code's rate_limit_event. Its status is "allowed", "allowed_warning" (close to a
+ * limit) or "rejected"; a rejection with errorCode "credits_required" means the model is billed to
+ * usage credits that have run out, not that a subscription window is used up.
+ */
+export function claudeLimit(info: any): AgentEvent {
+  const windows: QuotaWindow[] = [];
+  for (const [k, w] of Object.entries<any>(info?.unifiedWindows ?? {})) {
+    if (typeof w?.utilization !== "number") continue;
+    windows.push({ label: WINDOW_LABEL[k] ?? k.replace(/_/g, " "), used: w.utilization, ...(iso(w.resetsAt) ? { resetsAt: iso(w.resetsAt)! } : {}) });
+  }
+  windows.sort((a, b) => (a.label === "5h" ? -1 : b.label === "5h" ? 1 : 0));
+  const status = String(info?.status ?? "allowed");
+  const resetsAt = iso(info?.resetsAt);
+  const window = info?.rateLimitType ? String(info.rateLimitType) : undefined;
+  const limit: UsageLimit | undefined =
+    status === "rejected"
+      ? info?.errorCode === "credits_required" || (!window && info?.overageDisabledReason === "out_of_credits")
+        ? { kind: "credits" }
+        : { kind: "window", ...(window ? { window } : {}), ...(resetsAt ? { resetsAt } : {}) }
+      : status === "allowed_warning"
+        ? { kind: "warning", ...(window ? { window } : {}), ...(resetsAt ? { resetsAt } : {}) }
+        : undefined;
+  return {
+    type: "usage",
+    ...(limit && limit.kind !== "warning" ? { rateLimited: true } : {}),
+    ...(limit ? { limit } : {}),
+    ...(windows.length ? { quotaUtilization: windows[0].used, windows } : {}),
+  };
 }

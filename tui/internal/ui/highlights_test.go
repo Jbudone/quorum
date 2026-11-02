@@ -75,3 +75,15 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 		t.Fatalf("typing after the spotlight: %q", v)
 	}
 }
+
+func TestHeldMembersShowInTheRosterUntilReleased(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	h.event(rpc.RoomEvent{Type: "budget", Seq: 960, Level: "hold", CLI: "mock", Members: []string{"perf-researcher"}, Detail: "fable is out of usage credits; perf-researcher sits out. Switch their model (alt+o or /swap), or add credits and resume."})
+	s := h.screen()
+	contains(t, s, "⏸ perf-researcher sitting out a limit")
+	contains(t, s, "Limit: fable is out of usage credits")
+	h.event(rpc.RoomEvent{Type: "budget", Seq: 961, Level: "release", CLI: "mock", Members: []string{"perf-researcher"}, Detail: "perf-researcher is back on mock sonnet"})
+	lacks(t, h.screen(), "sitting out a limit")
+}

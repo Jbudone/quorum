@@ -117,6 +117,10 @@ type roomModel struct {
 	asking  bool
 	answer  string // the assistant's answer as it streams
 	quota   map[string]float64
+	// windows: the quota windows each harness reported with its latest turn (fresher than meters).
+	windows map[string][]rpc.QuotaWindow
+	// held: members sitting out a vendor limit, and why.
+	held    map[string]string
 	usage   *rpc.UsageReport // this sitting and the whole channel
 	project *rpc.UsageScope  // every channel in the project, once asked for
 	scope   int              // which the budget column shows: 0 this sitting, 1 the channel, 2 the project
@@ -138,7 +142,7 @@ func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest, status: s.Status,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
-		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, usage: s.Usage, calm: calm,
+		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, windows: map[string][]rpc.QuotaWindow{}, held: map[string]string{}, usage: s.Usage, calm: calm,
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -220,6 +224,9 @@ func (r *roomModel) apply(ev rpc.Event) {
 		if v.QuotaUtilization != nil {
 			r.quota[v.CLI] = *v.QuotaUtilization
 		}
+		if len(v.Windows) > 0 {
+			r.windows[v.CLI] = v.Windows
+		}
 	case rpc.RoomSpend:
 		u := v.Usage
 		r.usage = &u
@@ -291,7 +298,18 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 	case "thread.summary":
 		r.thread(e.Thread).summary = e.Text
 	case "budget":
-		r.asides = append(r.asides, noteItem{kind: "system", text: "Budget " + e.Level + ": " + e.Detail})
+		switch e.Level {
+		case "hold":
+			for _, m := range e.Members {
+				r.held[m] = e.Detail
+			}
+		case "release":
+			for _, m := range e.Members {
+				delete(r.held, m)
+			}
+		}
+		label := map[string]string{"hold": "Limit", "release": "Limit lifted", "warn": "Budget warning", "stop": "Budget stop"}[e.Level]
+		r.asides = append(r.asides, noteItem{kind: "system", text: orDefault(label, "Budget") + ": " + e.Detail})
 	case "message":
 		r.authors[e.Seq] = e.From
 		r.texts[e.Seq] = e.Text

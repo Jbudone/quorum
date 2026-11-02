@@ -53,6 +53,8 @@ type (
 
 		Level  string `json:"level"`
 		Detail string `json:"detail"`
+		// budget hold: when the held members are back (none: when their model is switched).
+		Until string `json:"until"`
 
 		// Floor decisions: who was given the next turn, and why.
 		Picks []RoomPick `json:"picks"`
@@ -233,6 +235,10 @@ type (
 		CLI              string   `json:"cli"`
 		QuotaUtilization *float64 `json:"quotaUtilization"`
 		RateLimited      bool     `json:"rateLimited"`
+		// Windows: every quota window the CLI reported with the turn (5h, 7d), shortest first.
+		Windows []QuotaWindow `json:"windows"`
+		// Limit: "warning", "window" (a used-up window) or "credits" (a model out of usage credits).
+		Limit string `json:"limit"`
 	}
 	AssistantDelta struct {
 		Delta string `json:"delta"`

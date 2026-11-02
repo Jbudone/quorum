@@ -222,11 +222,16 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 	case "agent.swapped":
 		out = event("⇄", th.Info, fmt.Sprintf("%s now runs on %s", e.Agent, strings.TrimSpace(e.CLI+" "+e.Model)))
 	case "budget":
-		c := th.Warn
-		if e.Level == "stop" {
+		c, glyph := th.Warn, "$"
+		switch e.Level {
+		case "stop":
 			c = th.Err
+		case "hold":
+			c, glyph = th.Warn, "⏸"
+		case "release":
+			c, glyph = th.OK, "▶"
 		}
-		out = event("$", c, e.Detail)
+		out = event(glyph, c, e.Detail)
 	case "paused":
 		out = fg(th.Warn).Bold(true).Render("❚❚ paused — "+e.Reason) + " " + fg(th.Subtle).Render(clock(e.TS))
 	case "resumed":
@@ -501,6 +506,8 @@ func renderRoomRoster(r *roomModel, th theme.Theme, width int, spin string) stri
 				doing += fmt.Sprintf(" in thread #%d", t.thread)
 			}
 			parts = append(parts, fg(th.Accent2).Render(spin)+" "+name+fg(th.Muted).Italic(true).Render(" "+doing))
+		} else if _, held := r.held[a.ID]; held {
+			parts = append(parts, fg(th.Warn).Render("⏸ ")+name+fg(th.Muted).Italic(true).Render(" sitting out a limit"))
 		} else {
 			parts = append(parts, fg(th.Subtle).Render("○ ")+name)
 		}

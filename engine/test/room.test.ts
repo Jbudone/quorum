@@ -172,7 +172,7 @@ describe("Room floor", () => {
     const transports = (spec: { id: string }): AgentTransport => ({
       id: spec.id,
       async *send(): AsyncIterable<AgentEvent> {
-        yield { type: "error", message: "rate limited" };
+        yield { type: "error", message: "connection reset" };
       },
     });
     const room = r.create({ transports, agents: AGENTS.slice(0, 1) });
@@ -180,7 +180,7 @@ describe("Room floor", () => {
     room.resume();
     await room.settled();
     expect(room.state).toBe("idle");
-    expect(room.store.events().find((e) => e.type === "turn.failed")).toMatchObject({ agent: "arch", message: "rate limited" });
+    expect(room.store.events().find((e) => e.type === "turn.failed")).toMatchObject({ agent: "arch", message: "connection reset" });
     expect(room.store.agentState("arch")).toMatchObject({ turns: 1 });
     expect(room.store.agentState("arch").sessionId).toBeUndefined();
   });

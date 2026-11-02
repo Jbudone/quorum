@@ -114,6 +114,8 @@ export interface RoomOptions {
   price?: (cli: string, model?: string) => { input: number; output: number; billed: boolean } | undefined;
   /** The model a harness runs by default, filled into suggestions that don't name one (see models.defaultModel). */
   defaultModel?: (cli: string) => string | undefined;
+  /** How long a "second" of pacing and backoff lasts; tests shrink it. Default 1000 ms. */
+  secondMs?: number;
 }
 
 export interface NewRoom extends RoomOptions, Partial<RoomTuning> {
@@ -259,6 +261,20 @@ export class Room {
   /** Latest quota fraction each CLI reported; a CLI that reports one is limited by it instead of the turn cap. */
   private readonly quota = new Map<string, number>();
   private readonly warned = new Set<string>();
+  /** CLIs that said they're close to a limit: their members' turns are spaced out. */
+  private readonly nearLimit = new Set<string>();
+  /**
+   * Members who sit out a vendor limit, keyed by "cli" (a used-up quota window) or "cli model" (a
+   * model whose usage credits ran out): until when (none: until the model is switched or the human
+   * resumes), and why.
+   */
+  private readonly holds = new Map<string, { until?: number; why: string }>();
+  /** Earliest each CLI may start another member turn: turns slow down as its quota fills. */
+  private readonly nextTurn = new Map<string, number>();
+  /** How long the next generic rate-limit backoff lasts, per CLI; doubles each time, reset by a turn that works. */
+  private readonly backoff = new Map<string, number>();
+  private wakeTimer?: ReturnType<typeof setTimeout>;
+  private wakeAtMs?: number;
   private readonly busy = new Set<SupportRole | "watch" | "brief">();
   /** Why the room is paused, for the status line. */
   private pausedFor: string | undefined;
@@ -384,12 +400,19 @@ export class Room {
     const review = docs.filter(awaitingReview);
     const pending = this.pending().length;
     const latest = docs.at(-1);
+    const held = this.members().flatMap((m) => {
+      const h = this.holdOf(m);
+      return h ? [`${m} (${h.why}${h.until ? `, until ${clock(h.until)}` : ", until its model is switched or credits are added"})`] : [];
+    });
+    const paced = [...this.nextTurn].filter(([, t]) => t > Date.now()).map(([cli]) => cli);
     const state = this._state === "paused" ? `paused${this.pausedFor ? ` (${this.pausedFor})` : ""}` : this._state === "idle" ? "idle (nobody is speaking or queued)" : "running";
     const detail = [
       `Room: ${state}${this._state !== "paused" && this.pauseWhenDone ? `, pausing once the turns underway finish (${this.pauseWhenDone})` : ""}.`,
       `Mid-turn now: ${speaking.length ? speaking.map((r) => r.agent + answering(r.why)).join("; ") : "nobody"}.`,
       `Queued to speak next: ${queued.length ? queued.map((w) => `${w.agent}${answering(w)}${w.why ? ` — ${w.why}` : ""}`).join("; ") : "nobody"}.`,
       support.length ? `Support roles working: ${support.join(", ")}.` : "",
+      held.length ? `Sitting out a usage limit: ${held.join("; ")}.` : "",
+      paced.length ? `Turns spaced out to respect quota: ${paced.join(", ")}.` : "",
       ws.length ? `Workstreams: ${ws.map((w) => `#${w.thread} ${w.title} (${w.settled ? "settled" : "open"})`).join("; ")}.` : "",
       docs.length
         ? `Documents: ${docs.map((d) => `${d.slug} v${d.version}${d.by ? ` by ${d.by}` : ""}${d.accepted ? `, v${d.accepted} accepted` : ", not accepted"}${awaitingReview(d) ? `, v${d.ready} waiting for the human's review` : ""}${d.reviewed ? `, human last reviewed v${d.reviewed}` : ""}`).join("; ")}.`
@@ -414,6 +437,8 @@ export class Room {
       head,
       this._state !== "paused" && queued.length ? `${queued.length} queued` : "",
       this._state !== "paused" && this.pauseWhenDone ? "pausing when they finish" : "",
+      held.length ? `${held.length} sitting out a limit` : "",
+      this._state !== "paused" && paced.length ? `${paced.join(", ")} paced` : "",
       open.length ? `${open.map((w) => `#${w.thread}`).join(" ")} open` : "",
       latest && !review.length ? `${latest.slug} v${latest.version}` : "",
     ].filter(Boolean);
@@ -698,6 +723,14 @@ export class Room {
     if (this._state !== "paused") return;
     this.turnsByCli = new Map();
     this.warned.clear();
+    this.nearLimit.clear();
+    // Resuming is the human saying "try again": holds that wait on them (used-up credits) lift.
+    for (const [k, h] of [...this.holds]) {
+      if (h.until !== undefined) continue;
+      const back = this.members().filter((m) => this.holdOf(m) === h);
+      this.holds.delete(k);
+      if (back.length) this.log({ type: "budget", level: "release", cli: k.split(" ")[0], detail: `trying ${back.join(", ")} again`, members: back });
+    }
     this.supportAbort = new AbortController();
     this.log({ type: "resumed" });
     this.setState("running");
@@ -1040,6 +1073,7 @@ export class Room {
     }
     const spec = c.agents.find((a) => a.id === id);
     if (!spec) throw new Error(`no member "${id}"`);
+    const wasHeld = Boolean(this.holdOf(id));
     const next: AgentSpec = { ...spec, cli };
     if (model) next.model = model;
     else delete next.model;
@@ -1049,6 +1083,11 @@ export class Room {
     const known = ws.members().find((m) => m.id === id);
     if (known) ws.saveMember({ ...known, cli, ...(model ? { model } : { model: undefined }) });
     this.log({ type: "agent.swapped", agent: id, cli, ...(model ? { model } : {}), was: { cli: spec.cli, ...(spec.model ? { model: spec.model } : {}) } });
+    // On a model that isn't limited, a held member is back at once.
+    if (wasHeld && !this.holdOf(id)) {
+      this.log({ type: "budget", level: "release", cli, detail: `${id} is back on ${[cli, model].filter(Boolean).join(" ")}`, members: [id] });
+      this.kick();
+    }
   }
 
   /** Lets one member search and fetch the web from its next turn, or takes that away. */
@@ -1275,6 +1314,8 @@ export class Room {
     const fresh = this.store.events().slice(after).filter((e): e is MessageEvent => e.type === "message");
     this.store.setMeta({ floorSeq: this.store.lastSeq });
     const members = this.members().filter((m) => !this.leaving.has(m));
+    // Members held by a vendor limit aren't offered to the floor; a direct question still queues for them.
+    const free = members.filter((m) => !this.holdOf(m));
     const direct: FloorPick[] = [];
     for (const e of fresh) {
       for (const m of mentioned(e, members)) {
@@ -1302,7 +1343,7 @@ export class Room {
           .decide(
             {
               view: this.view(),
-              members: members.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
+              members: free.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
               speaking: this.speaking,
               queued: [...new Set([...this.wants.values()].map((w) => w.agent))],
               fresh: pub,
@@ -1323,7 +1364,7 @@ export class Room {
         // The human is never left unanswered: if nobody was picked or summoned, whoever has spoken
         // least recently in this conversation takes it.
         if (!chosen.length && last.from === "human" && !direct.some((x) => (x.thread ?? 0) === thread)) {
-          const quiet = this.leastRecent(members, thread);
+          const quiet = this.leastRecent(free, thread);
           if (quiet) chosen.push({ agent: quiet, replyTo: last.seq, why: "the human asked and nobody else picked it up", ...(thread ? { thread } : {}) });
         }
         if (this._state !== "paused") for (const p of chosen) this.want(p);
@@ -1387,6 +1428,7 @@ export class Room {
     }
     const { parallel, turnCap } = this.store.config();
     const blocked: string[] = [];
+    let waiting = false;
     for (const [key, w] of [...this.wants]) {
       if (this.running.size >= parallel) break;
       if (!this.personas.has(w.agent) || this.leaving.has(w.agent)) {
@@ -1395,19 +1437,34 @@ export class Room {
       }
       if (this.running.has(key)) continue;
       const { cli } = this.spec(w.agent);
+      // A member held by a vendor limit keeps its place in the queue until the limit lifts.
+      const held = this.holdOf(w.agent);
+      if (held) {
+        if (held.until) waiting = true;
+        continue;
+      }
+      // Near a limit, turns on that CLI are spaced out rather than run as fast as allowed.
+      const next = this.nextTurn.get(cli) ?? 0;
+      if (next > Date.now()) {
+        this.wakeAt(next);
+        waiting = true;
+        continue;
+      }
       if (this.capped(cli)) {
         blocked.push(w.agent);
         continue;
       }
       this.wants.delete(key);
       this.turnsByCli.set(cli, (this.turnsByCli.get(cli) ?? 0) + 1);
+      const pace = this.paceMs(cli);
+      if (pace) this.nextTurn.set(cli, Date.now() + pace);
       const ctrl = new AbortController();
       this.running.set(key, { agent: w.agent, ctrl, why: w });
       void this.turn(w.agent, ctrl, w);
     }
     this.saveWants();
     this.emitStatus();
-    if (this.running.size || this.deciding) return this.setState("running");
+    if (this.running.size || this.deciding || waiting) return this.setState("running");
     if (blocked.length) {
       const clis = [...new Set(blocked.map((a) => this.spec(a).cli))];
       return this.pause(`turn cap reached (${turnCap} turns each for ${clis.join(", ")})`);
@@ -1487,7 +1544,7 @@ export class Room {
             text = "";
             this.emit({ event: "room.turn.tool", data: { agent, name: e.name, ...tag } });
           } else if (e.type === "usage") {
-            this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
+            this.usage(agent, spec, e);
             this.spent(agent, spec, e);
             traced.usage(e);
           } else if (e.type === "done" && e.sessionId) {
@@ -1525,7 +1582,14 @@ export class Room {
       this.settle();
       return;
     }
-    if (failed && !reply) {
+    if (failed && !reply) this.limitFrom(agent, spec, failed);
+    else this.backoff.delete(spec.cli);
+    if (failed && !reply && this.holdOf(agent)) {
+      // Refused for a limit: the member keeps its place and speaks once the limit lifts.
+      this.wants.set(key, { ...why, agent });
+      this.saveWants();
+      sessionId = st.sessionId;
+    } else if (failed && !reply) {
       this.log({ type: "turn.failed", agent, message: failed });
       // A vendor session that broke the turn is dropped; the next turn rebuilds context from the log.
       sessionId = undefined;
@@ -1606,24 +1670,129 @@ export class Room {
     return report(this.store.usageRows(), this.store.sittings(), legacyTally(this.store.spend()));
   }
 
-  /** Quota reports drive the hard budget: warn once per resume, pause at the stop line. */
-  private usage(agent: string, cli: string, q: number | undefined, rateLimited: boolean | undefined): void {
-    if (q === undefined && !rateLimited) return;
-    this.emit({ event: "room.usage", data: { agent, cli, quotaUtilization: q, rateLimited } });
-    const { quotaWarn, quotaStop } = this.store.config();
-    if (rateLimited) {
-      this.log({ type: "budget", level: "stop", cli, detail: `${cli} is rate limited` });
-      return this.pause(`budget: ${cli} is rate limited`);
+  /**
+   * Quota reports and vendor limits. A used-up window holds that CLI's members until it resets; a
+   * model out of usage credits holds the members on it until it's switched; closeness to a limit
+   * spaces turns out. Only the members affected sit out, and the room pauses only when nobody's left.
+   * The quota stop line still pauses the room, so a subscription isn't spent to the end.
+   */
+  private usage(agent: string, spec: { cli: string; model?: string }, e: Extract<AgentEvent, { type: "usage" }>): void {
+    const cli = spec.cli;
+    // The window closest to running out is the one that matters (the 7-day one can be fuller than the 5-hour one).
+    const q = e.windows?.length ? Math.max(...e.windows.map((w) => w.used)) : e.quotaUtilization;
+    if (q === undefined && !e.rateLimited && !e.limit) return;
+    this.emit({
+      event: "room.usage",
+      data: { agent, cli, quotaUtilization: q, rateLimited: e.rateLimited, ...(e.windows ? { windows: e.windows } : {}), ...(e.limit ? { limit: e.limit.kind } : {}) },
+    });
+    if (e.limit?.kind === "credits") return this.hold(`${cli} ${spec.model ?? ""}`.trim(), undefined, `${spec.model ?? cli} is out of usage credits`, agent);
+    if (e.limit?.kind === "window" || (e.rateLimited && !e.limit)) {
+      const at = e.limit?.resetsAt ? Date.parse(e.limit.resetsAt) : NaN;
+      const until = Number.isFinite(at) && at > Date.now() ? at : Date.now() + this.nextBackoff(cli);
+      return this.hold(cli, until, `${cli} reached its ${windowName(e.limit?.window)}`, agent);
     }
-    this.quota.set(cli, q!);
-    const pct = Math.round(q! * 100);
-    if (q! >= quotaStop) {
+    if (e.limit?.kind === "warning" && !this.nearLimit.has(cli)) {
+      this.nearLimit.add(cli);
+      this.log({ type: "budget", level: "warn", cli, detail: `${cli} says it's close to its ${windowName(e.limit.window)}; turns on it are spaced out` });
+    }
+    if (q === undefined) return;
+    const { quotaWarn, quotaStop } = this.store.config();
+    this.quota.set(cli, q);
+    const pct = Math.round(q * 100);
+    if (q >= quotaStop) {
       this.log({ type: "budget", level: "stop", cli, detail: `${cli} is at ${pct}% of its quota window` });
       this.pause(`budget: ${cli} at ${pct}% of its quota window`);
       void this.watch(`the room paused because ${cli} reached ${pct}% of its quota`);
-    } else if (q! >= quotaWarn && !this.warned.has(cli)) {
+    } else if (q >= quotaWarn && !this.warned.has(cli)) {
       this.warned.add(cli);
       this.log({ type: "budget", level: "warn", cli, detail: `${cli} is at ${pct}% of its quota window` });
+    }
+  }
+
+  /** The limit a member is sitting out, if any. */
+  private holdOf(agent: string): { until?: number; why: string } | undefined {
+    if (!this.personas.has(agent)) return undefined;
+    const { cli, model } = this.spec(agent);
+    const now = Date.now();
+    for (const k of [`${cli} ${model ?? ""}`.trim(), cli]) {
+      const h = this.holds.get(k);
+      if (h && (h.until === undefined || h.until > now)) return h;
+    }
+    return undefined;
+  }
+
+  /** Holds the members on a CLI (or one model of it) for a vendor limit, and says so once. */
+  private hold(key: string, until: number | undefined, why: string, by: string): void {
+    const had = this.holds.get(key);
+    this.holds.set(key, { ...(until ? { until } : {}), why });
+    if (until) this.wakeAt(until);
+    if (had && (had.until === undefined) === (until === undefined)) return;
+    const who = this.members().filter((m) => this.holdOf(m));
+    const when = until ? ` until ${clock(until)}` : "";
+    const detail = who.length
+      ? `${why}; ${who.join(", ")} sit${who.length === 1 ? "s" : ""} out${when}.${until ? " The others carry on." : " Switch their model (alt+o or /swap), or add credits and resume."}`
+      : `${why}, so the ${by} can't run on it${when}.${until ? "" : " Switch its model with /swap."}`;
+    this.log({ type: "budget", level: "hold", cli: key.split(" ")[0], detail, ...(who.length ? { members: who } : {}), ...(until ? { until: new Date(until).toISOString() } : {}) });
+    if (!until && who.length) void this.watch(`${why}: ${who.join(", ")} can't take turns until their model is switched or credits are added`);
+    const left = this.members().filter((m) => !this.leaving.has(m) && !this.holdOf(m));
+    // A limit with a reset time is waited out; one that needs the human (credits) pauses once nobody's left.
+    if (!until && who.length && !left.length) this.pauseAfterTurns(`every member is held by a usage limit (${why})`);
+    this.emitStatus();
+  }
+
+  /** Recognises a limit in a failed turn's error, for CLIs that only say so there. */
+  private limitFrom(agent: string, spec: { cli: string; model?: string }, failed: string): void {
+    if (this.holdOf(agent)) return;
+    if (/out of (usage )?credits|credits_required|insufficient (credits|balance|funds)|payment required|\b402\b/i.test(failed))
+      this.hold(`${spec.cli} ${spec.model ?? ""}`.trim(), undefined, `${spec.model ?? spec.cli} is out of credits`, agent);
+    else if (/rate.?limit|\b429\b|too many requests|overloaded|usage limit|quota (exceeded|exhausted)|resource.?exhausted/i.test(failed))
+      this.hold(spec.cli, Date.now() + this.nextBackoff(spec.cli), `${spec.cli} is throttling requests`, agent);
+  }
+
+  /** A backoff for limits that don't say when they lift: 1 minute, doubling to 30. */
+  private nextBackoff(cli: string): number {
+    const sec = this.o.secondMs ?? 1000;
+    const ms = this.backoff.get(cli) ?? 60 * sec;
+    this.backoff.set(cli, Math.min(ms * 2, 30 * 60 * sec));
+    return ms;
+  }
+
+  /**
+   * The gap between member turns on a CLI: none while its quota is comfortably below the warning
+   * line, growing from 20 seconds to two minutes between the warning and stop lines, and at least
+   * 30 seconds once the vendor says it's close to a limit.
+   */
+  private paceMs(cli: string): number {
+    const q = this.quota.get(cli);
+    const { quotaWarn, quotaStop } = this.store.config();
+    const sec = this.o.secondMs ?? 1000;
+    const near = this.nearLimit.has(cli) ? 30 * sec : 0;
+    if (q === undefined || q < quotaWarn) return near;
+    const f = Math.min(1, (q - quotaWarn) / Math.max(quotaStop - quotaWarn, 0.01));
+    return Math.max(near, Math.round((20 + f * 100) * sec));
+  }
+
+  /** Wakes the room at a time (the earliest asked for): limits that lift, paced turns that may start. */
+  private wakeAt(at: number): void {
+    if (this.wakeTimer && this.wakeAtMs !== undefined && this.wakeAtMs <= at) return;
+    if (this.wakeTimer) clearTimeout(this.wakeTimer);
+    this.wakeAtMs = at;
+    this.wakeTimer = setTimeout(() => {
+      this.wakeTimer = this.wakeAtMs = undefined;
+      this.releaseHolds();
+      this.kick();
+    }, Math.max(at - Date.now(), 0) + 50);
+    this.wakeTimer.unref?.();
+  }
+
+  /** Lifts holds whose time has come, and says who's back. */
+  private releaseHolds(): void {
+    const now = Date.now();
+    for (const [k, h] of [...this.holds]) {
+      if (h.until === undefined || h.until > now) continue;
+      this.holds.delete(k);
+      const back = this.members().filter((m) => !this.holdOf(m) && (this.spec(m).cli === k || `${this.spec(m).cli} ${this.spec(m).model ?? ""}`.trim() === k));
+      this.log({ type: "budget", level: "release", cli: k.split(" ")[0], detail: `${k}'s limit has lifted${back.length ? `; ${back.join(", ")} ${back.length === 1 ? "is" : "are"} back` : ""}`, ...(back.length ? { members: back } : {}) });
     }
   }
 
@@ -1798,7 +1967,7 @@ export class Room {
           text += e.delta;
           onDelta?.(e.delta);
         } else if (e.type === "usage") {
-          this.usage(id, spec.cli, e.quotaUtilization, e.rateLimited);
+          this.usage(id, spec, e);
           this.spent(id, spec, e);
           traced.usage(e);
         }
@@ -2043,6 +2212,20 @@ export class Room {
     });
   }
 }
+
+/** A vendor's window name in plain words: "five_hour" → "5-hour limit". */
+function windowName(w?: string): string {
+  if (!w) return "usage limit";
+  const m = /^(five|seven)_(hour|day)/.exec(w);
+  return m ? `${m[1] === "five" ? 5 : 7}-${m[2]} limit` : `${w.replace(/_/g, " ")} limit`;
+}
+
+/** A time of day, for saying when a limit lifts. */
+const clock = (ms: number) => {
+  const d = new Date(ms);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString([], sameDay ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+};
 
 /** Raises the room's opening topic and puts it in focus. */
 function openingTopic(store: RoomStore, topic: string): RoomEvent[] {

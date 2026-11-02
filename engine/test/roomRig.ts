@@ -100,14 +100,14 @@ export function rig(o: RigOptions = {}) {
   });
   const rooms: Room[] = [];
   const create = (extra: Partial<NewRoom> = {}) => {
-    const room = Room.create({ repo, transports, floor, topic: "pick a cache", agents: AGENTS.slice(0, 2), head: () => "abc123", ...extra });
+    const room = Room.create({ repo, transports, floor, topic: "pick a cache", agents: AGENTS.slice(0, 2), head: () => "abc123", secondMs: 1, ...extra });
     rooms.push(room);
     return room;
   };
   const memberCalls = () => calls.filter((c) => !SUPPORT_ROLES.includes(c.agent as never));
   const closeAll = () => Promise.all(rooms.splice(0).map((r) => r.close()));
   const open = (id: string, extra: Partial<NewRoom> = {}) => {
-    const room = Room.open(id, { repo, transports, floor, head: () => "abc123", ...extra });
+    const room = Room.open(id, { repo, transports, floor, head: () => "abc123", secondMs: 1, ...extra });
     rooms.push(room);
     return room;
   };

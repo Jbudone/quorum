@@ -60,7 +60,11 @@ export type RoomEventBody =
   | { type: "agent.web"; agent: string; on: boolean; by: string }
   | { type: "agent.swapped"; agent: string; cli: CliName; model?: string; was: { cli: CliName; model?: string } }
   | { type: "access.granted"; path: string; by: string }
-  | { type: "budget"; level: "warn" | "stop"; cli: string; detail: string };
+  /**
+   * A budget or vendor limit. "hold": members whose CLI or model hit a limit sit out (until `until`,
+   * or until someone switches their model); "release": they're back.
+   */
+  | { type: "budget"; level: "warn" | "stop" | "hold" | "release"; cli: string; detail: string; members?: string[]; until?: string };
 
 export type TagKind = "idea" | "critique" | "agreement" | "concession" | "question" | "evidence" | "decision";
 export const TAG_KINDS: TagKind[] = ["idea", "critique", "agreement", "concession", "question", "evidence", "decision"];

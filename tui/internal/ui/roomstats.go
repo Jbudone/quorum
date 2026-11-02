@@ -254,7 +254,16 @@ func memberLines(r *roomModel, th theme.Theme, width, n int) []string {
 			fg(th.Muted).Render(fmt.Sprintf(" %2d", m.said)) +
 			count(th.Info, "+", m.ideas) + count(th.Err, "✗", m.critiques) + count(th.Warn, "↻", m.conceded)
 		if l, ok := r.agentUsage(m.id); ok {
-			line += fg(th.Subtle).Render(" " + costOf(l.Tally))
+			// Billed members show money; subscription members show their share of the quota window.
+			cost := costOf(l.Tally)
+			if l.USD == 0 {
+				if share, ok := r.quotaShare(m.id, l.CLI); ok {
+					cost = share
+				} else if t := l.Input + l.Output; t > 0 {
+					cost = fmtTok(t) + " tok"
+				}
+			}
+			line += fg(th.Subtle).Render(" " + cost)
 		}
 		lines = append(lines, line)
 	}

@@ -33,10 +33,14 @@ func TestBudgetColumn(t *testing.T) {
 	}
 	now, _ := time.Parse(time.RFC3339, "2026-10-31T17:48:00Z")
 	out := ansi.Strip(strings.Join(budgetLines(r, theme.Default(), 60, 6, now), "\n"))
-	for _, w := range []string{"claude", "47% 5h", "resets in 3h12m", "7d 80%", "codex", "43% 5h", "OpenRouter", "$14.64 left of $30", "+12%", "$0.42 billed", "≈$1.90 at API"} {
+	for _, w := range []string{"claude", "5h 47% +12%", "5h resets in 3h12m", "7d 80%", "codex", "5h 43%", "OpenRouter", "$14.64 left of $30", "$0.42 billed this sitting"} {
 		if !strings.Contains(out, w) {
 			t.Fatalf("budget lacks %q:\n%s", w, out)
 		}
+	}
+	// Subscriptions show as quota, not as an API-price estimate.
+	if strings.Contains(out, "at API") {
+		t.Fatalf("budget shows API-price estimates:\n%s", out)
 	}
 	if strings.Contains(out, "agy") {
 		t.Fatalf("shows a harness nobody here uses:\n%s", out)
@@ -105,4 +109,31 @@ func TestUsageScreen(t *testing.T) {
 	// alt+v cycles the budget column.
 	h.press("alt+v")
 	contains(t, h.screen(), "BUDGET · THIS CHANNEL")
+}
+
+func TestSubscriptionMembersShowQuotaNotDollars(t *testing.T) {
+	sitting := rpc.UsageScope{ByAgent: []rpc.UsageLine{
+		{ID: "ideas", CLI: "claude", Tally: rpc.Tally{Turns: 4, Input: 90000, ListUSD: 15.69}},
+		{ID: "assistant", CLI: "claude", Role: "support", Tally: rpc.Tally{Turns: 9, Input: 30000, ListUSD: 5.23}},
+		{ID: "deep", CLI: "opencode", Tally: rpc.Tally{Turns: 3, USD: 0.42, ListUSD: 0.42}},
+	}}
+	usage := &rpc.UsageReport{Sitting: rpc.SittingScope{UsageScope: sitting, Quota: map[string][]rpc.QuotaWindow{"claude": {{Label: "5h", Used: 0.13, ResetsAt: "2026-11-02T22:00:00Z"}, {Label: "7d", Used: 0.10}}}}, Channel: sitting}
+	r := newRoom(rpc.RoomSnapshot{CLIs: []string{"claude", "opencode"}, Agents: []rpc.PresetAgent{{ID: "ideas", CLI: "claude"}, {ID: "deep", CLI: "opencode"}}, Usage: usage}, true)
+	// The latest turn reported both windows: they win over a polled reading, and the sitting moved 5h by 12 points.
+	q := 0.25
+	r.apply(rpc.Event{Name: "room.usage", Data: rpc.RoomUsage{Agent: "ideas", CLI: "claude", QuotaUtilization: &q, Windows: []rpc.QuotaWindow{{Label: "5h", Used: 0.25, ResetsAt: "2026-11-02T22:00:00Z"}, {Label: "7d", Used: 0.11}}}})
+	now, _ := time.Parse(time.RFC3339, "2026-11-02T19:00:00Z")
+	out := ansi.Strip(strings.Join(budgetLines(r, theme.Default(), 70, 6, now), "\n"))
+	for _, w := range []string{"5h 25% +12%", "7d 11% +1%", "5h resets in 3h00m"} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("budget lacks %q:\n%s", w, out)
+		}
+	}
+	// ideas used three quarters of claude's API-price weight this sitting: about 9 of the 12 points.
+	if s, ok := r.quotaShare("ideas", "claude"); !ok || s != "≈9% 5h" {
+		t.Fatalf("quota share %q %v", s, ok)
+	}
+	if _, ok := r.quotaShare("deep", "opencode"); ok {
+		t.Fatal("a billed member has no quota share")
+	}
 }

@@ -1,3 +1,17 @@
+import type { QuotaWindow } from "../usage.js";
+
+/**
+ * A limit the vendor reported. "warning": still allowed, but close to a limit, so slow down.
+ * "window": a quota window is used up until `resetsAt`. "credits": this model draws on usage credits
+ * (not the subscription) and they're used up, so it's out until someone adds credits or switches model.
+ */
+export interface UsageLimit {
+  kind: "warning" | "window" | "credits";
+  /** The vendor's name for the window, e.g. "five_hour". */
+  window?: string;
+  resetsAt?: string;
+}
+
 /** Normalized events every AgentTransport emits, regardless of vendor stream format. */
 export type AgentEvent =
   | { type: "text"; delta: string }
@@ -10,9 +24,13 @@ export type AgentEvent =
       cacheReadTokens?: number;
       /** Input written to the prompt cache, not counted in inputTokens. */
       cacheWriteTokens?: number;
+      /** True when the vendor refused the turn for a limit (see `limit` for which). */
       rateLimited?: boolean;
+      limit?: UsageLimit;
       /** Subscription quota used in the current window, 0..1, when the CLI reports it. */
       quotaUtilization?: number;
+      /** Every quota window the CLI reported (e.g. 5h and 7d), shortest first. */
+      windows?: QuotaWindow[];
       /** What the turn cost in USD, when the CLI reports it: billed on a pay-per-token harness, at list price on a subscription. */
       costUsd?: number;
     }
