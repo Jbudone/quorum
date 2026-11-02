@@ -17,6 +17,8 @@ export type RoomEventBody =
   | { type: "message"; from: string; to: Recipient; text: string; replyTo?: number; topic?: string; thread?: number }
   | { type: "pass"; from: string }
   | { type: "turn.failed"; agent: string; message: string }
+  /** A turn cut off before it finished (the room paused, or the member left); it's owed again on resume. */
+  | { type: "turn.aborted"; agent: string; reason: string; replyTo?: number; thread?: number }
   | { type: "paused"; reason: string }
   | { type: "resumed" }
   /** The human's private conversation with the assistant, and the assistant's own notes. Members never see these. */
@@ -44,6 +46,10 @@ export type RoomEventBody =
   | { type: "doc.ready"; slug: string; version: number; by: string }
   /** The human's feedback on a version under review: a question for its authors, or changes to make. */
   | { type: "doc.reviewed"; slug: string; version: number; action: "clarify" | "revise"; section?: string; text: string }
+  /** A channel document copied into the project. */
+  | { type: "doc.exported"; slug: string; version: number; path: string }
+  /** The assistant's plain-English brief of a version up for review, for a human who hasn't followed the room. */
+  | { type: "doc.brief"; slug: string; version: number; text: string }
   /** A workstream the human closed, e.g. by approving the document it fed into. */
   | { type: "workstream.closed"; thread: number; by: string }
   | { type: "docs.updated"; files: string[]; by: string }
@@ -384,6 +390,11 @@ export class RoomStore {
     return v;
   }
 
+  /** Where a document version is saved on disk. */
+  outputPath(slug: string, version: number): string {
+    return join(this.dir, "outputs", slug, `v${version}.md`);
+  }
+
   readOutput(slug: string, version?: number): string {
     const v = version ?? this.outputVersions(slug);
     if (!SLUG.test(slug) || v < 1) throw new Error(`no document "${slug}"`);
@@ -434,6 +445,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "budget":
     case "floor":
     case "tags":
+    case "doc.brief":
       return false;
     default:
       return true;

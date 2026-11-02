@@ -290,6 +290,9 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.waitFor("Export it to the project?", 10*time.Second)
 	tm.waitFor("docs/plan.md", 5*time.Second)
 	tm.send("\x1b") // skip the export
+	tm.waitFor("Hand it to the project's agents", 5*time.Second)
+	time.Sleep(200 * time.Millisecond)
+	tm.send("\x1b") // and the hand-off
 	time.Sleep(200 * time.Millisecond)
 	s := tm.waitFor("accepted by you", 10*time.Second)
 	for _, want := range []string{"↩ ", "RECENT", "DISCUSSIONS", "MEMBERS"} {

@@ -195,6 +195,14 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		out = event("✎", th.Accent2, fmt.Sprintf("%s %s v%d%s", what, e.Slug, e.Version, suffix(", ", e.Section)))
 	case "workstream.closed":
 		out = event("✓", th.OK, fmt.Sprintf("workstream #%d closed", e.Thread))
+	case "doc.exported":
+		out = event("⇪", th.OK, fmt.Sprintf("%s v%d exported to %s", e.Slug, e.Version, e.Path))
+	case "turn.aborted":
+		about := ""
+		if e.ReplyTo > 0 {
+			about = fmt.Sprintf(" (answering #%d)", e.ReplyTo)
+		}
+		out = event("✂", th.Muted, fmt.Sprintf("%s's turn%s was cut off: %s. It picks up again on resume.", e.Agent, about, e.Reason))
 	case "agent.joined":
 		out = event("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
 	case "agent.left":

@@ -38,6 +38,11 @@ export interface SendOptions {
   systemPrompt?: string;
   /** Read-only repo access (default true). */
   readOnly?: boolean;
+  /**
+   * No tools at all: for support calls that work only from their prompt. Honored where the CLI can
+   * turn tools off; elsewhere it falls back to read-only.
+   */
+  noTools?: boolean;
   signal?: AbortSignal;
   /** Extra MCP server for this turn; only honored by transports with `supportsMcp`. */
   mcp?: McpServerSpec;

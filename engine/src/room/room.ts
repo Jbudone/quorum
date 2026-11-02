@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
@@ -28,6 +29,7 @@ import {
   PERSONA_SYSTEM,
   BRIEF_SYSTEM,
   briefPrompt,
+  docBriefPrompt,
   renderEvent,
   renderEvents,
   reviseIndependent,
@@ -74,7 +76,7 @@ export type RoomEmit =
   | { event: "room.turn.tool"; data: { agent: string; name: string; thread?: number } }
   | { event: "room.turn.end"; data: { agent: string; thread?: number } }
   /** A support role started or stopped working, so the human can see it isn't stuck. */
-  | { event: "room.support"; data: { role: SupportRole | "watch"; busy: boolean } }
+  | { event: "room.support"; data: { role: SupportRole | "watch" | "brief"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
   /** What a member has used in this channel so far, after each of its turns. */
   | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } }
@@ -256,11 +258,15 @@ export class Room {
   /** Latest quota fraction each CLI reported; a CLI that reports one is limited by it instead of the turn cap. */
   private readonly quota = new Map<string, number>();
   private readonly warned = new Set<string>();
-  private readonly busy = new Set<SupportRole | "watch">();
+  private readonly busy = new Set<SupportRole | "watch" | "brief">();
   /** Why the room is paused, for the status line. */
   private pausedFor: string | undefined;
   private lastStatus = "";
   private supportAbort = new AbortController();
+  /** The suggestion being carried out right now, so what it does doesn't withdraw it. */
+  private resolving?: number;
+  /** Set when the room should pause once the turns underway finish (the assistant's pause). */
+  private pauseWhenDone?: string;
   private mailTimer?: ReturnType<typeof setInterval>;
   /** Run once, the next time the room resumes. */
   private resumeHooks: (() => void)[] = [];
@@ -379,7 +385,7 @@ export class Room {
     const latest = docs.at(-1);
     const state = this._state === "paused" ? `paused${this.pausedFor ? ` (${this.pausedFor})` : ""}` : this._state === "idle" ? "idle (nobody is speaking or queued)" : "running";
     const detail = [
-      `Room: ${state}.`,
+      `Room: ${state}${this._state !== "paused" && this.pauseWhenDone ? `, pausing once the turns underway finish (${this.pauseWhenDone})` : ""}.`,
       `Mid-turn now: ${speaking.length ? speaking.map((r) => r.agent + answering(r.why)).join("; ") : "nobody"}.`,
       `Queued to speak next: ${queued.length ? queued.map((w) => `${w.agent}${answering(w)}${w.why ? ` — ${w.why}` : ""}`).join("; ") : "nobody"}.`,
       support.length ? `Support roles working: ${support.join(", ")}.` : "",
@@ -406,6 +412,7 @@ export class Room {
     const bits = [
       head,
       this._state !== "paused" && queued.length ? `${queued.length} queued` : "",
+      this._state !== "paused" && this.pauseWhenDone ? "pausing when they finish" : "",
       open.length ? `${open.map((w) => `#${w.thread}`).join(" ")} open` : "",
       latest && !review.length ? `${latest.slug} v${latest.version}` : "",
     ].filter(Boolean);
@@ -416,7 +423,34 @@ export class Room {
   private readyForReview(slug: string, version: number, by: string): void {
     this.log({ type: "doc.ready", slug, version, by });
     this.pause(`ready for review: ${slug} v${version}`);
-    void this.watch(`${slug} v${version} is up for the human's review and the room paused`);
+    void this.writeBrief(slug, version);
+  }
+
+  /** The assistant's plain-English brief of a version up for review, shown above the document. */
+  private writeBrief(slug: string, version: number): Promise<void> {
+    return this.job("brief", async () => {
+      const d = this.docs().find((x) => x.slug === slug);
+      if (!d) return;
+      const text = this.store.readOutput(slug, version);
+      const base = d.reviewed && d.reviewed < version ? d.reviewed : undefined;
+      const prompt = docBriefPrompt({ slug, version, text, topic: this.store.config().topic, ...(base ? { base, diff: unifiedDiff(this.store.readOutput(slug, base), text) } : {}) });
+      const brief = (await this.oneShot("assistant", prompt, ASSISTANT_SYSTEM))?.trim();
+      if (brief && brief !== "NOTHING") this.log({ type: "doc.brief", slug, version, text: brief });
+    });
+  }
+
+  /** Writes a brief for a version up for review or accepted that has none yet (one opened before briefs existed). */
+  ensureBrief(slug: string, version: number): boolean {
+    const d = this.docs().find((x) => x.slug === slug);
+    if (!d || this.briefOf(slug, version) || (version !== d.ready && version !== d.accepted)) return false;
+    void this.writeBrief(slug, version);
+    return true;
+  }
+
+  /** The brief of a document version, if the assistant wrote one. */
+  briefOf(slug: string, version: number): string | undefined {
+    for (const e of [...this.store.events()].reverse()) if (e.type === "doc.brief" && e.slug === slug && e.version === version) return e.text;
+    return undefined;
   }
 
   /**
@@ -439,7 +473,7 @@ export class Room {
         this.pausedFor = `${slug} v${version} accepted`;
         this.emitStatus();
       }
-      return { version, exportPath: `docs/${slug}.md` };
+      return { version, exportPath: this.exportPathFor(slug) };
     }
     const text = (o.text ?? "").trim();
     if (!text) throw new Error(action === "revise" ? "say what to change" : "ask something first");
@@ -456,6 +490,40 @@ export class Room {
     this.post(body.trim());
     if (this._state === "paused") this.resume();
     return { version };
+  }
+
+  /** Where to export a document: where a pending suggestion or an earlier export put it, else docs/<slug>.md. */
+  private exportPathFor(slug: string): string {
+    const suggested = this.pending().find((s) => s.action === "export" && slugify(s.args[0] ?? "") === slug)?.args[1];
+    return suggested || this.exportedTo(slug) || `docs/${slug}.md`;
+  }
+
+  /** The project path a document was last exported to. */
+  private exportedTo(slug: string): string | undefined {
+    for (const e of [...this.store.events()].reverse()) if (e.type === "doc.exported" && e.slug === slug) return e.path;
+    return undefined;
+  }
+
+  /**
+   * Hands an approved document to the project's agents: mail asking them to carry it out, with the
+   * brief, pointing at the exported copy (or the channel's own copy when it wasn't exported).
+   */
+  handoff(slug: string, to = "all", note = ""): { file: string; path: string } {
+    const d = this.docs().find((x) => x.slug === slugify(slug));
+    if (!d) throw new Error(`no document "${slug}"`);
+    const version = d.accepted ?? d.version;
+    const path = this.exportedTo(d.slug) ?? relative(this.o.repo, this.store.outputPath(d.slug, version));
+    const brief = this.briefOf(d.slug, version);
+    const body = [
+      `The human approved ${d.slug} v${version} in the Quorum channel "${this.channelName()}" and is handing it to you. Read it: ${path}`,
+      brief ? `In brief:\n\n${brief}` : "",
+      note.trim(),
+      "Carry out what it proposes that you agree is worth doing, and say why for anything you skip. Work in a worktree if the project uses them, run the tests, and reply to `quorum` with what you changed.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const file = this.sendMail(to, `Carry out ${d.slug} v${version}`, body, "human");
+    return { file, path };
   }
 
   /** Members who wrote a version of a document, latest first. */
@@ -648,9 +716,21 @@ export class Room {
       .join("\n\n");
   }
 
+  /**
+   * Pauses once the turns underway finish, so nobody's answer is cut off; no new turns start
+   * meanwhile. The human's own pause stays immediate.
+   */
+  pauseAfterTurns(reason: string): void {
+    if (this._state === "paused") return;
+    if (!this.running.size) return this.pause(reason);
+    this.pauseWhenDone = reason;
+    this.emitStatus();
+  }
+
   /** Stops waking members and aborts turns underway; aborted turns are redone after resume(). */
   pause(reason = "paused by the human"): void {
     if (this._state === "paused") return;
+    this.pauseWhenDone = undefined;
     this.setState("paused", reason);
     this.log({ type: "paused", reason });
     for (const t of this.running.values()) t.ctrl.abort();
@@ -911,7 +991,12 @@ export class Room {
     const s = this.pending().find((x) => x.id === id);
     if (!s) throw new Error(`no open suggestion ${id}`);
     const args = accept && edited ? checkEdit(s.action, s.args, edited) : s.args;
-    if (accept) await this.apply(s.action, args, s.why, s.from);
+    this.resolving = id;
+    try {
+      if (accept) await this.apply(s.action, args, s.why, s.from);
+    } finally {
+      this.resolving = undefined;
+    }
     // Declining the mail pointer is remembered too, so it isn't offered again.
     if (!accept && s.action === "pointer") new Workspace(this.o.repo).setFlag("mailPointer", "declined");
     const changed = args.join("\u0000") !== s.args.join("\u0000");
@@ -1034,7 +1119,11 @@ export class Room {
     mkdirSync(dirname(join(this.o.repo, rel)), { recursive: true });
     writeFileSync(join(this.o.repo, rel), this.store.readOutput(doc.slug, doc.accepted ?? doc.version));
     if (!mine.includes(rel)) ws.setFlag("exported", JSON.stringify([...mine, rel]));
-    this.log({ type: "aside", from: "assistant", text: `Exported ${doc.slug} to ${rel}.`, kind: "note" });
+    this.log({ type: "doc.exported", slug: doc.slug, version: doc.accepted ?? doc.version, path: rel });
+    // Other suggestions to export the same document are done now; leaving them would make a second copy.
+    for (const s of this.pending()) {
+      if (s.action === "export" && s.id !== this.resolving && slugify(s.args[0] ?? "") === doc.slug) this.log({ type: "suggestion.resolved", id: s.id, accepted: false, withdrawn: true });
+    }
     return rel;
   }
 
@@ -1184,6 +1273,7 @@ export class Room {
               view: this.view(),
               members: members.map((id) => ({ id, role: this.personas.get(id)?.role ?? "" })),
               speaking: this.speaking,
+              queued: [...new Set([...this.wants.values()].map((w) => w.agent))],
               fresh: pub,
               recent: this.floorRecent(thread, pub[0].seq),
               max: this.store.config().parallel,
@@ -1257,7 +1347,13 @@ export class Room {
 
   /** Starts turns for members who have the floor, up to the parallel cap; goes quiet when nobody does. */
   private kick(): void {
-    if (this._state === "paused") return;
+    // A pause can land while the floor is deciding; once it's done, the room is settled.
+    if (this._state === "paused") return this.settle();
+    if (this.pauseWhenDone) {
+      if (!this.running.size) this.pause(this.pauseWhenDone);
+      else this.emitStatus();
+      return;
+    }
     const { parallel, turnCap } = this.store.config();
     const blocked: string[] = [];
     for (const [key, w] of [...this.wants]) {
@@ -1388,7 +1484,9 @@ export class Room {
     this.emit({ event: "room.turn.end", data: { agent, ...tag } });
     // An aborted turn is owed: the member gets the floor back on resume.
     if (ctrl.signal.aborted) {
-      if (!this.leaving.has(agent) && this.personas.has(agent)) this.wants.set(key, { ...why, agent });
+      const owed = !this.leaving.has(agent) && this.personas.has(agent);
+      this.log({ type: "turn.aborted", agent, reason: owed ? (this._state === "paused" ? this.pausedFor || "the room paused" : "stopped") : "the member left", ...(why.replyTo ? { replyTo: why.replyTo } : {}), ...(thread ? { thread } : {}) });
+      if (owed) this.wants.set(key, { ...why, agent });
       this.saveWants();
       this.settle();
       return;
@@ -1466,7 +1564,7 @@ export class Room {
 
   /** A new sitting: the human opened the channel. `quota` is where each harness's windows stood. */
   startSitting(quota?: Sitting["quota"]): void {
-    this.store.startSitting({ start: new Date().toISOString(), ...(quota ? { quota } : {}) });
+    this.store.startSitting({ start: new Date().toISOString(), ...(quota ? { quota } : {}), ...(ENGINE_BUILD ? { engine: ENGINE_BUILD } : {}) });
   }
 
   /** What this sitting and the whole channel used. */
@@ -1658,8 +1756,10 @@ export class Room {
     let failed: string | undefined;
     const traced = this.trace(id, this.personas.has(id.split("@")[0]) ? "member" : "support", spec, prompt);
     try {
-      const access = accessNote(this.o.repo, this.dirs(), id === "assistant");
-      for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: `${systemPrompt}\n\n${access}`, readOnly: true, sessionId, signal })) {
+      // Floor, scribe and Chair work from the transcript in their prompt; reading files only costs time.
+      const toolless = id === "floor" || id === "scribe" || id === "chair";
+      const system = toolless ? systemPrompt : `${systemPrompt}\n\n${accessNote(this.o.repo, this.dirs(), id === "assistant")}`;
+      for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: system, readOnly: true, ...(toolless ? { noTools: true } : {}), sessionId, signal })) {
         if (e.type === "text") {
           text += e.delta;
           onDelta?.(e.delta);
@@ -1684,7 +1784,7 @@ export class Room {
   }
 
   /** Runs a support job unless the same one is already running. */
-  private async job(name: SupportRole | "watch", fn: () => Promise<void>): Promise<void> {
+  private async job(name: SupportRole | "watch" | "brief", fn: () => Promise<void>): Promise<void> {
     if (this.busy.has(name)) return;
     this.busy.add(name);
     this.emit({ event: "room.support", data: { role: name, busy: true } });
@@ -1849,7 +1949,7 @@ export class Room {
       }
     }
     for (const d of directives) {
-      if (d.verb === "pause") this.pause(`assistant: ${d.args[0] || "pausing for you"}`);
+      if (d.verb === "pause") this.pauseAfterTurns(`assistant: ${d.args[0] || "pausing for you"}`);
       else if (d.verb === "withdraw") this.withdraw(d.args.flatMap((a) => a.split(",")).map((x) => Number(x.replace(/^#/, ""))).filter(Number.isInteger), "assistant");
       else if (d.verb === "export") {
         const [path, ...why] = d.why.split("|").map((x) => x.trim());
@@ -1916,6 +2016,20 @@ function openingTopic(store: RoomStore, topic: string): RoomEvent[] {
   const slug = slugify(title.split(/\s+/).slice(0, 5).join(" "));
   return [store.append({ type: "topic.raised", slug, title, by: "human" }), store.append({ type: "topic.focus", slug, by: "human" })];
 }
+
+/**
+ * The engine's own build, read once when the code loads: the commit of the checkout it was loaded
+ * from, not of the project under discussion, and unaffected by the checkout moving afterwards.
+ */
+export const ENGINE_BUILD: string | undefined = (() => {
+  try {
+    return execFileSync("git", ["describe", "--always", "--dirty", "--abbrev=7"], { cwd: dirname(fileURLToPath(import.meta.url)), stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim() || undefined;
+  } catch {
+    return undefined;
+  }
+})();
 
 const gitHead = (repo: string) => (): string | undefined => {
   try {

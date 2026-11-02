@@ -324,7 +324,7 @@ function renderRoom(eventsFile: string): Rendered {
           body.push(`> suggestion ${e.id} from ${e.from}: ${e.action} ${e.args.join(" | ")} — ${e.why} (${at})`, "");
           break;
         case "suggestion.resolved":
-          body.push(`> suggestion ${e.id} ${e.withdrawn ? "withdrawn" : e.accepted ? "approved" : "declined"} (${at})`, "");
+          body.push(`> suggestion ${e.id} ${e.withdrawn ? "withdrawn" : e.accepted ? "approved" : "declined"}${e.accepted && e.args ? `, changed to: ${e.args.join(" | ")}` : ""} (${at})`, "");
           break;
         case "thread.summary":
           body.push(`## thread #${e.thread} outcome · ${at}`, "", e.text, "");

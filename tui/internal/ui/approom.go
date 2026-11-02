@@ -237,6 +237,9 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 			if d.Version > 0 {
 				// A channel output opens for review, beside the assistant.
 				u.room.overlay, u.room.rev = nil, newReview(d, a.th)
+				if u.room.rev.brief == "" {
+					u.room.rev.brief = u.room.briefs[fmt.Sprintf("%s@%d", d.Name, d.Version)]
+				}
 				u.reviewVP.GotoTop()
 				return true
 			}
@@ -263,8 +266,17 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 			Path string `json:"path"`
 		}
 		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
-			u.room.rev = nil
 			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Exported to " + res.Path + "."})
+			u.asstFollow = true
+			if rv := u.room.rev; rv != nil {
+				rv.handoff()
+			}
+		}
+	case "room.handoff":
+		var res rpc.HandoffResult
+		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
+			u.room.rev = nil
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: fmt.Sprintf("Mailed it to the project's agents: .quorum/mail/%s. To start your coding agent on it, tell it: read .quorum/mail/%s and do what it asks.", res.File, res.File)})
 			u.asstFollow = true
 		}
 	case "room.export":

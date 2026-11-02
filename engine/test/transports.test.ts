@@ -80,6 +80,10 @@ describe("OpencodeTransport invocation", () => {
     expect(i.cwd).toBe("/repo");
     expect(i.args).toContain("--standalone");
   });
+  it("denies every tool for calls that need none", () => {
+    const cfg = JSON.parse(inv({ noTools: true }).env.OPENCODE_CONFIG_CONTENT).agent.quorum;
+    expect(cfg.permission["*"]).toBe("deny");
+  });
   it("resumes with -s", () => {
     expect(inv({ sessionId: "ses_1" }).args).toEqual(expect.arrayContaining(["-s", "ses_1"]));
   });

@@ -94,7 +94,7 @@ export class ClaudeTransport implements AgentTransport {
       "--strict-mcp-config",
     ];
     // An empty --tools value disables everything; read-only means search/read tools only.
-    args.push("--tools", opts.readOnly === false ? "default" : "Read,Grep,Glob");
+    args.push("--tools", opts.noTools ? "" : opts.readOnly === false ? "default" : "Read,Grep,Glob");
     if (this.o.model) args.push("--model", this.o.model);
     const system = [opts.systemPrompt, opts.cwd && `The project under discussion is at ${opts.cwd}.`]
       .filter(Boolean)

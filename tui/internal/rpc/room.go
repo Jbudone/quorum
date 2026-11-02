@@ -181,6 +181,8 @@ type (
 		N     int                      `json:"n"`
 		Start string                   `json:"start"`
 		Quota map[string][]QuotaWindow `json:"quota"`
+		// Engine is the engine build that ran this sitting.
+		Engine string `json:"engine"`
 	}
 	SittingTotal struct {
 		N       int     `json:"n"`
@@ -316,6 +318,15 @@ type (
 		Ready    int    `json:"ready"`
 		Base     int    `json:"base"`
 		BaseText string `json:"baseText"`
+		// Brief is the assistant's plain-English summary of this version, when it wrote one.
+		Brief string `json:"brief"`
+		// Briefing: the assistant has started writing one; it arrives as a doc.brief event.
+		Briefing bool `json:"briefing"`
+	}
+	// HandoffResult is the mail room.handoff sent, and the path it points the agents at.
+	HandoffResult struct {
+		File string `json:"file"`
+		Path string `json:"path"`
 	}
 	// ReviewResult is what room.review returns; ExportPath comes back on approval.
 	ReviewResult struct {

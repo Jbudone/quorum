@@ -524,6 +524,8 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
             ...(doc.accepted ? { accepted: doc.accepted } : {}),
             ...(doc.ready ? { ready: doc.ready } : {}),
             ...(base ? { base, baseText: r.store.readOutput(name, base) } : {}),
+            ...(r.briefOf(name, version) ? { brief: r.briefOf(name, version) } : {}),
+            ...(r.ensureBrief(name, version) ? { briefing: true } : {}),
           };
         }
         const text = RoomStore.isDocPath(`${name}.md`) ? r.store.readDoc(`${name}.md`) : "";
@@ -533,6 +535,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "room.exportDoc":
         // The human typed the path, so this is their approval; exportDoc still refuses paths outside the project.
         return { path: needRoom().exportDoc(String(p.slug), String(p.path ?? "")) };
+      case "room.handoff":
+        // The human pressed the key on the review screen, so this is their approval to send it.
+        return needRoom().handoff(String(p.slug), typeof p.to === "string" && p.to.trim() ? p.to : "all", typeof p.note === "string" ? p.note : "");
       case "room.export":
         return { url: await needRoom().exportIssue(String(p.slug)) };
       default:

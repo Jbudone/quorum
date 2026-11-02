@@ -109,19 +109,19 @@ export class KimiTransport extends SubprocessTransport {
     if (opts.cwd) args.push("--add-dir", opts.cwd);
     for (const d of opts.dirs ?? []) args.push("--add-dir", d);
     if (opts.sessionId) args.push("-S", opts.sessionId);
-    else args.push("--agent-file", agentFile(opts.systemPrompt ?? "", opts.readOnly !== false));
+    else args.push("--agent-file", agentFile(opts.systemPrompt ?? "", opts.readOnly !== false, undefined, opts.noTools));
     args.push("-p", promptArg(opts.sessionId ? prompt : repoNote(opts) + prompt));
     return { cmd: this.o.bin ?? "kimi", args };
   }
 }
 
 /** Writes the agent file for a persona; the same persona reuses the same file. */
-export function agentFile(persona: string, readOnly: boolean, dir = join(NEUTRAL_CWD, "kimi-agents")): string {
+export function agentFile(persona: string, readOnly: boolean, dir = join(NEUTRAL_CWD, "kimi-agents"), noTools = false): string {
   const body = [
     "---",
     "name: quorum",
     "description: A member of a Quorum council",
-    ...(readOnly ? ["tools: [Read, Glob, Grep]"] : []),
+    ...(noTools ? ["tools: []"] : readOnly ? ["tools: [Read, Glob, Grep]"] : []),
     "---",
     persona || "You are a member of a Quorum council.",
     "",

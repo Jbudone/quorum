@@ -46,6 +46,10 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — ${e.slug} v${e.version} is up for the human's review`;
     case "doc.reviewed":
       return `[#${e.seq}] — the human ${e.action === "revise" ? "asked for changes to" : "asked about"} ${e.slug} v${e.version}${e.section ? ` (${e.section})` : ""}`;
+    case "doc.exported":
+      return `[#${e.seq}] — ${e.slug} v${e.version} exported to ${e.path}`;
+    case "doc.brief":
+      return `[#${e.seq}] (brief of ${e.slug} v${e.version} for the human)\n${e.text}`;
     case "workstream.closed":
       return `[#${e.seq}] — workstream #${e.thread} closed by the ${e.by}`;
     case "agent.joined":
@@ -74,6 +78,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — budget ${e.level}: ${e.detail}`;
     case "turn.failed":
       return `[#${e.seq}] — ${e.agent}'s turn failed: ${e.message}`;
+    case "turn.aborted":
+      return `[#${e.seq}] — ${e.agent}'s turn${e.replyTo ? ` answering #${e.replyTo}` : ""} was cut off (${e.reason}); it's owed again on resume`;
     case "docs.updated":
       return "";
   }
@@ -280,13 +286,13 @@ export function scribePrompt(o: { view: RoomView; docs: [string, string][]; rece
     describeRoom(o.view),
     o.docs.length ? `Current notes:\n\n${o.docs.map(([p, t]) => `=== ${p} ===\n${t}`).join("\n\n")}` : "There are no notes yet.",
     `New activity since you last updated the notes:\n\n${o.recent}`,
-    `Update the notes. Files you may write:
+    `Update the room's notes from the transcript above. Don't call tools or read or write files: the engine saves what you reply. The notes:
 - decisions.md: decisions the room reached, each with its message number(s), e.g. (#14, #17)
 - facts.md: established facts about the problem and the code
 - open-questions.md: questions still open, and who raised them
 - code-notes.md: what members learned about the codebase (files, functions, how things work)${o.commit ? `, as of commit ${o.commit}` : ""}
 - topics/<slug>.md: one page per topic: where the discussion stands, the positions and who holds them`,
-    `Answer only with the files that changed, each as a header line followed by the file's full new contents:
+    `Reply only with the notes that changed, each as a header line followed by its full new contents:
 
 === decisions.md ===
 ...contents...
@@ -295,11 +301,35 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
   ].join("\n\n");
 }
 
+/** The assistant's brief of a version up for review: what the human reads before the document itself. */
+export function docBriefPrompt(o: { slug: string; version: number; text: string; base?: number; diff?: string; topic?: string }): string {
+  return [
+    o.topic ? `The channel is working on: ${o.topic}` : "",
+    `${o.slug} v${o.version} is up for the human's review. They haven't followed the discussion and won't read the whole document first. Write them a brief of it.`,
+    `The document:\n\n${clip(o.text, 24000)}`,
+    o.diff ? `What changed since v${o.base}, the version they last reviewed:\n\n${clip(o.diff, 4000)}` : "",
+    `Write exactly this, in plain words a newcomer understands. No message numbers, citations, file paths or line numbers, and no terms the document invents unless you explain them in a few words.
+
+**What it is:** one sentence: what kind of document this is, and plainly whether it records things already done or proposes things nobody has done yet.
+**What it says:**
+- three to six bullets, the main points, most important first, one short sentence each
+**If you approve:** one sentence on what approving means and what still has to happen after (for example, someone still has to carry the changes out).${o.diff ? `
+**Changed since v${o.base}:**
+- one to three bullets` : ""}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum channel, where AI members work on a problem with the human present. You work only for the human: you say plainly what the members mean, answer questions about the discussion, suggest next steps, and say honestly when the room has tunnel vision or is missing someone. You don't speak in the channel yourself, but you can keep records: write documents in the channel (a plan you worked out with the human, decisions, a record of your conversation), export a document into the project, and draft mail to the project's own agents (who can write code, make worktrees and run tests). Never tell the human you can't write things down; write them.
 
 Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked or the human wants a status. Cite a message number like #12 only when it helps the human check you, and only one you can see. Never pad, never recap what the human just said.
 
-Be accurate about where things stand. The live state you're given comes from the engine and is always current: trust it over your reading of the recent activity and over your own earlier status. Never call the work finished while anyone is mid-turn or queued, a workstream is open, or a newer document version than the one under review exists. If you got something wrong earlier, say so in a few words and give the right picture, checked against the live state.`;
+Be accurate about where things stand. The live state you're given comes from the engine and is always current: trust it over your reading of the recent activity and over your own earlier status. Never call the work finished while anyone is mid-turn or queued, a workstream is open, or a newer document version than the one under review exists. If you got something wrong earlier, say so in a few words and give the right picture, checked against the live state.
+
+When the human asks what a document is or what it changes, explain it for someone who hasn't followed the discussion: what kind of document it is, whether it describes things already done or only proposes them, and its main points as a few short bullets in plain words, without message numbers, citations or file references. The human reviews a document with ctrl+r: a approves it (and then offers to export it and to mail it to the project's agents to carry out), c asks its authors a question, r asks for changes.
+
+Before proposing a lineup or a steer for an open-ended request, ask one short question to confirm the kind of work (a go/no-go review, open-ended research, or building something) and what it should produce, unless the human already said.`;
 
 /** How the assistant should pick models, with the models it can pick from. */
 export function modelGuide(menu?: string): string {
@@ -321,17 +351,18 @@ To propose a change, end with action lines; the human approves or declines each,
 >> end                                     mail the project's own agents, e.g. to build a probe in a worktree
 >> withdraw: <suggestion numbers> | <why>  take back your own earlier suggestions that you've replaced or no longer stand by; always withdraw what you replace
 >> hire: <id> | <cli> <model> | <role, a few words> | <persona: two or three sentences on expertise and how they think> | <why>
-                                   bring in a new member, invented for this problem (CLIs: ${clis.join(", ")})
+                                   bring in a new member, invented for this problem (CLIs: ${clis.join(", ")}); keep the channel to five members, six at most
 >> add: <member> <cli> <model> | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
 >> swap: <member> | <cli> <model> | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
 >> read: <folder> | <why>               let everyone in the channel read a folder outside the project
->> steer: <text>                          post a steering message to the channel as the human
+>> steer: <text>                          post a steering message to the channel as the human: name the channel document that is the single source of truth, say what done looks like for this round, and never ask members, the scribe or the Chair to write project files
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the focus
 >> close: <topic-slug> | <why>            close a topic
 >> parallel: <n> | <why>                  change how many members may speak at once
-You may also pause the channel yourself (this one takes effect at once):
->> pause: <one-line reason>`;
+You may also pause the channel yourself (this one takes effect at once; turns already underway finish first):
+>> pause: <one-line reason>
+Before pausing because the work looks done, check that the latest saved document has every decision made since it was saved (write a new version first if not), and say which questions are still open.`;
 }
 
 export function assistantContext(o: { view: RoomView; live: string; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
@@ -390,7 +421,7 @@ Talk like a sharp colleague: one to three short sentences, plain words, no headi
 
 Work in two phases. First narrow down, by asking the human questions as choice cards (see the format below), one to three at a time: what they're really trying to achieve, constraints, what success looks like, what's already been tried, where earlier notes live. Ask only questions whose answers change the plan, and stop asking once you know enough. Then propose the plan.
 
-A good plan treats a hard, open problem like a research program. It names the things that must be considered. It staffs a group the way you'd staff a research lab rather than a review board: real specialties that fit this problem, for example a research lead who treats it as a research problem, specialists in the relevant fields, a UX researcher, someone who brings real use cases, an edge-case hunter, a feasibility analyst who maps what's impossible, and an engineer who'd have to build it. Use three to seven members with distinct angles, mixing CLIs where it helps and putting the strongest models on the roles that need the most judgment. Reuse workspace members when they fit, since they bring their memory. It also sets starter workstreams that are prerequisites for the main discussion, each owned by two or three members working in parallel: finding edge cases, collecting real use cases, generating feature ideas, formalizing the vision, mapping what's impossible and which boundaries to push.`;
+A good plan treats a hard, open problem like a research program. It names the things that must be considered. It staffs a group the way you'd staff a research lab rather than a review board: real specialties that fit this problem, for example a research lead who treats it as a research problem, specialists in the relevant fields, a UX researcher, someone who brings real use cases, an edge-case hunter, a feasibility analyst who maps what's impossible, and an engineer who'd have to build it. Use three to five members with distinct angles (six at most; if the human wants more voices or a model sweep, fold them into existing roles or workstreams), mixing CLIs where it helps and putting the strongest models on the roles that need the most judgment. Reuse workspace members when they fit, since they bring their memory. It also sets starter workstreams that are prerequisites for the main discussion, each owned by two or three members working in parallel: finding edge cases, collecting real use cases, generating feature ideas, formalizing the vision, mapping what's impossible and which boundaries to push.`;
 
 export function setupPrompt(o: {
   repo: string;
@@ -510,7 +541,7 @@ export function parseSetup(text: string): { prose: string; questions: PlanQuesti
       }
     }
   }
-  return { prose: prose.join("\n").trim(), questions: questions.filter((q) => q.options.length >= 2), ...(any ? { proposal: p } : {}) };
+  return { prose: prose.join("\n").trim(), questions: questions.filter((q) => q.options.length >= 2), ...(any && !questions.length ? { proposal: p } : {}) };
 }
 
 /** Splits a check-in into its digest and optional note. A reply without the markers is all note. */
@@ -568,5 +599,5 @@ export const EXIT_MEMO = `You are leaving this Quorum room. Write a short exit m
  */
 export function accessNote(repo: string, dirs: string[] = [], suggest = false): string {
   const where = [repo, ...dirs].map((d) => `\`${d}\``).join(", ");
-  return `You can read files in ${where}, and nowhere else. You run headless: there are no permission prompts, and nothing the human approves in chat changes your access, so never ask them to approve one. To read another folder, ask the human to type \`/read <folder>\`${suggest ? " or propose `>> read: <folder> | why`" : ""}; once they do, everyone can read it from their next turn.`;
+  return `You can read files in ${where}, and nowhere else. Nobody in Quorum (members, Chair, scribe, assistant) can create or edit project files. Shared work goes in channel documents (doc_draft for members${suggest ? ", `>> write:` for you" : ""}), and only the human puts one into the project, by approving an export. So never plan on anyone writing a project file. You run headless: there are no permission prompts, and nothing the human approves in chat changes your access, so never ask them to approve one. To read another folder, ask the human to type \`/read <folder>\`${suggest ? " or propose `>> read: <folder> | why`" : ""}; once they do, everyone can read it from their next turn.`;
 }

@@ -6,6 +6,9 @@ import { parseJson, SubprocessTransport, type Invocation, type LineMapper } from
 import { readProviders, type ProvidersFile } from "../providers.js";
 import type { AgentEvent, SendOptions } from "./types.js";
 
+/** Every tool denied (opencode 2 rules: the last matching one wins), for calls that need none. */
+const NO_TOOLS = { "*": "deny" } as const;
+
 /**
  * Opencode streams one `text` part per step. Steps that end in tool calls carry narration;
  * the step that finishes with reason "stop" is the answer.
@@ -143,6 +146,7 @@ export class OpencodeTransport extends SubprocessTransport {
       ...(opts.systemPrompt ? { prompt: opts.systemPrompt } : {}),
       permission: {
         ...(readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {}),
+        ...(opts.noTools ? NO_TOOLS : {}),
         // Folders outside the project are asked about, and a headless run can't answer; these were granted.
         ...(opts.dirs?.length ? { external_directory: Object.fromEntries(opts.dirs.map((d) => [`${d}/**`, "allow"])) } : {}),
       },

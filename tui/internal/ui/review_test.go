@@ -123,8 +123,40 @@ func TestReviewApproveThenExport(t *testing.T) {
 	}
 	h.replyID(e.id, map[string]string{"path": "docs/plan.md"})
 	contains(t, h.screen(), "Exported to docs/plan.md.")
+	// Then it offers to hand it to the project's agents.
+	contains(t, h.screen(), "Hand it to the project's agents to carry out? Mail to")
+	h.press("enter")
+	m := h.expectCall("room.handoff")
+	if m.params["slug"] != "plan" || m.params["to"] != "all" {
+		t.Fatalf("handoff params: %v", m.params)
+	}
+	h.replyID(m.id, rpc.HandoffResult{File: "2026-11-02-carry-out.md", Path: "docs/plan.md"})
+	contains(t, h.screen(), "Mailed it to the project's agents")
+	if h.app.rm.room.rev != nil {
+		t.Fatal("the hand-off closes the review")
+	}
 	h.event(rpc.RoomEvent{Type: "doc.accepted", Seq: 960, Slug: "plan", Version: 3, By: "human"})
 	contains(t, h.screen(), "plan v3 accepted by you")
+}
+
+func TestReviewShowsTheBriefFirst(t *testing.T) {
+	h := openReview(t)
+	contains(t, h.screen(), "The assistant is writing a short brief of this version")
+	h.event(rpc.RoomEvent{Type: "doc.brief", Seq: 952, Slug: "plan", Version: 3, Text: "**What it is:** a cache plan; nothing is built yet."})
+	s := h.screen()
+	contains(t, s, "IN BRIEF")
+	contains(t, s, "nothing is built yet")
+	lacks(t, s, "writing a short brief")
+	// Skipping the export still offers the hand-off.
+	h.press("a")
+	c := h.expectCall("room.review")
+	h.replyID(c.id, rpc.ReviewResult{Version: 3, ExportPath: "docs/plan.md"})
+	h.press("esc")
+	contains(t, h.screen(), "Hand it to the project's agents")
+	h.press("esc")
+	if h.app.rm.room.rev != nil {
+		t.Fatal("esc on the hand-off closes the review")
+	}
 }
 
 func TestStatusLineComesFromTheEngine(t *testing.T) {
@@ -146,4 +178,15 @@ func TestReviewHelpers(t *testing.T) {
 	if len(d) != 3 || d[1] != (diffLine{'-', "b"}) || d[2] != (diffLine{'+', "B"}) {
 		t.Fatalf("diff: %+v", d)
 	}
+}
+
+func TestApprovedReceiptShowsWhatYouChangedItTo(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 960, ID: 40, From: "assistant", Action: "export", Args: []string{"plan", "README.md"}, Why: "publish"})
+	h.event(rpc.RoomEvent{Type: "suggestion.resolved", Seq: 961, ID: 40, Accepted: true, Args: []string{"plan", "README2.md"}})
+	s := h.screen()
+	contains(t, s, "You approved, changed:")
+	contains(t, s, "README2.md")
+	contains(t, s, "suggested:")
 }

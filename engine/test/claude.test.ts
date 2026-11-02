@@ -34,6 +34,10 @@ describe("ClaudeTransport.buildArgs", () => {
     expect(a).toContain("--strict-mcp-config");
     expect(a.slice(a.indexOf("--tools"), a.indexOf("--tools") + 2)).toEqual(["--tools", "Read,Grep,Glob"]);
   });
+  it("turns every tool off for calls that need none", () => {
+    const a = t.buildArgs({ noTools: true });
+    expect(a.slice(a.indexOf("--tools"), a.indexOf("--tools") + 2)).toEqual(["--tools", ""]);
+  });
   it("reaches the repo via --add-dir and names it in the system prompt", () => {
     const a = t.buildArgs({ cwd: "/repo", systemPrompt: "skeptic" });
     expect(a.slice(a.indexOf("--add-dir"), a.indexOf("--add-dir") + 2)).toEqual(["--add-dir", "/repo"]);

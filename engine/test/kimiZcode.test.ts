@@ -38,6 +38,10 @@ describe("KimiTransport invocation", () => {
     expect(file).toContain("You are the Skeptic.");
     expect(a.at(-1)).toContain("The project under discussion is at /repo");
   });
+  it("gives a call that needs no tools an agent file with none", () => {
+    const a = args({ cwd: "/repo", systemPrompt: "You run the floor.", noTools: true });
+    expect(readFileSync(a[a.indexOf("--agent-file") + 1], "utf8")).toContain("tools: []");
+  });
 
   it("resumes with -S and no agent file (Kimi refuses both together)", () => {
     const a = args({ cwd: "/repo", systemPrompt: "p", sessionId: "session_1" });
@@ -97,6 +101,8 @@ describe("ZcodeTransport invocation", () => {
       expect(dis).toContain("Agent");
     }
     expect(args({ readOnly: false })).not.toContain("--disallowed-tools");
+    const none = args({ noTools: true });
+    expect(none[none.indexOf("--disallowed-tools") + 1].split(" ")).toEqual(expect.arrayContaining(["Read", "Grep", "Glob", "Agent"]));
   });
 
   it("leads a fresh prompt with the persona and resumes without it", () => {

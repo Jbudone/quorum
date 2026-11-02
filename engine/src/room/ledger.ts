@@ -30,6 +30,8 @@ export interface Sitting {
   start: string;
   /** Each harness's quota windows when the sitting started, to show how far they moved since. */
   quota?: Record<string, QuotaWindow[]>;
+  /** The engine build that ran it: its git commit, with -dirty for uncommitted changes. */
+  engine?: string;
 }
 
 export interface Tally {

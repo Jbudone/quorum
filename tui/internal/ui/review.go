@@ -25,6 +25,7 @@ const (
 	reviewClarify reviewMode = "clarify"
 	reviewRevise  reviewMode = "revise"
 	reviewExport  reviewMode = "export"
+	reviewHandoff reviewMode = "handoff"
 )
 
 type reviewSection struct {
@@ -37,6 +38,8 @@ type docReview struct {
 	version, latest       int
 	accepted, ready, base int
 	text, baseText        string
+	brief                 string // the assistant's plain-English brief, shown first
+	briefing              bool   // the assistant is writing the brief
 	secs                  []reviewSection
 	changed               map[string]bool // sections that differ from the base version
 	cur                   int             // the section the cursor is on
@@ -50,16 +53,16 @@ type docReview struct {
 func newReview(d rpc.RoomDocText, th theme.Theme) *docReview {
 	rv := &docReview{
 		slug: d.Name, version: d.Version, latest: d.Latest, accepted: d.Accepted, ready: d.Ready, base: d.Base,
-		text: d.Text, baseText: d.BaseText, secs: docSections(d.Text), changed: map[string]bool{}, in: newInput(th, 3),
+		text: d.Text, baseText: d.BaseText, brief: d.Brief, briefing: d.Briefing, secs: docSections(d.Text), changed: map[string]bool{}, in: newInput(th, 3),
 	}
 	if d.Base > 0 {
 		for _, t := range changedSections(d.BaseText, d.Text) {
 			rv.changed[t] = true
 		}
-		// Open on the first thing that changed.
+		// The cursor starts on the first thing that changed; the view starts at the top, on the brief.
 		for i, s := range rv.secs {
 			if rv.changed[s.title] {
-				rv.cur, rv.jump = i, true
+				rv.cur = i
 				break
 			}
 		}
@@ -233,6 +236,16 @@ func renderReview(rv *docReview, th theme.Theme, width int) string {
 	}
 	lines := []string{ansi.Truncate(head, width, "…"), ""}
 	inner := max(width-2, 10)
+	// The brief comes first: what this is and what it says, in plain words, before the full text.
+	switch {
+	case rv.brief != "":
+		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(th.Info).Padding(0, 1).Width(width)
+		body := fg(th.Info).Bold(true).Render("IN BRIEF") + fg(th.Subtle).Render(" · from the assistant") + "\n" + renderMarkdown(rv.brief, max(width-4, 10), th)
+		lines = append(lines, strings.Split(box.Render(body), "\n")...)
+		lines = append(lines, "", fg(th.Subtle).Render("── the document ──"), "")
+	case rv.briefing || (rv.ready == rv.version && rv.accepted < rv.version):
+		lines = append(lines, fg(th.Muted).Render("The assistant is writing a short brief of this version…"), "")
+	}
 	if rv.diff && rv.base > 0 {
 		lines = append(lines, fg(th.Muted).Render(fmt.Sprintf("Changes from v%d to v%d (d to go back to the document)", rv.base, rv.version)), "")
 		for _, d := range lineDiff(rv.baseText, rv.text) {
@@ -291,19 +304,31 @@ func renderReview(rv *docReview, th theme.Theme, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// handoff asks whether to mail the approved document to the project's agents.
+func (rv *docReview) handoff() tea.Cmd {
+	rv.mode = reviewHandoff
+	rv.in.SetValue("all")
+	rv.in.CursorEnd()
+	return rv.in.Focus()
+}
+
 // reviewInput is the box under the document while you write a question, changes, or the export path.
 func reviewInput(rv *docReview, th theme.Theme, width int) string {
 	label := map[reviewMode]string{
 		reviewClarify: "Ask the authors",
 		reviewRevise:  "What should change",
 		reviewExport:  fmt.Sprintf("Approved v%d. Export it to the project? Path", rv.version),
+		reviewHandoff: "Hand it to the project's agents to carry out? Mail to",
 	}[rv.mode]
-	if s := rv.section(); s != "" && rv.mode != reviewExport {
+	if s := rv.section(); s != "" && (rv.mode == reviewClarify || rv.mode == reviewRevise) {
 		label += " · about " + s
 	}
 	hint := "enter send · esc cancel"
-	if rv.mode == reviewExport {
+	switch rv.mode {
+	case reviewExport:
 		hint = "enter export · esc skip"
+	case reviewHandoff:
+		hint = "enter send · esc skip"
 	}
 	rv.in.SetWidth(max(width-2, 10))
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(th.Accent2).Width(width).Render(rv.in.View())
@@ -383,7 +408,11 @@ func (a *App) handleReviewKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	if rv.mode != reviewReading {
 		switch key {
 		case "esc":
-			if rv.mode == reviewExport {
+			switch rv.mode {
+			case reviewExport:
+				// Skipping the export still offers the hand-off; the mail points at the channel's copy.
+				return rv.handoff(), true
+			case reviewHandoff:
 				r.rev = nil
 				return nil, true
 			}
@@ -396,14 +425,17 @@ func (a *App) handleReviewKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 			if text == "" {
 				return nil, true
 			}
-			if rv.mode == reviewExport {
+			switch rv.mode {
+			case reviewExport:
 				a.call("room.exportDoc", map[string]any{"slug": rv.slug, "path": text})
-			} else {
+			case reviewHandoff:
+				a.call("room.handoff", map[string]any{"slug": rv.slug, "to": text})
+			default:
 				a.call("room.review", map[string]any{"slug": rv.slug, "action": string(rv.mode), "version": rv.version, "section": rv.section(), "text": text})
 			}
 			return nil, true
 		case "alt+enter", "shift+enter":
-			if rv.mode != reviewExport {
+			if rv.mode == reviewClarify || rv.mode == reviewRevise {
 				rv.in.InsertString("\n")
 			}
 			return nil, true

@@ -119,9 +119,11 @@ type roomModel struct {
 	rev     *docReview // a document open for review, over the channel feed
 	// openReview is set when a version comes up for review live, so the app opens it once.
 	openReview string
-	edit       *sugEdit // a suggestion being edited before it is approved
-	frame      int
-	calm       bool
+	// briefs are the assistant's briefs of document versions, by "slug@version".
+	briefs map[string]string
+	edit   *sugEdit // a suggestion being edited before it is approved
+	frame  int
+	calm   bool
 }
 
 func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
@@ -254,6 +256,11 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 				switch {
 				case e.Withdrawn:
 					r.asides = append(r.asides, noteItem{kind: "system", text: fmt.Sprintf("Withdrawn by %s: %s", displayName(p.From), suggestionLabel(p))})
+				case e.Accepted && len(e.Args) > 0:
+					// What was carried out is what you changed it to, not what was suggested.
+					was := suggestionLabel(p)
+					p.Args = e.Args
+					r.asides = append(r.asides, noteItem{kind: "system", text: fmt.Sprintf("You approved, changed: %s (suggested: %s)", suggestionLabel(p), was)})
 				case e.Accepted:
 					r.asides = append(r.asides, noteItem{kind: "system", text: "You approved: " + suggestionLabel(p)})
 				default:
@@ -330,6 +337,15 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		}
 	case "workstream.closed":
 		r.thread(e.Thread).closed = true
+	case "doc.brief":
+		if r.briefs == nil {
+			r.briefs = map[string]string{}
+		}
+		r.briefs[fmt.Sprintf("%s@%d", e.Slug, e.Version)] = e.Text
+		if r.rev != nil && r.rev.slug == e.Slug && r.rev.version == e.Version {
+			r.rev.brief = e.Text
+		}
+		return // it shows at the top of the review, not in the feed
 	case "docs.updated":
 		for _, f := range e.Files {
 			name := strings.TrimSuffix(f, ".md")

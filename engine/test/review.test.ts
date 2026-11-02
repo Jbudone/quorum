@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { floorPrompt } from "../src/room/floor.js";
+import { parseSetup } from "../src/room/prompts.js";
 import { changedSections, lineDiff, sections, sectionText, unifiedDiff } from "../src/room/review.js";
+import { ENGINE_BUILD } from "../src/room/room.js";
 import { messages, rig } from "./roomRig.js";
 
 let cleanup: (() => Promise<unknown>)[] = [];
@@ -98,6 +103,140 @@ describe("document review", () => {
     expect(prompt).toContain("What changed since v1, the version they last reviewed:");
     expect(prompt).toContain("+ Use an LRU with a 30 s TTL.");
     expect(prompt).toContain("Live state (from the engine, always current):\nRoom: paused (ready for review: plan v2).");
+  });
+});
+
+const BRIEF = "**What it is:** a plan for the cache; nothing is built yet.\n**What it says:**\n- use an LRU\n**If you approve:** someone still has to build it.";
+
+describe("the brief", () => {
+  it("the assistant writes a plain-English brief of each version that comes up for review", async () => {
+    const r = setup({ member: author, chair: ["Agreed.\n>> accept: plan v1", "PASS"], assistant: [BRIEF] });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    expect(room.briefOf("plan", 1)).toBe(BRIEF);
+    // Opening it again doesn't write another; a draft nobody put up for review doesn't get one.
+    expect(room.ensureBrief("plan", 1)).toBe(false);
+    room.writeDoc("plan", "# Plan\n\nDraft two.", "arch");
+    expect(room.ensureBrief("plan", 2)).toBe(false);
+    const prompt = r.calls.find((c) => c.agent === "assistant" && c.prompt.includes("Write them a brief"))!.prompt;
+    expect(prompt).toContain("## Cache\nUse an LRU.");
+    expect(prompt).toContain("whether it records things already done or proposes things nobody has done yet");
+    // Members never see it; it's for the human.
+    expect(r.memberCalls().some((c) => c.prompt.includes("nothing is built yet"))).toBe(false);
+  });
+});
+
+describe("after approval", () => {
+  it("offers the path a pending export suggestion named, and exporting withdraws the other copies", async () => {
+    const { room } = await underReview();
+    (room as any).suggest("assistant", "export", ["plan", "docs/research/plan.md"], "publish it");
+    (room as any).suggest("assistant", "export", ["plan", "docs/plan-copy.md"], "publish it again");
+    expect(room.review("plan", "approve").exportPath).toBe("docs/research/plan.md");
+    expect(room.exportDoc("plan", "docs/research/plan.md")).toBe("docs/research/plan.md");
+    expect(room.pending().filter((s) => s.action === "export")).toEqual([]);
+    expect(room.store.events().filter((e) => e.type === "doc.exported")).toMatchObject([{ slug: "plan", version: 1, path: "docs/research/plan.md" }]);
+    // The next time, it goes where it went before.
+    expect((room as any).exportPathFor("plan")).toBe("docs/research/plan.md");
+  });
+
+  it("approving an export suggestion resolves it once, as approved", async () => {
+    const { room } = await underReview();
+    room.review("plan", "approve");
+    (room as any).suggest("assistant", "export", ["plan", "docs/plan.md"], "publish it");
+    const id = room.pending().find((s) => s.action === "export")!.id;
+    await room.resolve(id, true);
+    expect(room.store.events().filter((e) => e.type === "suggestion.resolved" && e.id === id)).toMatchObject([{ accepted: true }]);
+  });
+
+  it("hands the document to the project's agents as mail, with the brief and where to read it", async () => {
+    const r = setup({ member: author, chair: ["Agreed.\n>> accept: plan v1", "PASS"], assistant: [BRIEF] });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    room.review("plan", "approve");
+    room.exportDoc("plan", "docs/plan.md");
+    const { file, path } = room.handoff("plan");
+    expect(path).toBe("docs/plan.md");
+    const mail = readFileSync(join(r.repo, ".quorum", "mail", file), "utf8");
+    expect(mail).toContain("Carry out plan v1");
+    expect(mail).toContain("Read it: docs/plan.md");
+    expect(mail).toContain("nothing is built yet");
+    expect(room.store.events().filter((e) => e.type === "mail.out")).toMatchObject([{ to: "all", by: "human" }]);
+  });
+
+  it("a version accepted before briefs existed gets one when it's opened", async () => {
+    const { room } = await underReview(); // its assistant has nothing to say, so v1 has no brief
+    expect(room.briefOf("plan", 1)).toBeUndefined();
+    expect(room.ensureBrief("plan", 1)).toBe(true);
+  });
+
+  it("without an export, the mail points at the channel's own copy", async () => {
+    const { room } = await underReview();
+    room.review("plan", "approve");
+    expect(room.handoff("plan").path).toMatch(/^\.quorum\/rooms\/.+\/outputs\/plan\/v1\.md$/);
+  });
+});
+
+describe("pausing", () => {
+  it("the assistant's pause lets the turns underway finish; nothing is cut off", async () => {
+    const r = setup({ delayMs: 30 });
+    const room = r.create({ parallel: 2 });
+    room.resume();
+    await new Promise((res) => setTimeout(res, 10));
+    room.pauseAfterTurns("assistant: converged");
+    expect(room.status().line).toContain("pausing when they finish");
+    await room.settled();
+    const es = room.store.events();
+    expect(es.filter((e) => e.type === "turn.aborted")).toEqual([]);
+    const paused = es.findIndex((e) => e.type === "paused");
+    expect(es.slice(0, paused).filter((e) => e.type === "message" && e.from !== "human").length).toBe(2);
+    expect(es[paused]).toMatchObject({ reason: "assistant: converged" });
+  });
+
+  it("the human's pause cuts turns off at once, and says so in the log", async () => {
+    const r = setup({ delayMs: 30 });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await new Promise((res) => setTimeout(res, 10));
+    room.pause();
+    await room.settled();
+    expect(room.store.events().filter((e) => e.type === "turn.aborted")).toMatchObject([{ reason: "paused by the human", replyTo: 3 }]);
+  });
+});
+
+describe("support calls", () => {
+  it("floor, scribe and Chair run without tools or the file-access note; the assistant keeps both", async () => {
+    const r = setup({ member: author, chair: ["Agreed.\n>> accept: plan v1", "PASS"] });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    const chair = r.calls.find((c) => c.agent === "chair")!;
+    expect(chair.opts?.noTools).toBe(true);
+    expect(chair.opts?.systemPrompt).not.toContain("You can read files");
+    const assistant = r.calls.find((c) => c.agent === "assistant")!;
+    expect(assistant.opts?.noTools).toBeUndefined();
+    expect(assistant.opts?.systemPrompt).toContain("only the human puts one into the project");
+  });
+
+  it("the floor sees who is already queued", () => {
+    const view = { topic: "t", topics: [], docs: [], members: ["arch", "skeptic"] };
+    const p = floorPrompt({ view, members: [{ id: "arch", role: "a" }, { id: "skeptic", role: "s" }], speaking: ["arch"], queued: ["skeptic"], fresh: [], recent: [], max: 2 });
+    expect(p).toContain("- arch: a (speaking right now)");
+    expect(p).toContain("- skeptic: s (already queued to speak)");
+  });
+
+  it("each sitting records the engine build that ran it", async () => {
+    const { room } = await underReview();
+    room.startSitting();
+    expect(ENGINE_BUILD).toMatch(/^[0-9a-f]{7}/);
+    expect(room.store.sittings().at(-1)?.engine).toBe(ENGINE_BUILD);
+  });
+
+  it("setup that still has questions doesn't propose a plan yet", () => {
+    const p = parseSetup("Which mode?\n>> question: Mode | What kind of work?\n>> option: Research | open\n>> option: Review | go/no-go\n>> member: arch | claude | architect");
+    expect(p.questions).toHaveLength(1);
+    expect(p.proposal).toBeUndefined();
   });
 });
 

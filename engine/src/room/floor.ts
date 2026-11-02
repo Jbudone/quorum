@@ -25,6 +25,8 @@ export interface FloorContext {
   members: { id: string; role: string }[];
   /** Members mid-turn right now; they will see what's new when they finish. */
   speaking: string[];
+  /** Members already queued to speak; picking them again adds nothing. */
+  queued?: string[];
   /** Messages since the floor last decided. */
   fresh: readonly RoomEvent[];
   /** Earlier public conversation, for context. */
@@ -57,17 +59,17 @@ export function mentioned(e: RoomEvent, members: string[]): string[] {
   return members.filter((m) => m !== e.from && named.includes(m));
 }
 
-export const FLOOR_SYSTEM = `You run the floor of a discussion between AI agents and a human. After each new message you decide who, if anyone, should speak next. You never speak in the discussion yourself. You answer with JSON only.`;
+export const FLOOR_SYSTEM = `You run the floor of a discussion between AI agents and a human. After each new message you decide who, if anyone, should speak next, from the transcript you're given alone: never call tools or read files. You never speak in the discussion yourself. You answer with JSON only.`;
 
 export function floorPrompt(c: FloorContext): string {
-  const roster = c.members.map((m) => `- ${m.id}: ${m.role}${c.speaking.includes(m.id) ? " (speaking right now)" : ""}`).join("\n");
+  const roster = c.members.map((m) => `- ${m.id}: ${m.role}${c.speaking.includes(m.id) ? " (speaking right now)" : c.queued?.includes(m.id) ? " (already queued to speak)" : ""}`).join("\n");
   return [
     describeRoom(c.view),
     `Members:\n${roster}`,
     c.thread ? `This is a side thread hanging off message #${c.thread}; decide only for the thread.` : "",
     c.recent.length ? `Earlier${c.thread ? " in the thread" : " in the room"}:\n\n${renderEvents(c.recent, c.view.focus)}` : "",
     `New since you last decided:\n\n${renderEvents(c.fresh, c.view.focus)}`,
-    `Who should speak next? Pick a member only when they have something genuinely new to add: their expertise is needed, a claim they can check or challenge, a question aimed at them, or a flaw they would catch. Several members may speak at once when each has something different to say (at most ${c.max}). A member named with @ by another member is a strong hint, not an obligation: skip them when the room already agrees or the question was answered. Do not pick someone just to agree or restate. Do not pick the author of the latest message unless someone asked them something. Silence is fine: when the point is settled, the room is circling, or it is waiting on the human, pick nobody.`,
+    `Who should speak next? Pick a member only when they have something genuinely new to add: their expertise is needed, a claim they can check or challenge, a question aimed at them, or a flaw they would catch. Several members may speak at once when each has something different to say (at most ${c.max}). A member named with @ by another member is a strong hint, not an obligation: skip them when the room already agrees or the question was answered. Do not pick someone just to agree or restate. Do not pick the author of the latest message unless someone asked them something. Do not pick a member who is speaking right now or already queued unless a new message asks them a direct question. Silence is fine: when the point is settled, the room is circling, or it is waiting on the human, pick nobody.`,
     `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something.`,
     `Answer with JSON only, in this shape:
 {"speak": [{"member": "<id>", "reply_to": <message number they answer>, "why": "<what they should bring, in a few words>"}],
