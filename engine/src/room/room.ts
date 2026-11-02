@@ -7,6 +7,7 @@ import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
+import { channelTerms, glossaryPrompt, noteTerms, parseGlossary, repoAdrs, type GlossaryEntry, type Said } from "./glossary.js";
 import { BidFloor, CARD_SYSTEM, shortGist, FLOOR_SYSTEM, GIST_WORDS, highlightCardPrompt, highlightsPrompt, mentioned, parseHighlights, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
@@ -77,7 +78,7 @@ export type RoomEmit =
   | { event: "room.turn.tool"; data: { agent: string; name: string; thread?: number } }
   | { event: "room.turn.end"; data: { agent: string; thread?: number } }
   /** A support role started or stopped working, so the human can see it isn't stuck. */
-  | { event: "room.support"; data: { role: SupportRole | "watch" | "brief" | "highlights"; busy: boolean } }
+  | { event: "room.support"; data: { role: SupportRole | "watch" | "brief" | "highlights" | "glossary"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
   /** What a member has used in this channel so far, after each of its turns. */
   | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } }
@@ -276,7 +277,7 @@ export class Room {
   private readonly backoff = new Map<string, number>();
   private wakeTimer?: ReturnType<typeof setTimeout>;
   private wakeAtMs?: number;
-  private readonly busy = new Set<SupportRole | "watch" | "brief" | "highlights">();
+  private readonly busy = new Set<SupportRole | "watch" | "brief" | "highlights" | "glossary">();
   /** Why the room is paused, for the status line. */
   private pausedFor: string | undefined;
   private lastStatus = "";
@@ -495,6 +496,37 @@ export class Room {
       }
       if (items.length) this.log({ type: "gists", items });
     });
+  }
+
+  /**
+   * The project's vocabulary as this channel sees it: repo ADRs and defined terms, then the code
+   * names the channel keeps using, with briefs. Terms without a brief yet get one in the background
+   * (a "glossary" event follows); `writing` says so.
+   */
+  glossary(): { entries: GlossaryEntry[]; writing: boolean } {
+    const known = [...repoAdrs(this.o.repo), ...noteTerms(this.o.repo)];
+    const events = this.store.events();
+    const briefs = new Map<string, string>();
+    for (const e of events) if (e.type === "glossary") for (const t of e.terms) briefs.set(t.term, t.brief);
+    const said: Said[] = [
+      ...events.flatMap((e) => (e.type === "message" && e.from !== "human" ? [{ seq: e.seq, text: e.text }] : e.type === "highlight.card" ? [{ seq: e.about, text: e.text }] : [])),
+      ...this.docs().map((d) => ({ text: this.store.readOutput(d.slug, d.version) })),
+    ];
+    const terms = channelTerms(said, known);
+    const entries: GlossaryEntry[] = [
+      ...known,
+      ...terms.map((t) => ({ term: t.term, kind: t.kind, brief: briefs.get(t.term) ?? "", source: "channel", mentions: t.mentions })),
+    ];
+    const missing = terms.filter((t) => !briefs.has(t.term));
+    if (missing.length)
+      void this.job("glossary", async () => {
+        const reply = await this.oneShot("assistant", glossaryPrompt(missing, this.store.config().topic), CARD_SYSTEM);
+        const got = reply ? parseGlossary(reply, missing.map((t) => t.term)) : [];
+        // Terms it couldn't place are recorded too, so they aren't asked about every time.
+        const items = missing.map((t) => got.find((g) => g.term === t.term) ?? { term: t.term, brief: "(not explained yet)" });
+        this.log({ type: "glossary", terms: items });
+      });
+    return { entries, writing: missing.length > 0 };
   }
 
   private readonly cards = new Map<number, Promise<string>>();
@@ -2056,7 +2088,7 @@ export class Room {
   }
 
   /** Runs a support job unless the same one is already running. */
-  private async job(name: SupportRole | "watch" | "brief" | "highlights", fn: () => Promise<void>): Promise<void> {
+  private async job(name: SupportRole | "watch" | "brief" | "highlights" | "glossary", fn: () => Promise<void>): Promise<void> {
     if (this.busy.has(name)) return;
     this.busy.add(name);
     this.emit({ event: "room.support", data: { role: name, busy: true } });

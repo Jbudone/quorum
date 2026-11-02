@@ -108,20 +108,29 @@ func TestHoveringAHighlightShowsItsCard(t *testing.T) {
 	contains(t, h.screen(), "proposed a per-instance cache") // drawn, as the app draws after every event
 	// Hovering the row asks for the card once, and says it's on its way.
 	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.stripTop() + 1})
-	c := h.expectCall("room.highlight")
+	c := h.callTo("room.highlight")
 	if c.params["seq"] != m.Seq {
 		t.Fatalf("card params %v", c.params)
 	}
 	contains(t, h.screen(), "writing a short summary")
+	asks := func() int {
+		n := 0
+		for _, c := range h.fc.calls {
+			if c.method == "room.highlight" {
+				n++
+			}
+		}
+		return n
+	}
 	h.send(tea.MouseMotionMsg{X: 9, Y: h.app.stripTop() + 1})
-	if n := len(h.fc.calls); h.fc.calls[n-1].method != "room.highlight" {
+	if asks() != 1 {
 		t.Fatal("moving within the row shouldn't ask again")
 	}
 	h.reply("room.highlight", `{"text":"They proposed a cache in each instance.\n\n- reads drop to memory\n- stale for 30 s at most"}`)
 	s := h.screen()
 	contains(t, s, "They proposed a cache in each instance.")
 	contains(t, s, "stale for 30 s at most")
-	contains(t, s, "click to jump to it")
+	contains(t, s, "click to open it")
 	// Moving away hides it; the card comes back from memory without asking again.
 	calls := len(h.fc.calls)
 	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.bodyTop() + 20})
@@ -131,4 +140,54 @@ func TestHoveringAHighlightShowsItsCard(t *testing.T) {
 	if len(h.fc.calls) != calls {
 		t.Fatal("asked for a card it already had")
 	}
+}
+
+func TestCardNamesLinkToTheGlossaryAndClickingOpensTheMessageWithItsSummary(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	m := firstMemberMessage(t, h)
+	h.event(rpc.RoomEvent{Type: "tags", Seq: 990, Items: []rpc.MessageTag{{Seq: m.Seq, From: m.From, Kind: "decision", Gist: "confirmed all six items met"}}})
+	h.event(rpc.RoomEvent{Type: "highlight.card", Seq: 991, About: m.Seq, Text: "They checked six objections against the plan.\n\n- ADR 0009 inclusion is fixed\n- commitChangeSet is the gate"})
+	h.screen()
+	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.stripTop() + 1})
+	h.reply("room.glossary", `{"entries":[{"term":"ADR 0009","kind":"adr","brief":"Proposed: evaluation harness for regions.","source":"channel"},{"term":"commitChangeSet","kind":"code","brief":"Where staged ops become the committed grid.","source":"channel","mentions":[12]}],"writing":false}`)
+	h.screen()
+	r := h.app.rm.room
+	if len(r.cardLinks) < 2 {
+		t.Fatalf("card links %+v", r.cardLinks)
+	}
+	// Onto the card: it lights up and says how it works.
+	l := r.cardLinks[0]
+	h.send(tea.MouseMotionMsg{X: l.from, Y: l.row})
+	contains(t, h.screen(), "click a name to look it up")
+	// A name opens the glossary on it.
+	h.send(tea.MouseClickMsg{X: l.from, Y: l.row, Button: tea.MouseLeft})
+	s := h.screen()
+	contains(t, s, "GLOSSARY")
+	contains(t, s, "Proposed: evaluation harness for regions.")
+	h.press("esc")
+	lacks(t, h.screen(), "GLOSSARY")
+	// Clicking the card elsewhere opens the message, its summary boxed above it.
+	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.stripTop() + 1})
+	h.screen()
+	h.send(tea.MouseMotionMsg{X: 10, Y: h.app.bodyTop() + 1})
+	h.send(tea.MouseClickMsg{X: 10, Y: h.app.bodyTop() + 1, Button: tea.MouseLeft})
+	s = h.screen()
+	contains(t, s, "SUMMARY  by your assistant")
+	contains(t, s, "They checked six objections against the plan.")
+	contains(t, s, "a ask the assistant about it")
+	if r.spot == nil || r.spot.seq != m.Seq {
+		t.Fatalf("spot %+v", r.spot)
+	}
+	// Names in the pinned summary link too, and alt+t opens the glossary to browse.
+	if len(r.feedLinks) == 0 {
+		t.Fatal("no links in the pinned summary")
+	}
+	h.press("esc")
+	h.press("alt+t")
+	h.typ("commit")
+	s = h.screen()
+	contains(t, s, "Where staged ops become the committed grid.")
+	contains(t, s, "used in this channel: #12")
 }

@@ -316,7 +316,7 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	if r.view != 0 {
 		blocks = append(blocks, fg(th.Info).Render(fmt.Sprintf("side thread on #%d", r.view))+fg(th.Subtle).Render(" · esc back to the channel"))
 	}
-	r.spotLine, r.spotBar = -1, -1
+	r.spotLine, r.spotBar, r.feedLinks = -1, -1, nil
 	lines := func() int { // lines drawn so far, blocks being joined by a blank line
 		n := 0
 		for _, b := range blocks {
@@ -353,9 +353,16 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 			for i, l := range body {
 				body[i] = mark + l
 			}
+			// Its summary sits above it, boxed apart from the message itself.
 			r.spotLine = lines()
-			r.spotBar = r.spotLine + len(body)
-			b = strings.Join(body, "\n") + "\n" + renderSpotBar(r, th)
+			summary, links := summaryBlock(r, th, s.seq, min(width-2, 96))
+			for _, l := range links {
+				l.row += r.spotLine
+				r.feedLinks = append(r.feedLinks, l)
+			}
+			top := summary + "\n\n"
+			r.spotBar = r.spotLine + lipgloss.Height(summary) + 1 + len(body)
+			b = top + strings.Join(body, "\n") + "\n" + renderSpotBar(r, th)
 		}
 		// A message with a thread under it says so, in the channel.
 		if t, ok := r.threads[it.ev.Seq]; ok && r.view == 0 && it.ev.Type == "message" {

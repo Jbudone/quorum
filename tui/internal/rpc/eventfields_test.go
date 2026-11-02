@@ -24,6 +24,28 @@ func TestRoomEventHasEveryEngineField(t *testing.T) {
 	for i := 0; i < rt.NumField(); i++ {
 		have[strings.Split(rt.Field(i).Tag.Get("json"), ",")[0]] = true
 	}
+	// Only each event shape's own fields: text inside nested object types (an array of
+	// { term, brief }, say) belongs to a struct of its own.
+	var top strings.Builder
+	depth := 0
+	for _, c := range body {
+		switch c {
+		case '{':
+			depth++
+			top.WriteRune(' ')
+			continue
+		case '}':
+			depth--
+			top.WriteRune(' ')
+			continue
+		}
+		if depth <= 1 {
+			top.WriteRune(c)
+		} else {
+			top.WriteRune(' ')
+		}
+	}
+	body = top.String()
 	for _, m := range regexp.MustCompile(`(\w+)\??:`).FindAllStringSubmatch(body, -1) {
 		if !have[m[1]] {
 			t.Errorf("the engine logs %q but RoomEvent has no such field", m[1])

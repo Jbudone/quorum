@@ -540,6 +540,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "room.exportDoc":
         // The human typed the path, so this is their approval; exportDoc still refuses paths outside the project.
         return { path: needRoom().exportDoc(String(p.slug), String(p.path ?? "")) };
+      case "room.glossary":
+        // ADRs, defined terms and the channel's code names, each with a brief.
+        return needRoom().glossary();
       case "room.highlight":
         // The card for a highlighted message, written the first time it's asked for.
         return { text: await needRoom().highlightCard(Number(p.seq)) };

@@ -79,12 +79,21 @@ type roomModel struct {
 	// the line of shortcuts under it, and where each shortcut sits on that line.
 	spot *spotlight
 	// hover: the highlight under the mouse; cards: each highlight's card, by message; cardErr: why one couldn't be written.
-	hover    int
-	cards    map[int]string
-	cardErr  map[int]string
-	spotLine int
-	spotBar  int
-	spotActs []spotAction
+	hover   int
+	cards   map[int]string
+	cardErr map[int]string
+	// cardHot: the mouse is on the card itself. cardLinks / feedLinks: names to click, on screen and in the feed's lines.
+	cardHot   bool
+	cardLinks []termLink
+	feedLinks []termLink
+	// The glossary, once asked for; terms is the glossary modal when open.
+	glossary        []rpc.GlossaryEntry
+	glossaryAsked   bool
+	glossaryWriting bool
+	terms           *termsModal
+	spotLine        int
+	spotBar         int
+	spotActs        []spotAction
 
 	id, dir, topic string
 	workspace      string   // the project's folder name, for the header
@@ -297,6 +306,15 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		r.tags = append(r.tags, e.Items...)
 	case "highlight.card":
 		r.cards[e.About] = e.Text
+	case "glossary":
+		for _, t := range e.Terms {
+			for i := range r.glossary {
+				if r.glossary[i].Term == t.Term {
+					r.glossary[i].Brief = t.Brief
+				}
+			}
+		}
+		r.glossaryWriting = false
 	case "gists":
 		// Gists written later for messages tagged before highlights existed.
 		for _, g := range e.Items {
@@ -760,6 +778,8 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 			return roomCommand{method: "room.post", params: map[string]any{"text": v, "thread": "new"}, local: "open-thread"}
 		}
 		return roomCommand{err: "/ask takes a question; it starts a side thread"}
+	case in == "/terms" || in == "/glossary":
+		return roomCommand{local: "terms"}
 	case strings.HasPrefix(in, "/thread"):
 		n, err := strconv.Atoi(strings.TrimPrefix(word("/thread"), "#"))
 		if err != nil || n < 1 {

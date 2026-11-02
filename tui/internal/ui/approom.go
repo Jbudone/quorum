@@ -367,6 +367,9 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 			return cmd
 		}
 	}
+	if r.terms != nil {
+		return a.handleTermsKey(k)
+	}
 	if r.overlay != nil {
 		o := r.overlay
 		switch key {
@@ -453,6 +456,8 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	case "alt+h":
 		a.stepHighlight()
 		return nil
+	case "alt+t":
+		return a.openTerms("")
 	case "tab", "shift+tab":
 		if r.pane == paneRoom {
 			r.pane = paneAssistant
@@ -615,6 +620,8 @@ func (a *App) submitRoom() tea.Cmd {
 	case "thread":
 		r.view, u.feedFollow = cmd.params["seq"].(int), true
 		return nil
+	case "terms":
+		return a.openTerms("")
 	case "open-thread":
 		u.openThread = true
 	}
@@ -952,6 +959,8 @@ func (a *App) roomView() string {
 		body = a.joinBox(bh)
 	case r.edit != nil:
 		body = a.editBox(bh)
+	case r.terms != nil:
+		body = lipgloss.NewStyle().Width(a.w).Height(bh).MaxHeight(bh).Padding(0, 2).Render(renderTerms(r, a.th, a.w-4, bh))
 	case r.overlay != nil:
 		body = lipgloss.NewStyle().Width(a.w).Height(bh).Padding(0, 2).Render(u.overlayVP.View())
 	case a.roomSide():

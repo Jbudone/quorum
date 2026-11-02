@@ -24,7 +24,6 @@ type spotlight struct {
 	from string
 	gist string
 	jump bool // scroll the feed to it on the next refresh
-	card bool // show its card (picked with alt+h, where there's no mouse to hover)
 }
 
 // spotAction is one shortcut under the spotlit message, and where it sits on its line.
@@ -176,6 +175,8 @@ func (a *App) spotOn(seq int) {
 		}
 	}
 	r.spot = &spotlight{seq: seq, from: tag.From, gist: tag.Gist, jump: true}
+	a.askCard(seq)
+	a.askGlossary()
 	r.view = 0
 	for _, it := range r.feed {
 		if e := it.ev; e.Seq == seq && e.Type == "message" && e.Thread != 0 && e.Thread != e.Seq {
@@ -205,8 +206,6 @@ func (a *App) stepHighlight() {
 		}
 	}
 	a.spotOn(all[i].Seq)
-	a.rm.room.spot.card = true
-	a.askCard(all[i].Seq)
 }
 
 // spotKey runs a shortcut under the spotlit message. Any other key closes the spotlight and goes on
@@ -278,18 +277,19 @@ func (a *App) roomHover(m tea.MouseMotionMsg) bool {
 	}
 	r := a.rm.room
 	seq := a.highlightAt(m.Mouse().X, m.Mouse().Y)
-	// Moving onto the card itself keeps it open, so it can be read without holding still.
+	// Moving onto the card itself keeps it open (and lit), so its links can be clicked.
 	if seq == 0 && r.hover != 0 && a.overCard(m.Mouse().X, m.Mouse().Y) {
-		return false
+		changed := !r.cardHot
+		r.cardHot = true
+		return changed
 	}
-	if seq == r.hover {
-		return false
-	}
-	r.hover = seq
+	changed := seq != r.hover || r.cardHot
+	r.hover, r.cardHot = seq, false
 	if seq != 0 {
 		a.askCard(seq)
+		a.askGlossary()
 	}
-	return true
+	return changed
 }
 
 // askCard asks the engine for a highlight's card, once.
@@ -340,10 +340,6 @@ func (a *App) cardBox(fh int) (seq, x, y, w int) {
 	r := a.rm.room
 	seq = r.hover
 	w = min(64, a.w-4)
-	if seq == 0 && r.spot != nil && r.spot.card {
-		seq = r.spot.seq
-		return seq, max(a.feedW()-w-1, 0), a.bodyTop() + fh - a.rm.cardH, w
-	}
 	if seq == 0 {
 		return 0, 0, 0, 0
 	}
@@ -385,23 +381,31 @@ func (a *App) highlightCard(fh int) (string, int, int) {
 	head := tagGlyph(th, tag.Kind) + " " + fg(r.colorOf(th, tag.From)).Bold(true).Render(displayName(tag.From)) + fg(th.Text).Bold(true).Render(" "+tag.Gist)
 	body := fg(th.Muted).Italic(true).Render(a.spin.View() + " writing a short summary…")
 	if text, ok := r.cards[seq]; ok {
-		body = strings.TrimRight(renderMarkdown(text, inner, th), "\n")
+		body = strings.TrimRight(renderMarkdown(r.linkify(text), inner, th), "\n")
 	} else if err := r.cardErr[seq]; err != "" {
 		body = fg(th.Err).Render(ansi.Wrap("✗ couldn't write it: "+err, inner, ""))
 	}
-	foot := fg(th.Subtle).Render(fmt.Sprintf("#%d · click to jump to it", seq))
-	if r.spot != nil && r.spot.seq == seq {
-		foot = fg(th.Subtle).Render(fmt.Sprintf("#%d · a ask · d DM · t thread · esc close", seq))
+	foot := fg(th.Subtle).Render(fmt.Sprintf("#%d · click to open it · names link to the glossary", seq))
+	if r.cardHot {
+		foot = fg(th.Accent2).Render("click a name to look it up · click elsewhere to open the message · move away to close")
 	}
 	content := ansi.Truncate(head, inner, "…") + "\n\n" + body + "\n\n" + foot
 	// Never taller than the room under the strip.
 	if lines := strings.Split(content, "\n"); len(lines) > fh-2 {
 		content = strings.Join(append(lines[:max(fh-3, 1)], fg(th.Subtle).Render("…")), "\n")
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(th.Accent2).Padding(0, 1).Width(w).Render(content)
+	// Lit while the mouse is on it, so it's clear moving away will close it.
+	edge := lipgloss.NormalBorder()
+	color := th.Border
+	if r.cardHot {
+		edge, color = lipgloss.ThickBorder(), th.Accent2
+	}
+	box := lipgloss.NewStyle().Border(edge).BorderForeground(color).Padding(0, 1).Width(w).Render(content)
 	a.rm.cardH = lipgloss.Height(box)
-	if r.hover == 0 {
-		y = a.bodyTop() + fh - a.rm.cardH // the picked one's card sits at the foot of the feed
+	// Links: the body starts 2 columns and 3 lines into the box (border, padding, head, blank line).
+	r.cardLinks = nil
+	if _, ok := r.cards[seq]; ok {
+		r.cardLinks = r.findLinks(strings.Split(body, "\n"), x+2, y+3)
 	}
 	return box, x, y
 }
@@ -414,6 +418,17 @@ func (a *App) roomClick(m tea.MouseClickMsg) (tea.Cmd, bool) {
 	}
 	r := a.rm.room
 	x, y := m.Mouse().X, m.Mouse().Y
+	// The card floats over the room, so it's checked first: a name opens the glossary, anywhere
+	// else opens the message with the card's summary above it.
+	if r.hover != 0 && a.overCard(x, y) {
+		if term, ok := linkAt(r.cardLinks, x, y); ok {
+			return a.openTerms(term), true
+		}
+		seq := r.hover
+		r.hover, r.cardHot = 0, false
+		a.spotOn(seq)
+		return nil, true
+	}
 	if seq := a.highlightAt(x, y); seq != 0 {
 		r.hover = 0
 		a.spotOn(seq)
@@ -422,6 +437,9 @@ func (a *App) roomClick(m tea.MouseClickMsg) (tea.Cmd, bool) {
 	// The shortcuts under the spotlit message, in the feed.
 	top := a.bodyTop()
 	fh, _ := a.paneHeights()
+	if term, ok := linkAt(r.feedLinks, x, y-top+a.rm.feedVP.YOffset()); ok && x < a.feedW() && y >= top && y < top+fh {
+		return a.openTerms(term), true
+	}
 	if r.spot != nil && r.spotBar >= 0 && x < a.feedW() && y >= top && y < top+fh && y-top+a.rm.feedVP.YOffset() == r.spotBar {
 		for _, act := range r.spotActs {
 			if x >= act.from && x < act.to {

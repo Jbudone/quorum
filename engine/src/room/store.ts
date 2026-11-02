@@ -31,6 +31,8 @@ export type RoomEventBody =
   | { type: "gists"; items: MessageTag[] }
   /** The card shown when the human hovers a highlight: a short explanation of message `about`. */
   | { type: "highlight.card"; about: number; text: string }
+  /** One-line briefs of terms the channel uses that the repo doesn't define (see glossary.ts). */
+  | { type: "glossary"; terms: { term: string; brief: string }[] }
   /** A starter workstream: a side thread owned by a few members, with what done looks like. */
   | { type: "workstream"; thread: number; title: string; done?: string; members: string[] }
   /** The outcome of a side conversation, posted back to the channel when it settles. */
@@ -463,6 +465,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "tags":
     case "gists":
     case "highlight.card":
+    case "glossary":
     case "doc.brief":
       return false;
     default:

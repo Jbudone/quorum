@@ -49,6 +49,8 @@ type (
 		Model   string `json:"model"`
 		// highlight.card: the message the card explains.
 		About int `json:"about"`
+		// glossary: briefs of the channel's own names.
+		Terms []GlossaryBrief `json:"terms"`
 		// agent.swapped: what it ran on before.
 		Was  *SwapWas `json:"was"`
 		Memo string   `json:"memo"`
@@ -67,6 +69,23 @@ type (
 		// Workstreams: what done looks like, and who owns it.
 		Done    string   `json:"done"`
 		Members []string `json:"members"`
+	}
+	GlossaryBrief struct {
+		Term  string `json:"term"`
+		Brief string `json:"brief"`
+	}
+	// GlossaryEntry is one name in the project's vocabulary (room.glossary).
+	GlossaryEntry struct {
+		Term     string   `json:"term"`
+		Kind     string   `json:"kind"` // adr | term | code
+		Brief    string   `json:"brief"`
+		Aliases  []string `json:"aliases"`
+		Source   string   `json:"source"`
+		Mentions []int    `json:"mentions"`
+	}
+	GlossaryResult struct {
+		Entries []GlossaryEntry `json:"entries"`
+		Writing bool            `json:"writing"`
 	}
 	SwapWas struct {
 		CLI   string `json:"cli"`
