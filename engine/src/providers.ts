@@ -129,3 +129,32 @@ export function noteRecent(key: string, file = recentPath(), now = Date.now()): 
     // Recents are a convenience; never fail a pick over them.
   }
 }
+
+const creditsPath = () => join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "quorum", "credit-models.json");
+
+/**
+ * Routes ("harness model-id") a vendor refused for want of usage credits: on that harness the model
+ * draws on paid credits, not the subscription's quota (on Claude, models like Fable). Learned when
+ * it happens, since no CLI says so up front.
+ */
+export function readCreditRoutes(file = creditsPath()): Set<string> {
+  try {
+    const j = JSON.parse(readFileSync(file, "utf8"));
+    return new Set(Array.isArray(j) ? j.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function noteCreditRoute(cli: string, model: string, file = creditsPath()): void {
+  const all = readCreditRoutes(file);
+  const key = `${cli} ${model}`;
+  if (all.has(key)) return;
+  all.add(key);
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify([...all].sort(), null, 1));
+  } catch {
+    // A label in the catalog; never fail a turn over it.
+  }
+}

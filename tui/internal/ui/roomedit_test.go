@@ -87,7 +87,14 @@ func TestProvidersScreen(t *testing.T) {
 	h.reply("providers.get", `{"harnesses":["claude","codex","kimi","opencode"],"favourites":["anthropic/claude-opus-5-5"],"providers":{}}`)
 	s := h.screen()
 	contains(t, s, "PROVIDERS & MODELS")
-	contains(t, s, "press enter to move a member")
+	// In a channel it asks who first: members, support roles, someone new, or just the catalog.
+	contains(t, s, "Who are you changing?")
+	contains(t, s, "support role")
+	contains(t, s, "Bring in someone new")
+	h.press("up") // the last row: just browse
+	h.press("enter")
+	s = h.screen()
+	contains(t, s, "Star the models you reach for")
 	contains(t, s, "quota") // a subscription harness's models show quota, not a list price
 
 	// Models: alt+f stars.
@@ -135,18 +142,20 @@ func TestProvidersScreen(t *testing.T) {
 	h.press("esc")
 	lacks(t, h.screen(), "PROVIDERS & MODELS")
 
-	// Models: enter asks who should run on it, and moves them.
+	// Moving a member: pick who, then the model; esc on the models goes back to who.
+	who := h.app.rm.room.agents[1].ID
 	h.press("alt+o")
-	h.press("alt+1")
+	h.press("down", "enter")
+	contains(t, h.screen(), "New model for "+who)
+	h.press("esc")
+	contains(t, h.screen(), "Who are you changing?")
+	h.press("enter") // the cursor is back on the first row
+	h.press("esc")
+	h.press("down", "enter")
 	h.typ("astra")
 	h.press("enter")
-	s = h.screen()
-	contains(t, s, "Who should run on GPT-6 Astra?")
-	contains(t, s, "from your codex subscription's quota")
-	contains(t, s, "support role")
-	h.press("down", "enter")
 	c = h.expectCall("room.swap")
-	if c.params["id"] != h.app.rm.room.agents[1].ID || c.params["cli"] != "codex" || c.params["model"] != "gpt-6-astra" {
+	if c.params["id"] != who || c.params["cli"] != "codex" || c.params["model"] != "gpt-6-astra" {
 		t.Fatalf("swap params %v", c.params)
 	}
 	lacks(t, h.screen(), "PROVIDERS & MODELS")
@@ -193,4 +202,16 @@ func TestReadGrantsAFolderOutsideTheProject(t *testing.T) {
 	contains(t, h.screen(), "let everyone read /home/me/work/other")
 	h.event(rpc.RoomEvent{Type: "access.granted", Seq: 96, Path: "/home/me/work/other", By: "human"})
 	contains(t, h.screen(), "everyone can now read /home/me/work/other")
+}
+
+func TestRouteCostTellsQuotaCreditsAndBilled(t *testing.T) {
+	for rt, want := range map[rpc.Route]string{
+		{Harness: "claude", ID: "claude-opus-5-5"}:                      "quota",
+		{Harness: "claude", ID: "claude-fable-5-1", Billing: "credits"}: "credits",
+		{Harness: "opencode", ID: "anthropic/claude-fable-5-1"}:         "billed",
+	} {
+		if got := routeCost(rt); got != want {
+			t.Errorf("%v: %s, want %s", rt, got, want)
+		}
+	}
 }

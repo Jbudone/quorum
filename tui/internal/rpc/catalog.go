@@ -9,6 +9,8 @@ type (
 		Label   string `json:"label"`
 		Ready   bool   `json:"ready"`
 		Needs   string `json:"needs"`
+		// Billing: "credits" when, on this harness, the model draws on paid usage credits instead of the subscription.
+		Billing string `json:"billing"`
 	}
 	Cost struct {
 		Input  float64 `json:"input"`

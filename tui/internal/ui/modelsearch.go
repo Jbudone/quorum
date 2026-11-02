@@ -758,8 +758,10 @@ func (s *modelSearch) renderRow(r searchRow, on bool, th theme.Theme, w int) str
 		harness = rt.Harness
 		if !rt.Ready {
 			harness = rt.Needs
-		} else if !billedHarness(rt.Harness) {
+		} else if routeCost(rt) == "quota" {
 			price = "quota" // runs on a subscription: it costs quota, not its list price
+		} else if routeCost(rt) == "credits" {
+			price = "credits " + price
 		}
 	}
 	cols := []string{fmtCtx(m.Context), price, badges(m)}
@@ -843,10 +845,17 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 			price += " per Mtok"
 		}
 		// On a subscription harness the list price is only for comparison: it costs quota.
-		if rt, ok := s.chosen(m); ok && rt.Ready && !billedHarness(rt.Harness) {
-			fact("cost", "quota on your "+rt.Harness+" subscription")
-			if price != "free" {
-				price = "API list " + price
+		if rt, ok := s.chosen(m); ok && rt.Ready {
+			switch routeCost(rt) {
+			case "quota":
+				fact("cost", "quota on your "+rt.Harness+" subscription")
+				if price != "free" {
+					price = "API list " + price
+				}
+			case "credits":
+				fact("cost", "paid usage credits on your "+rt.Harness+" plan, not its quota")
+			case "billed":
+				fact("cost", "billed per token")
 			}
 		}
 		fact("price", price)
@@ -879,10 +888,10 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 			label += " · " + rt.Label
 		}
 		status := fg(th.OK).Render(" ✓")
-		if billedHarness(rt.Harness) {
-			status += fg(th.Subtle).Render(" billed")
+		if c := routeCost(rt); c == "credits" {
+			status += fg(th.Warn).Render(" credits")
 		} else {
-			status += fg(th.Subtle).Render(" quota")
+			status += fg(th.Subtle).Render(" " + c)
 		}
 		if !rt.Ready {
 			status, st = fg(th.Warn).Render(" "+rt.Needs), fg(th.Subtle)

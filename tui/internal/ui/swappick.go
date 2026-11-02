@@ -12,39 +12,48 @@ import (
 	"github.com/jbud/quorum/tui/internal/theme"
 )
 
-// From the model catalog (alt+o) with a channel open, enter on a model asks who should run on it:
-// a member (it keeps its memory, as with /swap) or a support role. This is how a member is moved to
-// another model, e.g. off one that ran out of credits; adding someone new is alt+a.
+// With a channel open, alt+o starts with who: a member (or support role) to move to another model,
+// someone new to bring in, or just the catalog. Picking a member opens the catalog for them, and
+// enter on a model moves them onto it, keeping their memory (as /swap does).
 
 // billedHarness: harnesses that bill per token through an API key. Every other vendor CLI runs on
 // its subscription, so a model there costs quota, not its list price (the engine's METERED_CLIS).
 func billedHarness(h string) bool { return h == "opencode" || h == "kimi" }
 
-type swapPick struct {
-	name, cli, model string // the model picked, and the harness it will run on
-	who              []swapWho
-	cur              int
+// routeCost says what running a model this way costs: "billed", "credits" (a subscription model
+// that draws on paid usage credits, learned when it ran out) or "quota".
+func routeCost(rt rpc.Route) string {
+	switch {
+	case billedHarness(rt.Harness):
+		return "billed"
+	case rt.Billing == "credits":
+		return "credits"
+	}
+	return "quota"
 }
 
 type swapWho struct {
 	id, now string // who, and what they run on now
 	held    bool   // sitting out a limit: the likeliest one to move
 	support bool
+	action  string // "new" (bring someone in) or "browse" (just the catalog); "" for a person
 }
 
-// openSwapPick starts choosing who runs on the highlighted model; false when there's nothing to swap.
-func (a *App) openSwapPick(m *rpc.CatalogModel, rt rpc.Route) bool {
-	if a.rm == nil || a.rm.room == nil || a.rm.setup != nil || !rt.Ready {
-		return false
-	}
+// whoPick is the first step of alt+o in a channel.
+type whoPick struct {
+	who []swapWho
+	cur int
+}
+
+// openWhoPick lists who could move, held members first, then support roles, then the other choices.
+func (a *App) openWhoPick() {
 	r := a.rm.room
-	p := &swapPick{name: m.Name, cli: rt.Harness, model: rt.ID}
+	var who []swapWho
 	for _, ag := range r.agents {
 		_, held := r.held[ag.ID]
-		p.who = append(p.who, swapWho{id: ag.ID, now: strings.TrimSpace(ag.CLI + " " + ag.Model), held: held})
+		who = append(who, swapWho{id: ag.ID, now: strings.TrimSpace(ag.CLI + " " + ag.Model), held: held})
 	}
-	// Who's sitting out comes first: that's usually why you're here.
-	slices.SortStableFunc(p.who, func(x, y swapWho) int {
+	slices.SortStableFunc(who, func(x, y swapWho) int {
 		switch {
 		case x.held && !y.held:
 			return -1
@@ -57,54 +66,83 @@ func (a *App) openSwapPick(m *rpc.CatalogModel, rt rpc.Route) bool {
 		id   string
 		spec rpc.ChairSpec
 	}{{"assistant", r.support.Assistant}, {"chair", r.support.Chair}, {"scribe", r.support.Scribe}, {"floor", r.support.Floor}} {
-		p.who = append(p.who, swapWho{id: s.id, now: strings.TrimSpace(s.spec.CLI + " " + s.spec.Model), support: true})
+		who = append(who, swapWho{id: s.id, now: strings.TrimSpace(s.spec.CLI + " " + s.spec.Model), support: true})
 	}
-	a.prov.use = p
-	return true
+	who = append(who, swapWho{id: "Bring in someone new", action: "new"}, swapWho{id: "Just browse models", action: "browse"})
+	a.prov.pick = &whoPick{who: who}
 }
 
-func (a *App) handleSwapPickKey(key string) tea.Cmd {
-	p := a.prov.use
+func (a *App) handleWhoPickKey(key string) tea.Cmd {
+	p := a.prov
+	w := p.pick
 	switch key {
-	case "esc":
-		a.prov.use = nil
-	case "up", "k":
-		p.cur = max(p.cur-1, 0)
-	case "down", "j":
-		p.cur = min(p.cur+1, len(p.who)-1)
-	case "enter":
-		w := p.who[p.cur]
-		a.call("room.swap", map[string]any{"id": w.id, "cli": p.cli, "model": p.model})
+	case "esc", "alt+o":
 		a.prov = nil
-		a.notify(fmt.Sprintf("Moving %s to %s %s; it keeps its memory.", w.id, p.cli, p.model))
+	case "up", "k":
+		w.cur = (w.cur - 1 + len(w.who)) % len(w.who) // wraps, so the last choices are one key away
+	case "down", "j":
+		w.cur = (w.cur + 1) % len(w.who)
+	case "enter":
+		x := w.who[w.cur]
+		p.pick = nil
+		switch x.action {
+		case "new":
+			a.prov = nil
+			a.openJoin(nil)
+			return nil
+		case "browse":
+		default:
+			p.target = &x
+		}
+		p.tab = tabModels
+		return p.focus()
 	}
 	return nil
 }
 
-func renderSwapPick(p *swapPick, th theme.Theme, w int) []string {
-	cost := "billed per token"
-	if !billedHarness(p.cli) {
-		cost = "from your " + p.cli + " subscription's quota"
+// swapTo moves the target onto the highlighted model; false when there's no target or no route.
+func (a *App) swapTo(m *rpc.CatalogModel, rt rpc.Route) bool {
+	t := a.prov.target
+	if t == nil || !rt.Ready {
+		return false
 	}
+	a.call("room.swap", map[string]any{"id": t.id, "cli": rt.Harness, "model": rt.ID})
+	a.prov = nil
+	a.notify(fmt.Sprintf("Moving %s to %s (%s %s); it keeps its memory.", t.id, m.Name, rt.Harness, rt.ID))
+	return true
+}
+
+func renderWhoPick(w *whoPick, th theme.Theme, width int) []string {
 	lines := []string{
-		fg(th.Text).Bold(true).Render("Who should run on "+p.name+"?") + fg(th.Muted).Render("  "+p.cli+" "+p.model+" · "+cost),
-		fg(th.Muted).Render("A member keeps its memory and picks up where it left off. To bring in someone new, use alt+a in the channel."),
+		fg(th.Text).Bold(true).Render("Who are you changing?"),
+		fg(th.Muted).Render("Pick a member to move to another model (it keeps its memory), or bring in someone new."),
 		"",
 	}
-	for i, x := range p.who {
+	for i, x := range w.who {
+		if x.action == "new" {
+			lines = append(lines, "")
+		}
 		mark := "  "
 		st := fg(th.Text)
-		if i == p.cur {
+		if i == w.cur {
 			mark, st = fg(th.Accent2).Render("❯ "), fg(th.Accent2).Bold(true)
 		}
-		tag := ""
-		switch {
-		case x.held:
-			tag = fg(th.Warn).Render("  ⏸ sitting out a limit")
-		case x.support:
-			tag = fg(th.Subtle).Render("  support role")
+		var line string
+		if x.action != "" {
+			line = mark + st.Render(x.id)
+			if x.action == "new" {
+				line += fg(th.Subtle).Render("  alt+a in the channel")
+			}
+		} else {
+			line = mark + st.Render(fmt.Sprintf("%-20s", x.id)) + fg(th.Muted).Render("now "+orDefault(x.now, "its default"))
+			switch {
+			case x.held:
+				line += fg(th.Warn).Render("  ⏸ sitting out a limit")
+			case x.support:
+				line += fg(th.Subtle).Render("  support role")
+			}
 		}
-		lines = append(lines, ansi.Truncate(mark+st.Render(fmt.Sprintf("%-20s", x.id))+fg(th.Muted).Render("now "+orDefault(x.now, "its default"))+tag, w, "…"))
+		lines = append(lines, ansi.Truncate(line, width, "…"))
 	}
 	return lines
 }

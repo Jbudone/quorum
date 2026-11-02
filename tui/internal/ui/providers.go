@@ -36,7 +36,8 @@ type providersScreen struct {
 	file   *rpc.ProvidersFile
 	form   *providerForm
 	err    string
-	use    *swapPick // with a channel open: who should run on the model picked
+	pick   *whoPick // with a channel open, alt+o asks who first
+	target *swapWho // who the Models tab is picking a model for; enter moves them onto it
 }
 
 // providerForm edits one provider, or adds a custom one.
@@ -99,8 +100,14 @@ func (a *App) handleProvKey(k tea.KeyPressMsg) tea.Cmd {
 	if p.form != nil {
 		return a.handleProvForm(k)
 	}
-	if p.use != nil {
-		return a.handleSwapPickKey(key)
+	if p.pick != nil {
+		return a.handleWhoPickKey(key)
+	}
+	if key == "esc" && p.target != nil {
+		// Back to who, rather than out.
+		p.target = nil
+		a.openWhoPick()
+		return nil
 	}
 	switch key {
 	case "esc", "alt+o":
@@ -122,11 +129,11 @@ func (a *App) handleProvKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	switch p.tab {
 	case tabModels:
-		// enter moves someone in the open channel onto the model; with no channel open, it stars.
+		// enter moves whoever was picked onto the model; with nobody picked, it stars.
 		if key == "enter" {
 			if rows := p.search.build(); p.search.cur < len(rows) && rows[p.search.cur].m != nil {
 				m := rows[p.search.cur].m
-				if rt, ok := p.search.chosen(m); ok && a.openSwapPick(m, rt) {
+				if rt, ok := p.search.chosen(m); ok && a.swapTo(m, rt) {
 					return nil
 				}
 				k = tea.KeyPressMsg{Code: 'f', Mod: tea.ModAlt}
@@ -339,18 +346,17 @@ func (a *App) providersView() string {
 	case p.form != nil:
 		lines = append(lines, a.providerFormView(w)...)
 		keys = "tab next · enter save on the last row · space toggles hidden · alt+d remove your settings · esc back"
-	case p.tab == tabModels && p.use != nil:
-		lines = append(lines, renderSwapPick(p.use, th, w)...)
-		keys = "↑↓ choose · enter move them onto it · esc back"
+	case p.pick != nil:
+		lines = append(lines, renderWhoPick(p.pick, th, w)...)
+		keys = "↑↓ choose · enter pick · esc close"
 	case p.tab == tabModels:
-		inRoom := a.rm != nil && a.rm.room != nil && a.rm.setup == nil
-		intro := "Star the models you reach for; they lead every model search, and the assistant sees them first."
+		intro := fg(th.Muted).Render("Star the models you reach for; they lead every model search, and the assistant sees them first.")
 		keys = "type to search · enter or alt+f star · tab harness · alt+c fold · " + keys
-		if inRoom {
-			intro = "Pick a model and press enter to move a member (or support role) onto it; alt+f stars it."
-			keys = "type to search · enter move someone onto it · alt+f star · tab harness · alt+c fold · " + keys
+		if t := p.target; t != nil {
+			intro = fg(th.Text).Bold(true).Render("New model for "+t.id) + fg(th.Muted).Render("  now "+orDefault(t.now, "its default")+" · enter moves it onto the highlighted model, keeping its memory")
+			keys = "type to search · enter move " + t.id + " onto it · tab harness · alt+f star · esc back to who"
 		}
-		lines = append(lines, fg(th.Muted).Render(intro), "", p.search.view(th, w, a.spin.View()))
+		lines = append(lines, intro, "", p.search.view(th, w, a.spin.View()))
 	case p.tab == tabHarnesses:
 		lines = append(lines, fg(th.Muted).Render("When a model runs on several harnesses, the first one here is picked. Vendor CLIs use their subscriptions; opencode runs any provider with a key."), "")
 		if c == nil {

@@ -520,6 +520,11 @@ func (a *App) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if key == "alt+o" && (a.screen == screenStart || a.screen == screenRoom && a.rm != nil && a.rm.setup == nil && a.rm.join == nil) {
 		a.openProviders()
+		// In a channel, start with who's changing; the catalog follows for them.
+		if a.screen == screenRoom && a.rm.room != nil {
+			a.openWhoPick()
+			return nil
+		}
 		return a.prov.focus()
 	}
 	if a.screen == screenStart {

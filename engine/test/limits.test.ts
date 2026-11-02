@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentEvent, AgentTransport } from "../src/transports/index.js";
 import { claudeLimit } from "../src/transports/claude.js";
+import { markCredits } from "../src/catalog.js";
+import { readCreditRoutes } from "../src/providers.js";
 import { AGENTS, rig } from "./roomRig.js";
 
 let cleanup: (() => Promise<unknown>)[] = [];
@@ -86,6 +88,11 @@ describe("respecting limits", () => {
     expect(ev.some((e) => e.type === "paused" && /rate limited/.test(e.reason))).toBe(false);
     expect(ev.some((e) => e.type === "message" && e.from === "skeptic")).toBe(true);
     expect(room.status().detail).toMatch(/Sitting out a usage limit: arch \(fable is out of usage credits/);
+    // Remembered for the model catalog: on this harness, fable costs credits, not quota.
+    expect(readCreditRoutes().has("mock fable")).toBe(true);
+    const models = [{ routes: [{ harness: "mock", id: "fable", ready: true }, { harness: "opencode", id: "x/fable", ready: true }] }] as never;
+    markCredits(models);
+    expect((models as { routes: { billing?: string }[] }[])[0].routes.map((r) => r.billing)).toEqual(["credits", undefined]);
 
     // The human adds credits and resumes: arch keeps its place and speaks.
     out.length = 0;

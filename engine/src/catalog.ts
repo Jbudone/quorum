@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { CliName } from "./config.js";
 import { cliInfo, type CliInfo } from "./doctor.js";
 import { defaultModel, listModels, type ModelInfo } from "./models.js";
-import { applyProviderEnv, readProviders, readRecent, type ProvidersFile } from "./providers.js";
+import { applyProviderEnv, readCreditRoutes, readProviders, readRecent, type ProvidersFile } from "./providers.js";
 
 /**
  * Every model Quorum knows of, and how to run each one. Metadata (names, context, prices,
@@ -23,6 +23,8 @@ export interface Route {
   ready: boolean;
   /** What's missing when not ready, e.g. "set OPENROUTER_API_KEY". */
   needs?: string;
+  /** "credits": on this harness the model draws on paid usage credits, not the subscription (learned when it ran out). */
+  billing?: "credits";
 }
 
 export interface CatalogModel {
@@ -401,6 +403,7 @@ async function buildFresh(refresh: boolean): Promise<Catalog> {
       m.favourite = favs.has(m.key);
       if (recent[m.key]) m.lastUsed = recent[m.key];
     }
+    markCredits(cached.catalog.models);
     return cached.catalog;
   }
   const clis = cliInfo();
@@ -422,8 +425,18 @@ async function buildFresh(refresh: boolean): Promise<Catalog> {
     ...(ollama ? { ollama } : {}),
   });
   const catalog = { ...built, source: { from: dev.from, ...(dev.at ? { at: dev.at } : {}) } };
+  markCredits(catalog.models);
   cached = { at: Date.now(), catalog };
   return catalog;
+}
+
+/** Labels the routes known to draw on usage credits rather than a subscription. */
+export function markCredits(models: CatalogModel[], credits = readCreditRoutes()): void {
+  for (const m of models)
+    for (const r of m.routes) {
+      if (credits.has(`${r.harness} ${r.id}`)) r.billing = "credits";
+      else delete r.billing;
+    }
 }
 
 /** The provider env var harnesses look for, from models.dev (for `applyProviderEnv`). */

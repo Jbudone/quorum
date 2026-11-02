@@ -66,6 +66,7 @@ import { newToken, ToolServer, type ToolHandler } from "./tools.js";
 import { noteVendorSession } from "./vendorlog.js";
 import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
 import { quorumTracing, type QuorumTracing, type TracedCall } from "../tracing.js";
+import { noteCreditRoute } from "../providers.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
 export type RoomEmit =
@@ -1685,7 +1686,11 @@ export class Room {
       event: "room.usage",
       data: { agent, cli, quotaUtilization: q, rateLimited: e.rateLimited, ...(e.windows ? { windows: e.windows } : {}), ...(e.limit ? { limit: e.limit.kind } : {}) },
     });
-    if (e.limit?.kind === "credits") return this.hold(`${cli} ${spec.model ?? ""}`.trim(), undefined, `${spec.model ?? cli} is out of usage credits`, agent);
+    if (e.limit?.kind === "credits") {
+      // Remembered, so the model catalog can say this model costs credits here, not quota.
+      if (spec.model) noteCreditRoute(cli, spec.model);
+      return this.hold(`${cli} ${spec.model ?? ""}`.trim(), undefined, `${spec.model ?? cli} is out of usage credits`, agent);
+    }
     if (e.limit?.kind === "window" || (e.rateLimited && !e.limit)) {
       const at = e.limit?.resetsAt ? Date.parse(e.limit.resetsAt) : NaN;
       const until = Number.isFinite(at) && at > Date.now() ? at : Date.now() + this.nextBackoff(cli);
