@@ -44,3 +44,47 @@ describe("highlights for an older channel", () => {
     }
   });
 });
+
+describe("short highlights, and the card behind each", () => {
+  it("keeps gists to a glance, and rewrites long old ones once", async () => {
+    const { rig } = await import("./roomRig.js");
+    let answer = "";
+    const r = rig({ floor: () => [], floorModel: () => answer });
+    try {
+      const room = r.create({});
+      const a = room.store.append({ type: "message", from: "arch", to: "room", text: "Long finding." });
+      const b = room.store.append({ type: "message", from: "skeptic", to: "room", text: "Another." });
+      room.store.append({ type: "tags", items: [
+        { seq: a.seq, from: "arch", kind: "critique", headline: "x", gist: "identified overlapping turns, editor enforcement overclaim, overwrite validity gap, critic eval" },
+        { seq: b.seq, from: "skeptic", kind: "idea", headline: "y", gist: "challenged status claims, implementation gaps, missing eval ADR, and export readiness" },
+      ] });
+      answer = `{"highlights": [{"msg": ${a.seq}, "kind": "critique", "gist": "found four overclaims in docs"}]}`;
+      await room.backfillHighlights();
+      const g = room.store.events().filter((e) => e.type === "gists").flatMap((e) => (e.type === "gists" ? e.items : []));
+      expect(g.find((x) => x.seq === a.seq)?.gist).toBe("found four overclaims in docs");
+      // The one the model skipped is cut to fit.
+      expect((g.find((x) => x.seq === b.seq)?.gist ?? "x ".repeat(20)).split(" ").length).toBeLessThanOrEqual(8);
+      await room.backfillHighlights();
+      expect(room.store.events().filter((e) => e.type === "gists")).toHaveLength(1);
+    } finally {
+      await r.closeAll();
+    }
+  });
+
+  it("writes a highlight's card once, from the assistant's model, and keeps it", async () => {
+    const { rig } = await import("./roomRig.js");
+    const r = rig({ floor: () => [], assistant: ["Arch found that resizing drops content.\n\n- outside cells are lost\n- no undo"] });
+    try {
+      const room = r.create({});
+      const m = room.store.append({ type: "message", from: "arch", to: "room", text: "Resize deletes everything outside." });
+      const [one, two] = await Promise.all([room.highlightCard(m.seq), room.highlightCard(m.seq)]);
+      expect(one).toContain("no undo");
+      expect(two).toBe(one);
+      expect(room.store.events().filter((e) => e.type === "highlight.card")).toEqual([expect.objectContaining({ about: m.seq, text: one })]);
+      expect(await room.highlightCard(m.seq)).toBe(one);
+      expect(r.calls.filter((c) => c.agent === "assistant")).toHaveLength(1);
+    } finally {
+      await r.closeAll();
+    }
+  });
+});

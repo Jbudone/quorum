@@ -32,8 +32,8 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 	}})
 	s := h.screen()
 	contains(t, s, "HIGHLIGHTS")
-	contains(t, s, m.From+" found that stale prices")
-	contains(t, s, "│   the cache") // wrapped onto a second line, not cut off
+	contains(t, s, "╭─ HIGHLIGHTS ") // its own box across the top of the channel
+	contains(t, s, m.From+" found that stale prices outlive the cache")
 	lacks(t, s, "ask the assistant about it")
 
 	// alt+h picks the newest highlight: the feed jumps to it, marks it and offers shortcuts.
@@ -55,11 +55,7 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 	lacks(t, h.screen(), "ask the assistant about it")
 
 	// A click on the highlight's row picks it too; d starts a DM to its author.
-	top := 3
-	if h.app.statsShown() {
-		top += statsHeight()
-	}
-	h.send(tea.MouseClickMsg{X: h.app.feedW() + 4, Y: top + h.app.rm.hlStart, Button: tea.MouseLeft})
+	h.send(tea.MouseClickMsg{X: 6, Y: h.app.stripTop() + 1, Button: tea.MouseLeft})
 	contains(t, h.screen(), "d DM "+m.From)
 	h.press("d")
 	if v := h.app.rm.roomIn.Value(); !strings.HasPrefix(v, "/dm "+m.From+" About #") {
@@ -92,7 +88,7 @@ func TestOlderChannelsGetHighlightsFromGists(t *testing.T) {
 	h := newRoomHarness(t, 150, 46)
 	h.setup()
 	h.press("esc")
-	contains(t, h.screen(), "HIGHLIGHTS  none yet")
+	contains(t, h.screen(), "none yet: when a member finds a flaw")
 	h.send(engineMsg{rpc.Event{Name: "room.support", Data: rpc.RoomSupportEvent{Role: "highlights", Busy: true}}})
 	contains(t, h.screen(), "reading back through the channel")
 	m := firstMemberMessage(t, h)
@@ -101,4 +97,38 @@ func TestOlderChannelsGetHighlightsFromGists(t *testing.T) {
 	s := h.screen()
 	contains(t, s, m.From+" proposed an in-process cache")
 	lacks(t, s, "none yet")
+}
+
+func TestHoveringAHighlightShowsItsCard(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	m := firstMemberMessage(t, h)
+	h.event(rpc.RoomEvent{Type: "tags", Seq: 980, Items: []rpc.MessageTag{{Seq: m.Seq, From: m.From, Kind: "idea", Gist: "proposed a per-instance cache"}}})
+	contains(t, h.screen(), "proposed a per-instance cache") // drawn, as the app draws after every event
+	// Hovering the row asks for the card once, and says it's on its way.
+	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.stripTop() + 1})
+	c := h.expectCall("room.highlight")
+	if c.params["seq"] != m.Seq {
+		t.Fatalf("card params %v", c.params)
+	}
+	contains(t, h.screen(), "writing a short summary")
+	h.send(tea.MouseMotionMsg{X: 9, Y: h.app.stripTop() + 1})
+	if n := len(h.fc.calls); h.fc.calls[n-1].method != "room.highlight" {
+		t.Fatal("moving within the row shouldn't ask again")
+	}
+	h.reply("room.highlight", `{"text":"They proposed a cache in each instance.\n\n- reads drop to memory\n- stale for 30 s at most"}`)
+	s := h.screen()
+	contains(t, s, "They proposed a cache in each instance.")
+	contains(t, s, "stale for 30 s at most")
+	contains(t, s, "click to jump to it")
+	// Moving away hides it; the card comes back from memory without asking again.
+	calls := len(h.fc.calls)
+	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.bodyTop() + 20})
+	lacks(t, h.screen(), "They proposed a cache in each instance.")
+	h.send(tea.MouseMotionMsg{X: 8, Y: h.app.stripTop() + 1})
+	contains(t, h.screen(), "They proposed a cache in each instance.")
+	if len(h.fc.calls) != calls {
+		t.Fatal("asked for a card it already had")
+	}
 }

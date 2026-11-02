@@ -7,7 +7,7 @@ import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
-import { BidFloor, FLOOR_SYSTEM, highlightsPrompt, mentioned, parseHighlights, type FloorPick, type FloorPolicy } from "./floor.js";
+import { BidFloor, CARD_SYSTEM, shortGist, FLOOR_SYSTEM, GIST_WORDS, highlightCardPrompt, highlightsPrompt, mentioned, parseHighlights, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
   accessNote,
@@ -474,18 +474,60 @@ export class Room {
   backfillHighlights(): Promise<void> {
     const events = this.store.events();
     const done = Number(this.store.meta().gistSeq ?? 0);
-    const tagged = new Set(events.flatMap((e) => (e.type === "tags" || e.type === "gists" ? e.items.filter((t) => t.gist).map((t) => t.seq) : [])));
+    // The latest gist of each message; ones written before gists were kept short get rewritten, once.
+    const gist = new Map<number, string>();
+    for (const e of events) if (e.type === "tags" || e.type === "gists") for (const t of e.items) if (t.gist) gist.set(t.seq, t.gist);
+    const long = new Set([...gist].filter(([, g]) => g.split(/\s+/).length > GIST_WORDS).map(([seq]) => seq));
     const who = new Set(this.members().concat(this.store.config().left?.map((a) => a.id) ?? []));
-    const old = events.filter((e) => e.type === "message" && e.seq > done && who.has(e.from) && !tagged.has(e.seq)).slice(-80);
-    // Only channels with history worth reading back; new ones get gists from the floor as they go.
-    if (old.length < 3 || events.some((e) => e.type === "gists")) return Promise.resolve();
+    const old = events.filter((e) => e.type === "message" && who.has(e.from) && ((e.seq > done && !gist.has(e.seq)) || long.has(e.seq))).slice(-80);
+    // Only channels with history worth reading back, or long gists to shorten; new ones get gists from the floor as they go.
+    if (!long.size && (old.length < 3 || events.some((e) => e.type === "gists"))) return Promise.resolve();
     return this.job("highlights", async () => {
-      const transcript = old.map((e) => (e.type === "message" ? `[#${e.seq}] ${e.from}:\n${e.text.slice(0, 1500)}` : "")).join("\n\n");
+      const transcript = old.map((e) => (e.type === "message" ? `[#${e.seq}]${long.has(e.seq) ? " ★" : ""} ${e.from}:\n${e.text.slice(0, 1500)}` : "")).join("\n\n");
       const reply = await this.oneShot("floor", highlightsPrompt(transcript), FLOOR_SYSTEM);
       this.store.setMeta({ gistSeq: this.store.lastSeq });
       const items = reply ? parseHighlights(reply, old) : [];
+      // A long gist the model didn't rewrite is cut short rather than left to overflow.
+      for (const seq of long) {
+        const m = old.find((e) => e.seq === seq);
+        if (m?.type === "message" && !items.some((x) => x.seq === seq))
+          items.push({ seq, from: m.from, kind: "idea", headline: "", gist: shortGist(gist.get(seq)) });
+      }
       if (items.length) this.log({ type: "gists", items });
     });
+  }
+
+  private readonly cards = new Map<number, Promise<string>>();
+
+  /**
+   * The card for a highlighted message: a short paragraph, a few bullets and maybe a tiny diagram,
+   * written once by the assistant's model when the human first hovers it, and kept in the log.
+   */
+  highlightCard(seq: number): Promise<string> {
+    const events = this.store.events();
+    const had = events.find((e) => e.type === "highlight.card" && e.about === seq);
+    if (had?.type === "highlight.card") return Promise.resolve(had.text);
+    const msg = events.find((e) => e.seq === seq);
+    if (msg?.type !== "message") return Promise.reject(new Error(`no message #${seq}`));
+    let gist = "";
+    for (const e of events) if (e.type === "tags" || e.type === "gists") for (const t of e.items) if (t.seq === seq && t.gist) gist = t.gist;
+    const before = msg.replyTo ? events.find((e) => e.seq === msg.replyTo) : undefined;
+    const pending = this.cards.get(seq);
+    if (pending) return pending;
+    const p = (async () => {
+      const text = (
+        await this.oneShot(
+          "assistant",
+          highlightCardPrompt({ from: msg.from, gist, text: msg.text, topic: this.store.config().topic, ...(before?.type === "message" ? { before: `${before.from}: ${before.text.slice(0, 1200)}` } : {}) }),
+          CARD_SYSTEM,
+        )
+      )?.trim();
+      if (!text) throw new Error("the assistant didn't answer");
+      this.log({ type: "highlight.card", about: seq, text });
+      return text;
+    })().finally(() => this.cards.delete(seq));
+    this.cards.set(seq, p);
+    return p;
   }
 
   /** Writes a brief for a version up for review or accepted that has none yet (one opened before briefs existed). */

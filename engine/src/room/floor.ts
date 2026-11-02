@@ -70,10 +70,10 @@ export function floorPrompt(c: FloorContext): string {
     c.recent.length ? `Earlier${c.thread ? " in the thread" : " in the room"}:\n\n${renderEvents(c.recent, c.view.focus)}` : "",
     `New since you last decided:\n\n${renderEvents(c.fresh, c.view.focus)}`,
     `Who should speak next? Pick a member only when they have something genuinely new to add: their expertise is needed, a claim they can check or challenge, a question aimed at them, or a flaw they would catch. Several members may speak at once when each has something different to say (at most ${c.max}). A member named with @ by another member is a strong hint, not an obligation: skip them when the room already agrees or the question was answered. Do not pick someone just to agree or restate. Do not pick the author of the latest message unless someone asked them something. Do not pick a member who is speaking right now or already queued unless a new message asks them a direct question. Silence is fine: when the point is settled, the room is circling, or it is waiting on the human, pick nobody.`,
-    `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something. For the few messages that change the discussion (a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled), add a gist: what the member did, in plain words a newcomer understands, at most twelve words, starting with a past-tense verb and without their name, like "found that shrinking the map silently deletes content" or "proposed checking edits against the artist's stated intent". Leave the gist out for agreement, restating, small points and questions; most messages have none.`,
+    `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something. For the few messages that change the discussion (a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled), add a gist: what the member did, glanceable in a second, at most six plain words, starting with a past-tense verb and without their name, like "found resize deletes content" or "proposed intent checks on edits". No lists, no IDs, no jargon. Leave the gist out for agreement, restating, small points and questions; most messages have none.`,
     `Answer with JSON only, in this shape:
 {"speak": [{"member": "<id>", "reply_to": <message number they answer>, "why": "<what they should bring, in a few words>"}],
- "tags": [{"msg": <message number>, "kind": "<kind>", "headline": "<at most eight words>", "against": "<member, optional>", "topic": "<topic slug, optional>", "gist": "<optional, see above>"}]}
+ "tags": [{"msg": <message number>, "kind": "<kind>", "headline": "<at most eight words>", "against": "<member, optional>", "topic": "<topic slug, optional>", "gist": "<optional, at most six words>"}]}
 An empty speak list means nobody speaks.`,
   ]
     .filter(Boolean)
@@ -107,7 +107,7 @@ export function parseFloor(text: string, members: string[], max: number, fresh: 
     if (!msg || !TAG_KINDS.includes(kind) || tags.some((x) => x.seq === msg.seq)) continue;
     const against = String(t?.against ?? "").trim().replace(/^@/, "");
     const topic = String(t?.topic ?? "").trim();
-    const gist = String(t?.gist ?? "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").split(" ").slice(0, 16).join(" ").slice(0, 120);
+    const gist = shortGist(t?.gist);
     tags.push({
       seq: msg.seq,
       from: msg.from,
@@ -142,7 +142,7 @@ export class BidFloor implements FloorPolicy {
 export function highlightsPrompt(transcript: string): string {
   return [
     `Members' messages in a discussion, oldest first:\n\n${transcript}`,
-    `Pick the few messages that changed the discussion: a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled. For each, write a gist: what the member did, in plain words a newcomer understands, at most twelve words, starting with a past-tense verb and without their name, like "found that shrinking the map silently deletes content". Skip agreement, restating and small points; most messages get none. At most one in four messages, and no more than twelve in all.`,
+    `Pick the few messages that changed the discussion: a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled. Messages marked ★ were picked before: keep them, with a shorter gist. For each, write a gist: what the member did, glanceable in a second, at most six plain words, starting with a past-tense verb and without their name, like "found resize deletes content" or "proposed intent checks on edits". No lists, no IDs, no jargon. Skip agreement, restating and small points; most messages get none. At most one in four messages, and no more than twelve in all.`,
     `Answer with JSON only: {"highlights": [{"msg": <message number>, "kind": "<${TAG_KINDS.join("|")}>", "gist": "<the gist>"}]}`,
   ].join("\n\n");
 }
@@ -162,10 +162,36 @@ export function parseHighlights(text: string, messages: readonly RoomEvent[]): M
   const out: MessageTag[] = [];
   for (const h of Array.isArray(raw?.highlights) ? raw.highlights : []) {
     const msg = bySeq.get(Number(h?.msg));
-    const gist = String(h?.gist ?? "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").split(" ").slice(0, 16).join(" ").slice(0, 120);
+    const gist = shortGist(h?.gist);
     const kind = (TAG_KINDS as string[]).includes(String(h?.kind)) ? (String(h.kind) as TagKind) : "idea";
     if (!msg || msg.type !== "message" || !gist || out.some((x) => x.seq === msg.seq)) continue;
     out.push({ seq: msg.seq, from: msg.from, kind, headline: "", gist, ...(msg.thread ? { thread: msg.thread } : {}) });
   }
   return out.slice(0, 12);
+}
+
+/** Words past which a gist is too long to read at a glance (the prompt asks for six). */
+export const GIST_WORDS = 8;
+
+/** A gist as the highlights show it: one short line, no trailing period. */
+export function shortGist(g: unknown): string {
+  return String(g ?? "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").split(" ").slice(0, GIST_WORDS).join(" ").slice(0, 70);
+}
+
+export const CARD_SYSTEM = `You explain one message from a discussion between AI agents to a human who is glancing at it. Plain words, no preamble, never more than asked for.`;
+
+/** The card shown when the human hovers a highlight: a little more than the gist, still quick to read. */
+export function highlightCardPrompt(o: { from: string; gist: string; text: string; topic?: string; before?: string }): string {
+  return [
+    o.topic ? `The discussion is about: ${o.topic}` : "",
+    o.before ? `What it answered:\n\n${o.before}` : "",
+    `${o.from}'s message (its highlight reads "${o.gist}"):\n\n${o.text.slice(0, 6000)}`,
+    `Write exactly this, in markdown, for someone who hasn't followed the discussion:
+- one paragraph of at most two short sentences (under 40 words): what ${o.from} found or proposed, and why it matters
+- then two or three bullets, the noteworthy specifics, each under twelve words
+- then, only if a picture makes it clearer (a flow, a before/after, a comparison), a tiny diagram in a code block: at most five lines, at most 44 characters wide, plain box-drawing or ASCII
+Nothing more: no headings, no bold labels, no message numbers, no file paths or line numbers. It's read in a few seconds.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

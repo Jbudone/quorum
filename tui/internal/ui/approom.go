@@ -30,9 +30,11 @@ type roomUI struct {
 	assistIn   textarea.Model
 	feedFollow bool
 	asstFollow bool
-	// Where the highlights' rows start in the assistant's column, and the message each row is.
-	hlStart    int
-	hlSeqs     []int
+	// The message in each cell of the highlights strip, row by row, as last drawn.
+	hlGrid [][]int
+	// Card requests in flight (request id → message), and the card's height as last drawn.
+	cardReqs   map[int]int
+	cardH      int
 	hideStats  bool
 	wideAssist bool   // alt+w: the assistant column takes most of the width
 	opening    string // what we're waiting for ("opening", "reopening"); "" once something is on screen
@@ -690,8 +692,20 @@ func (a *App) roomBodyH() int {
 	if a.statsShown() {
 		h -= statsHeight()
 	}
+	h -= stripHeight()
 	return max(h, 6)
 }
+
+// stripTop is the screen row the highlights strip starts on; bodyTop, where the feed starts.
+func (a *App) stripTop() int {
+	top := 3 // header, status bar, spacer
+	if a.statsShown() {
+		top += statsHeight()
+	}
+	return top
+}
+
+func (a *App) bodyTop() int { return a.stripTop() + stripHeight() }
 
 // paneHeights splits the body when the assistant sits under the feed.
 func (a *App) paneHeights() (feed, assist int) {
@@ -713,16 +727,6 @@ func (a *App) assistantColumn(width, height int) (top string, vpH int) {
 			sug = renderSuggestions(r, a.th, width, true)
 		}
 		parts = append(parts, sug)
-	}
-	// What changed the discussion, under anything that needs the human; each row jumps to its message.
-	a.rm.hlStart, a.rm.hlSeqs = 0, nil
-	if hl, seqs := renderHighlights(r, a.th, width); hl != "" {
-		if len(parts) > 0 {
-			a.rm.hlStart = lipgloss.Height(strings.Join(parts, "\n\n")) + 1
-		}
-		a.rm.hlStart++ // the HIGHLIGHTS header
-		a.rm.hlSeqs = seqs
-		parts = append(parts, hl)
 	}
 	parts = append(parts, renderNow(r, a.th, width, 3))
 	// The stats strip already shows the latest happenings when it's on screen.
@@ -891,10 +895,7 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 		return
 	}
 	fh, _ := a.paneHeights()
-	top := 3
-	if a.statsShown() {
-		top += statsHeight()
-	}
+	top := a.bodyTop()
 	inAssist := a.roomSide() && m.Mouse().X > a.feedW() || !a.roomSide() && m.Mouse().Y > top+fh
 	vp, follow := &u.feedVP, &u.feedFollow
 	if inAssist {
@@ -983,8 +984,15 @@ func (a *App) roomView() string {
 	if a.statsShown() {
 		rows = append(rows, renderStats(r, a.th, a.w), "")
 	}
-	rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	strip, grid := renderHighlightStrip(r, a.th, a.w)
+	u.hlGrid = grid
+	rows = append(rows, strip, "", body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
+	out := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	// The hovered (or picked) highlight's card floats over the room, under the strip.
+	if card, x, y := a.highlightCard(fh); card != "" {
+		out = lipgloss.NewCompositor(lipgloss.NewLayer(out), lipgloss.NewLayer(card).X(x).Y(y).Z(1)).Render()
+	}
+	return out
 }
 
 // mailPath is where a hand-off's mail landed; older engines only sent the file name.

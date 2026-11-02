@@ -47,6 +47,8 @@ type (
 		Persona string `json:"persona"`
 		CLI     string `json:"cli"`
 		Model   string `json:"model"`
+		// highlight.card: the message the card explains.
+		About int `json:"about"`
 		// agent.swapped: what it ran on before.
 		Was  *SwapWas `json:"was"`
 		Memo string   `json:"memo"`

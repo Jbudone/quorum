@@ -178,16 +178,17 @@ func (a *App) listen() tea.Cmd {
 	}
 }
 
-func (a *App) call(method string, params any) {
+func (a *App) call(method string, params any) int {
 	id, err := a.opts.Client.Call(method, params)
 	if err != nil {
 		a.fail(err.Error())
 		if a.sess != nil && isJob(method) {
 			a.sess.endJob()
 		}
-		return
+		return -1
 	}
 	a.reqs[id] = method
+	return id
 }
 
 // isJob reports whether the engine will answer a request with an idle event when it finishes.
@@ -262,6 +263,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.listen(), c, a.tick())
 
 	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		if motion, ok := m.(tea.MouseMotionMsg); ok && !a.sel.dragging {
+			if a.roomHover(motion) {
+				return a, a.tick()
+			}
+		}
 		if click, ok := m.(tea.MouseClickMsg); ok {
 			if c, used := a.roomClick(click); used {
 				a.refresh()
@@ -414,7 +420,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
-	if a.metersResponse(method, r) || a.usageResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
+	if a.cardResponse(r.ID, method, r) || a.metersResponse(method, r) || a.usageResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
 		return
 	}
 	if r.Err != "" {
@@ -910,6 +916,9 @@ func (a *App) View() tea.View {
 	v := tea.NewView(a.highlight(content))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	if a.screen == screenRoom {
+		v.MouseMode = tea.MouseModeAllMotion // hovering a highlight shows its card
+	}
 	v.WindowTitle = "Quorum"
 	return v
 }

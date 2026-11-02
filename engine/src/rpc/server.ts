@@ -540,6 +540,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "room.exportDoc":
         // The human typed the path, so this is their approval; exportDoc still refuses paths outside the project.
         return { path: needRoom().exportDoc(String(p.slug), String(p.path ?? "")) };
+      case "room.highlight":
+        // The card for a highlighted message, written the first time it's asked for.
+        return { text: await needRoom().highlightCard(Number(p.seq)) };
       case "room.handoff":
         // The human pressed the key on the review screen, so this is their approval to send it.
         return needRoom().handoff(String(p.slug), typeof p.to === "string" && p.to.trim() ? p.to : "all", typeof p.note === "string" ? p.note : "");

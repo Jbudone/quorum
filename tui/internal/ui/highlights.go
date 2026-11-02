@@ -5,18 +5,18 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jbud/quorum/tui/internal/rpc"
 	"github.com/jbud/quorum/tui/internal/theme"
 )
 
-// Highlights: the few messages that changed the discussion, each a line of plain words ("kimi found
-// that shrinking the map deletes content"), at the top of the assistant's column. Picking one (a
-// click, or alt+h to step back through them) jumps the feed to the message, marks it, and offers
+// Highlights: the few messages that changed the discussion, each a few plain words ("kimi found
+// resize deletes content"), in a strip across the top of the channel. Hovering one shows a card: a
+// short paragraph, the noteworthy points, and a tiny diagram when it helps. Picking one (a click,
+// or alt+h to step back through them) jumps the feed to the message, marks it, and offers
 // shortcuts under it: ask the assistant about it, DM its author, or reply in a thread on it.
-
-const highlightsShown = 4
 
 // spotlight is the message picked from the highlights.
 type spotlight struct {
@@ -24,6 +24,7 @@ type spotlight struct {
 	from string
 	gist string
 	jump bool // scroll the feed to it on the next refresh
+	card bool // show its card (picked with alt+h, where there's no mouse to hover)
 }
 
 // spotAction is one shortcut under the spotlit message, and where it sits on its line.
@@ -43,45 +44,96 @@ func (r *roomModel) highlights() []rpc.MessageTag {
 	return out
 }
 
-// renderHighlights draws the latest highlights, newest at the bottom; seqs has each row's message.
-func renderHighlights(r *roomModel, th theme.Theme, width int) (block string, seqs []int) {
+// The strip's size: rows of highlights inside its border, and columns side by side when wide.
+const stripRows = 3
+
+func stripCols(width int) int {
+	if width >= 110 {
+		return 2
+	}
+	return 1
+}
+
+// stripHeight is the strip's lines on screen: its border and rows, then a blank line before the room.
+func stripHeight() int { return stripRows + 3 }
+
+// highlightWindow is the highlights the strip shows, newest first: the latest that fit, shifted to
+// keep the one picked with alt+h in view.
+func (r *roomModel) highlightWindow(n int) []rpc.MessageTag {
 	all := r.highlights()
-	if len(all) == 0 {
-		// Always there, in one line, so it's clear where they'll appear.
-		note := "  none yet: key findings land here"
-		if r.busy["highlights"] {
-			note = "  reading back through the channel…"
-		}
-		return ansi.Truncate(fg(th.Info).Bold(true).Render("HIGHLIGHTS")+fg(th.Subtle).Italic(true).Render(note), width, "…"), nil
+	newest := make([]rpc.MessageTag, 0, len(all))
+	for i := len(all) - 1; i >= 0; i-- {
+		newest = append(newest, all[i])
 	}
-	shown := all[max(len(all)-highlightsShown, 0):]
-	head := fg(th.Info).Bold(true).Render("HIGHLIGHTS")
-	if more := len(all) - len(shown); more > 0 {
-		head += fg(th.Subtle).Render(fmt.Sprintf("  +%d earlier", more))
-	}
-	lines := []string{head + fg(th.Subtle).Render("  · click or alt+h")}
-	for _, t := range shown {
-		mark := tagGlyph(th, t.Kind) + " "
-		if r.spot != nil && r.spot.seq == t.Seq {
-			mark = fg(th.Accent2).Bold(true).Render("❯ ")
-		}
-		// Up to two lines each, so the point survives a narrow column; every row maps to its message.
-		name := displayName(t.From)
-		rows := strings.Split(ansi.Wrap(name+" "+t.Gist, max(width-2, 10), ""), "\n")
-		if len(rows) > 2 {
-			rows = []string{rows[0], ansi.Truncate(strings.Join(rows[1:], " "), max(width-2, 10), "…")}
-		}
-		for i, row := range rows {
-			if i == 0 {
-				rest := strings.TrimPrefix(row, name)
-				lines = append(lines, mark+fg(r.colorOf(th, t.From)).Bold(true).Render(name)+fg(th.Text).Render(rest))
-			} else {
-				lines = append(lines, "  "+fg(th.Text).Render(row))
+	from := 0
+	if r.spot != nil {
+		for i, t := range newest {
+			if t.Seq == r.spot.seq && i >= n {
+				from = i - n + 1
 			}
-			seqs = append(seqs, t.Seq)
 		}
 	}
-	return strings.Join(lines, "\n"), seqs
+	return newest[from:min(from+n, len(newest))]
+}
+
+// renderHighlightStrip is the highlights across the top of the channel, in their own box: one short
+// line each, newest first. grid has each cell's message (0 where empty), row by row.
+func renderHighlightStrip(r *roomModel, th theme.Theme, width int) (string, [][]int) {
+	cols := stripCols(width)
+	inner := width - 4
+	colW := inner / cols
+	all := r.highlights()
+	shown := r.highlightWindow(stripRows * cols)
+	grid := make([][]int, stripRows)
+	cells := make([][]string, stripRows)
+	for i := range grid {
+		grid[i] = make([]int, cols)
+		cells[i] = make([]string, cols)
+	}
+	for i, t := range shown {
+		row, col := i%stripRows, i/stripRows
+		mark := tagGlyph(th, t.Kind) + " "
+		switch {
+		case r.spot != nil && r.spot.seq == t.Seq:
+			mark = fg(th.Accent2).Bold(true).Render("❯ ")
+		case r.hover == t.Seq:
+			mark = fg(th.Accent2).Render("› ")
+		}
+		name := fg(r.colorOf(th, t.From)).Bold(true).Render(displayName(t.From))
+		gist := fg(th.Text).Render(" " + t.Gist)
+		if r.hover == t.Seq || r.spot != nil && r.spot.seq == t.Seq {
+			gist = fg(th.Accent2).Render(" " + t.Gist)
+		}
+		cells[row][col] = ansi.Truncate(mark+name+gist, colW-1, "…")
+		grid[row][col] = t.Seq
+	}
+	if len(all) == 0 {
+		note := "none yet: when a member finds a flaw, new evidence or a new approach, it lands here"
+		if r.busy["highlights"] {
+			note = "reading back through the channel for its key moments…"
+		}
+		cells[0][0] = fg(th.Subtle).Italic(true).Render(ansi.Truncate(note, inner, "…"))
+	}
+	border := fg(th.Border)
+	title := fg(th.Info).Bold(true).Render(" HIGHLIGHTS ")
+	hint := " hover for more · click to jump · alt+h "
+	if more := len(all) - len(shown); more > 0 {
+		hint = fmt.Sprintf(" +%d earlier ·%s", more, hint)
+	}
+	hint = fg(th.Subtle).Render(hint)
+	fill := max(width-2-1-lipgloss.Width(title)-lipgloss.Width(hint)-1, 1)
+	lines := []string{border.Render("╭─") + title + border.Render(strings.Repeat("─", fill)) + hint + border.Render("─╮")}
+	for _, row := range cells {
+		var b strings.Builder
+		for _, c := range row {
+			b.WriteString(c + strings.Repeat(" ", max(colW-lipgloss.Width(c), 0)))
+		}
+		line := b.String()
+		line += strings.Repeat(" ", max(inner-lipgloss.Width(line), 0))
+		lines = append(lines, border.Render("│ ")+line+border.Render(" │"))
+	}
+	lines = append(lines, border.Render("╰"+strings.Repeat("─", max(width-2, 0))+"╯"))
+	return strings.Join(lines, "\n"), grid
 }
 
 // spotActions are the shortcuts offered under the spotlit message.
@@ -153,6 +205,8 @@ func (a *App) stepHighlight() {
 		}
 	}
 	a.spotOn(all[i].Seq)
+	a.rm.room.spot.card = true
+	a.askCard(all[i].Seq)
 }
 
 // spotKey runs a shortcut under the spotlit message. Any other key closes the spotlight and goes on
@@ -199,42 +253,182 @@ func (a *App) spotKey(key string) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// highlightAt is the highlight in the strip under a screen position, or 0.
+func (a *App) highlightAt(x, y int) int {
+	u := a.rm
+	row := y - a.stripTop() - 1
+	if row < 0 || row >= len(u.hlGrid) || x < 2 || x >= a.w-2 {
+		return 0
+	}
+	cols := len(u.hlGrid[row])
+	col := min((x-2)*cols/max(a.w-4, 1), cols-1)
+	return u.hlGrid[row][col]
+}
+
+func (a *App) inChannel() bool {
+	u := a.rm
+	return a.screen == screenRoom && u != nil && u.setup == nil && u.room != nil && u.join == nil && u.room.overlay == nil && u.room.edit == nil && a.prov == nil
+}
+
+// roomHover follows the mouse over the strip: the highlight under it shows its card, asked for the
+// first time it's needed. It reports whether anything changed.
+func (a *App) roomHover(m tea.MouseMotionMsg) bool {
+	if !a.inChannel() {
+		return false
+	}
+	r := a.rm.room
+	seq := a.highlightAt(m.Mouse().X, m.Mouse().Y)
+	// Moving onto the card itself keeps it open, so it can be read without holding still.
+	if seq == 0 && r.hover != 0 && a.overCard(m.Mouse().X, m.Mouse().Y) {
+		return false
+	}
+	if seq == r.hover {
+		return false
+	}
+	r.hover = seq
+	if seq != 0 {
+		a.askCard(seq)
+	}
+	return true
+}
+
+// askCard asks the engine for a highlight's card, once.
+func (a *App) askCard(seq int) {
+	u := a.rm
+	r := u.room
+	if _, ok := r.cards[seq]; ok {
+		return
+	}
+	if u.cardReqs == nil {
+		u.cardReqs = map[int]int{}
+	}
+	for _, s := range u.cardReqs {
+		if s == seq {
+			return
+		}
+	}
+	delete(r.cardErr, seq)
+	if id := a.call("room.highlight", map[string]any{"seq": seq}); id >= 0 {
+		u.cardReqs[id] = seq
+	}
+}
+
+// cardResponse files a card the engine wrote (it also arrives as a highlight.card event).
+func (a *App) cardResponse(id int, method string, res rpc.Response) bool {
+	if method != "room.highlight" || a.rm == nil {
+		return false
+	}
+	seq := a.rm.cardReqs[id]
+	delete(a.rm.cardReqs, id)
+	if r := a.rm.room; r != nil && seq != 0 {
+		var out struct {
+			Text string `json:"text"`
+		}
+		switch {
+		case res.Err != "":
+			r.cardErr[seq] = res.Err
+		case rpc.DecodeResult(res.Result, &out) == nil && out.Text != "":
+			r.cards[seq] = out.Text
+		}
+	}
+	return true
+}
+
+// cardBox is where the card sits: under the strip, at the hovered cell's column, or for a highlight
+// picked with alt+h, at the bottom of the feed so it doesn't cover the message.
+func (a *App) cardBox(fh int) (seq, x, y, w int) {
+	r := a.rm.room
+	seq = r.hover
+	w = min(64, a.w-4)
+	if seq == 0 && r.spot != nil && r.spot.card {
+		seq = r.spot.seq
+		return seq, max(a.feedW()-w-1, 0), a.bodyTop() + fh - a.rm.cardH, w
+	}
+	if seq == 0 {
+		return 0, 0, 0, 0
+	}
+	x, y = 2, a.bodyTop()-1
+	for _, row := range a.rm.hlGrid {
+		for c, s := range row {
+			if s == seq && c > 0 {
+				x = min(2+c*(a.w-4)/len(row), a.w-w-2)
+			}
+		}
+	}
+	return seq, x, y, w
+}
+
+func (a *App) overCard(mx, my int) bool {
+	fh, _ := a.paneHeights()
+	seq, x, y, w := a.cardBox(fh)
+	return seq != 0 && mx >= x && mx < x+w && my >= y && my < y+a.rm.cardH
+}
+
+// highlightCard draws the card for the hovered highlight, and where it goes on screen.
+func (a *App) highlightCard(fh int) (string, int, int) {
+	r := a.rm.room
+	if !a.inChannel() || r.rev != nil {
+		return "", 0, 0
+	}
+	seq, x, y, w := a.cardBox(fh)
+	if seq == 0 {
+		return "", 0, 0
+	}
+	th := a.th
+	var tag rpc.MessageTag
+	for _, t := range r.tags {
+		if t.Seq == seq && t.Gist != "" {
+			tag = t
+		}
+	}
+	inner := w - 4
+	head := tagGlyph(th, tag.Kind) + " " + fg(r.colorOf(th, tag.From)).Bold(true).Render(displayName(tag.From)) + fg(th.Text).Bold(true).Render(" "+tag.Gist)
+	body := fg(th.Muted).Italic(true).Render(a.spin.View() + " writing a short summary…")
+	if text, ok := r.cards[seq]; ok {
+		body = strings.TrimRight(renderMarkdown(text, inner, th), "\n")
+	} else if err := r.cardErr[seq]; err != "" {
+		body = fg(th.Err).Render(ansi.Wrap("✗ couldn't write it: "+err, inner, ""))
+	}
+	foot := fg(th.Subtle).Render(fmt.Sprintf("#%d · click to jump to it", seq))
+	if r.spot != nil && r.spot.seq == seq {
+		foot = fg(th.Subtle).Render(fmt.Sprintf("#%d · a ask · d DM · t thread · esc close", seq))
+	}
+	content := ansi.Truncate(head, inner, "…") + "\n\n" + body + "\n\n" + foot
+	// Never taller than the room under the strip.
+	if lines := strings.Split(content, "\n"); len(lines) > fh-2 {
+		content = strings.Join(append(lines[:max(fh-3, 1)], fg(th.Subtle).Render("…")), "\n")
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(th.Accent2).Padding(0, 1).Width(w).Render(content)
+	a.rm.cardH = lipgloss.Height(box)
+	if r.hover == 0 {
+		y = a.bodyTop() + fh - a.rm.cardH // the picked one's card sits at the foot of the feed
+	}
+	return box, x, y
+}
+
 // roomClick handles a click on a highlight or on a shortcut under the spotlit message; it reports
 // whether the click was one of those (otherwise it starts a text selection as usual).
 func (a *App) roomClick(m tea.MouseClickMsg) (tea.Cmd, bool) {
-	u := a.rm
-	if a.screen != screenRoom || u == nil || u.setup != nil || u.room == nil || u.join != nil {
+	if !a.inChannel() || m.Mouse().Button != tea.MouseLeft {
 		return nil, false
 	}
-	r := u.room
-	if r.overlay != nil || r.edit != nil || r.rev != nil || m.Mouse().Button != tea.MouseLeft {
-		return nil, false
-	}
+	r := a.rm.room
 	x, y := m.Mouse().X, m.Mouse().Y
-	top := 3
-	if a.statsShown() {
-		top += statsHeight()
-	}
-	fh, _ := a.paneHeights()
-	// The assistant's column: beside the feed, or under it.
-	colX, colY := a.feedW()+2, top
-	if !a.roomSide() {
-		colX, colY = 1, top+fh+1
-	}
-	if row := y - colY - u.hlStart; x >= colX-1 && y >= colY && row >= 0 && row < len(u.hlSeqs) && (a.roomSide() || y > top+fh) {
-		a.spotOn(u.hlSeqs[row])
+	if seq := a.highlightAt(x, y); seq != 0 {
+		r.hover = 0
+		a.spotOn(seq)
 		return nil, true
 	}
 	// The shortcuts under the spotlit message, in the feed.
-	if r.spot != nil && r.spotBar >= 0 && x < a.feedW() && y >= top && y < top+fh {
-		if y-top+u.feedVP.YOffset() == r.spotBar {
-			for _, act := range r.spotActs {
-				if x >= act.from && x < act.to {
-					return a.spotKey(act.key)
-				}
+	top := a.bodyTop()
+	fh, _ := a.paneHeights()
+	if r.spot != nil && r.spotBar >= 0 && x < a.feedW() && y >= top && y < top+fh && y-top+a.rm.feedVP.YOffset() == r.spotBar {
+		for _, act := range r.spotActs {
+			if x >= act.from && x < act.to {
+				return a.spotKey(act.key)
 			}
-			return nil, true
 		}
+		return nil, true
 	}
 	return nil, false
 }

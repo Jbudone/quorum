@@ -29,6 +29,8 @@ export type RoomEventBody =
   | { type: "tags"; items: MessageTag[] }
   /** Gists written afterwards for messages tagged before highlights existed (each item: seq, from, kind, gist). */
   | { type: "gists"; items: MessageTag[] }
+  /** The card shown when the human hovers a highlight: a short explanation of message `about`. */
+  | { type: "highlight.card"; about: number; text: string }
   /** A starter workstream: a side thread owned by a few members, with what done looks like. */
   | { type: "workstream"; thread: number; title: string; done?: string; members: string[] }
   /** The outcome of a side conversation, posted back to the channel when it settles. */
@@ -460,6 +462,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "floor":
     case "tags":
     case "gists":
+    case "highlight.card":
     case "doc.brief":
       return false;
     default:

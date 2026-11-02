@@ -77,7 +77,11 @@ type docRef struct {
 type roomModel struct {
 	// The message picked from the highlights, its line in the rendered feed (-1 when not drawn),
 	// the line of shortcuts under it, and where each shortcut sits on that line.
-	spot     *spotlight
+	spot *spotlight
+	// hover: the highlight under the mouse; cards: each highlight's card, by message; cardErr: why one couldn't be written.
+	hover    int
+	cards    map[int]string
+	cardErr  map[int]string
 	spotLine int
 	spotBar  int
 	spotActs []spotAction
@@ -142,7 +146,7 @@ func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
 		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest, status: s.Status,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
-		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, windows: map[string][]rpc.QuotaWindow{}, held: map[string]string{}, usage: s.Usage, calm: calm,
+		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, cards: map[int]string{}, cardErr: map[int]string{}, windows: map[string][]rpc.QuotaWindow{}, held: map[string]string{}, usage: s.Usage, calm: calm,
 	}
 	for _, a := range append(append([]rpc.PresetAgent{}, s.Agents...), s.Left...) {
 		r.color(a.ID)
@@ -291,6 +295,8 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		return
 	case "tags":
 		r.tags = append(r.tags, e.Items...)
+	case "highlight.card":
+		r.cards[e.About] = e.Text
 	case "gists":
 		// Gists written later for messages tagged before highlights existed.
 		for _, g := range e.Items {
