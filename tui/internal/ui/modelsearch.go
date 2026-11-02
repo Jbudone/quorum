@@ -752,15 +752,18 @@ func (s *modelSearch) renderRow(r searchRow, on bool, th theme.Theme, w int) str
 	if s.fav(m) {
 		star = fg(th.Warn).Render("★ ")
 	}
-	cols := []string{fmtCtx(m.Context), fmtPrice(m.Cost), badges(m)}
-	widths := []int{6, 12, 5}
+	price := fmtPrice(m.Cost)
 	harness := ""
 	if rt, ok := s.chosen(m); ok {
 		harness = rt.Harness
 		if !rt.Ready {
 			harness = rt.Needs
+		} else if !billedHarness(rt.Harness) {
+			price = "quota" // runs on a subscription: it costs quota, not its list price
 		}
 	}
+	cols := []string{fmtCtx(m.Context), price, badges(m)}
+	widths := []int{6, 12, 5}
 	right := ""
 	if w >= 70 {
 		for i, cv := range cols {
@@ -839,6 +842,13 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 		if price != "free" {
 			price += " per Mtok"
 		}
+		// On a subscription harness the list price is only for comparison: it costs quota.
+		if rt, ok := s.chosen(m); ok && rt.Ready && !billedHarness(rt.Harness) {
+			fact("cost", "quota on your "+rt.Harness+" subscription")
+			if price != "free" {
+				price = "API list " + price
+			}
+		}
 		fact("price", price)
 	}
 	fact("released", m.Released)
@@ -869,6 +879,11 @@ func (s *modelSearch) renderDetail(th theme.Theme, w int) string {
 			label += " · " + rt.Label
 		}
 		status := fg(th.OK).Render(" ✓")
+		if billedHarness(rt.Harness) {
+			status += fg(th.Subtle).Render(" billed")
+		} else {
+			status += fg(th.Subtle).Render(" quota")
+		}
 		if !rt.Ready {
 			status, st = fg(th.Warn).Render(" "+rt.Needs), fg(th.Subtle)
 			if i == pick {

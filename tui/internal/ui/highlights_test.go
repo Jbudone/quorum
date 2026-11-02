@@ -80,7 +80,7 @@ func TestHeldMembersShowInTheRosterUntilReleased(t *testing.T) {
 	h := newRoomHarness(t, 150, 46)
 	h.setup()
 	h.press("esc")
-	h.event(rpc.RoomEvent{Type: "budget", Seq: 960, Level: "hold", CLI: "mock", Members: []string{"perf-researcher"}, Detail: "fable is out of usage credits; perf-researcher sits out. Switch their model (alt+o or /swap), or add credits and resume."})
+	h.event(rpc.RoomEvent{Type: "budget", Seq: 960, Level: "hold", CLI: "mock", Members: []string{"perf-researcher"}, Detail: "fable is out of usage credits; perf-researcher sits out. Move it to another model (/swap perf-researcher, or pick a model in alt+o and press enter), or add credits and resume."})
 	s := h.screen()
 	contains(t, s, "⏸ perf-researcher sitting out a limit")
 	contains(t, s, "Limit: fable is out of usage credits")

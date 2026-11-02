@@ -1730,7 +1730,7 @@ export class Room {
     const who = this.members().filter((m) => this.holdOf(m));
     const when = until ? ` until ${clock(until)}` : "";
     const detail = who.length
-      ? `${why}; ${who.join(", ")} sit${who.length === 1 ? "s" : ""} out${when}.${until ? " The others carry on." : " Switch their model (alt+o or /swap), or add credits and resume."}`
+      ? `${why}; ${who.join(", ")} sit${who.length === 1 ? "s" : ""} out${when}.${until ? " The others carry on." : ` Move ${who.length === 1 ? "it" : "them"} to another model (/swap ${who[0]}, or pick a model in alt+o and press enter), or add credits and resume.`}`
       : `${why}, so the ${by} can't run on it${when}.${until ? "" : " Switch its model with /swap."}`;
     this.log({ type: "budget", level: "hold", cli: key.split(" ")[0], detail, ...(who.length ? { members: who } : {}), ...(until ? { until: new Date(until).toISOString() } : {}) });
     if (!until && who.length) void this.watch(`${why}: ${who.join(", ")} can't take turns until their model is switched or credits are added`);

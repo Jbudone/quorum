@@ -87,11 +87,12 @@ func TestProvidersScreen(t *testing.T) {
 	h.reply("providers.get", `{"harnesses":["claude","codex","kimi","opencode"],"favourites":["anthropic/claude-opus-5-5"],"providers":{}}`)
 	s := h.screen()
 	contains(t, s, "PROVIDERS & MODELS")
-	contains(t, s, "Star the models you reach for")
+	contains(t, s, "press enter to move a member")
+	contains(t, s, "quota") // a subscription harness's models show quota, not a list price
 
-	// Models: enter stars.
+	// Models: alt+f stars.
 	h.typ("astra")
-	h.press("enter")
+	h.press("alt+f")
 	if c := h.expectCall("catalog.favourite"); c.params["key"] != "openai/gpt-6-astra" || c.params["on"] != true {
 		t.Fatalf("favourite params %v", c.params)
 	}
@@ -132,6 +133,22 @@ func TestProvidersScreen(t *testing.T) {
 	h.reply("providers.set", `{"harnesses":[],"favourites":[],"providers":{"lmstudio":{"baseUrl":"http://localhost:1234/v1"}}}`)
 	h.expectCall("catalog.list") // what runs where changed
 	h.press("esc")
+	lacks(t, h.screen(), "PROVIDERS & MODELS")
+
+	// Models: enter asks who should run on it, and moves them.
+	h.press("alt+o")
+	h.press("alt+1")
+	h.typ("astra")
+	h.press("enter")
+	s = h.screen()
+	contains(t, s, "Who should run on GPT-6 Astra?")
+	contains(t, s, "from your codex subscription's quota")
+	contains(t, s, "support role")
+	h.press("down", "enter")
+	c = h.expectCall("room.swap")
+	if c.params["id"] != h.app.rm.room.agents[1].ID || c.params["cli"] != "codex" || c.params["model"] != "gpt-6-astra" {
+		t.Fatalf("swap params %v", c.params)
+	}
 	lacks(t, h.screen(), "PROVIDERS & MODELS")
 }
 

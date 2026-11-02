@@ -81,7 +81,7 @@ describe("respecting limits", () => {
     const ev = room.store.events();
     const hold = ev.find((e) => e.type === "budget" && e.level === "hold");
     expect(hold).toMatchObject({ cli: "mock", members: ["arch"] });
-    expect(hold?.type === "budget" && hold.detail).toMatch(/fable is out of usage credits; arch sits out\. Switch their model/);
+    expect(hold?.type === "budget" && hold.detail).toMatch(/fable is out of usage credits; arch sits out\. Move it to another model \(\/swap arch, or pick a model in alt\+o and press enter\)/);
     expect(ev.some((e) => e.type === "turn.failed")).toBe(false);
     expect(ev.some((e) => e.type === "paused" && /rate limited/.test(e.reason))).toBe(false);
     expect(ev.some((e) => e.type === "message" && e.from === "skeptic")).toBe(true);
