@@ -47,5 +47,7 @@ export interface AgentTransport {
   readonly id: string;
   /** True when the transport passes SendOptions.mcp through to its CLI. */
   readonly supportsMcp?: boolean;
+  /** The model identifier this transport uses (e.g., "claude-3-5-sonnet", "gpt-4o"). */
+  readonly model?: string;
   send(prompt: string, opts?: SendOptions): AsyncIterable<AgentEvent>;
 }

@@ -2,3 +2,4 @@ packages:
   - engine
 allowBuilds:
   esbuild: true
+  protobufjs: true

@@ -89,11 +89,14 @@ export interface KimiOptions {
  * to the session when it's created, so a resumed turn passes neither.
  */
 export class KimiTransport extends SubprocessTransport {
+  readonly model?: string;
+
   constructor(
     id = "kimi",
     private readonly o: KimiOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {

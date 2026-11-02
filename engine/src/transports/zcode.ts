@@ -51,11 +51,14 @@ export interface ZcodeOptions {
 
 /** Drives `zcode -p --json` (Z.AI's coding agent). It has no system-prompt flag, so the persona leads the first prompt. */
 export class ZcodeTransport extends SubprocessTransport {
+  readonly model?: string;
+
   constructor(
     id = "zcode",
     private readonly o: ZcodeOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {

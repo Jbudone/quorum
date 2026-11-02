@@ -11,16 +11,21 @@ export interface MockOptions {
   fallback?: string;
   /** Delay between streamed chunks, ms. 0 for tests. */
   chunkDelayMs?: number;
+  /** Optional model name for tracing. */
+  model?: string;
 }
 
 /** Deterministic, token-free transport for the playground and tests. */
 export class MockTransport implements AgentTransport {
   private turn = 0;
+  readonly model?: string;
 
   constructor(
     readonly id: string,
     private readonly opts: MockOptions,
-  ) {}
+  ) {
+    this.model = opts.model;
+  }
 
   async *send(prompt: string, opts?: SendOptions): AsyncIterable<AgentEvent> {
     this.turn++;

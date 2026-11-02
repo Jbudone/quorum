@@ -4,3 +4,11 @@ dist/
 *.log
 /tui/quorum
 /tui/.bin/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.db

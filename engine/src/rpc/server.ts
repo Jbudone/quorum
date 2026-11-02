@@ -22,6 +22,7 @@ import { meters } from "../usage.js";
 import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
+import { quorumTracing } from "../tracing.js";
 
 /**
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
@@ -254,6 +255,14 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
           });
         }
         return {};
+      case "session.end": {
+        const e = need();
+        await e.shutdownTracing().catch(() => undefined);
+        engine = undefined;
+        run = undefined;
+        started = false;
+        return {};
+      }
       case "session.steer":
         need().steer(String(p.text), p.question ? String(p.question) : undefined);
         return {};
@@ -515,9 +524,17 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       } catch (e) {
         write({ id: req.id, error: { message: e instanceof Error ? e.message : String(e) } });
       }
-    }).on("close", () => {
+    }).on("close", async () => {
       // Closing the interface pauses the room; it resumes from disk next time.
-      void Promise.all([running, room?.close()]).then(() => resolve());
+      // Pausing comes first: a tracing failure must never keep the room from saving.
+      await Promise.all([running, room?.close()]);
+      try {
+        await engine?.shutdownTracing();
+        await quorumTracing.flush();
+      } catch {
+        // Traces that can't be sent are dropped.
+      }
+      resolve();
     });
   });
 }

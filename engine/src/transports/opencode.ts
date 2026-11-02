@@ -122,12 +122,14 @@ export function customProvider(model: string | undefined, f: ProvidersFile): { p
 /** Drives `opencode run --format json`. The persona becomes a real system prompt via a read-only agent. */
 export class OpencodeTransport extends SubprocessTransport {
   readonly supportsMcp = true;
+  readonly model?: string;
 
   constructor(
     id = "opencode",
     private readonly o: OpencodeOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {

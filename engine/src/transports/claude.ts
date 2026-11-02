@@ -72,11 +72,14 @@ export interface ClaudeOptions {
  */
 export class ClaudeTransport implements AgentTransport {
   readonly supportsMcp = true;
+  readonly model?: string;
 
   constructor(
     readonly id = "claude",
     private readonly o: ClaudeOptions = {},
-  ) {}
+  ) {
+    this.model = o.model;
+  }
 
   buildArgs(opts: SendOptions = {}): string[] {
     const args = [

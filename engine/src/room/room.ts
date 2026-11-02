@@ -61,6 +61,7 @@ import { legacyTally, report, type Sitting, type UsageReport } from "./ledger.js
 import { newToken, ToolServer, type ToolHandler } from "./tools.js";
 import { noteVendorSession } from "./vendorlog.js";
 import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
+import { quorumTracing, type QuorumTracing, type TracedCall } from "../tracing.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
 export type RoomEmit =
@@ -89,6 +90,8 @@ export interface RoomOptions {
   /** Target repo; the room is stored in its .quorum/ directory. */
   repo: string;
   transports: TransportFactory;
+  /** Langfuse tracing; defaults to the shared tracer, which is off unless LANGFUSE_* keys are set. */
+  tracing?: QuorumTracing;
   assetsDir?: string;
   readOnly?: boolean;
   /** Current commit of the repo (code notes are tagged with it). Defaults to `git rev-parse`. */
@@ -1174,6 +1177,7 @@ export class Room {
     const run = async (prompt: string, session: string | undefined): Promise<{ text: string; failed?: string }> => {
       let text = "";
       let failed: string | undefined;
+      const traced = this.trace(agent, "member", spec, prompt);
       try {
         for await (const e of transport.send(prompt, {
           cwd: this.o.repo,
@@ -1194,6 +1198,7 @@ export class Room {
           } else if (e.type === "usage") {
             this.usage(agent, spec.cli, e.quotaUtilization, e.rateLimited);
             this.spent(agent, spec, e);
+            traced.usage(e);
           } else if (e.type === "done" && e.sessionId) {
             sessionId = e.sessionId;
             noteVendorSession(this.o.repo, { room: this.id, agent: sk, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
@@ -1203,6 +1208,7 @@ export class Room {
       } catch (err) {
         failed = err instanceof Error ? err.message : String(err);
       }
+      traced.end(text, failed ?? (ctrl.signal.aborted ? "aborted" : undefined));
       return { text: text.trim(), failed };
     };
     let { text: reply, failed } = await run(this.memberPrompt(agent, st, upTo, Boolean(mcp), why, reading), st.sessionId);
@@ -1471,6 +1477,12 @@ export class Room {
 
   // ---- support roles ----
 
+  /** Starts a Langfuse trace for one CLI call; a no-op unless Langfuse keys are set. */
+  private trace(agent: string, role: "member" | "support", spec: { cli: CliName; model?: string }, prompt: string): TracedCall {
+    const model = spec.model || this.o.defaultModel?.(spec.cli);
+    return (this.o.tracing ?? quorumTracing).call({ channel: this.id, channelName: this.channelName(), agent: agent.split("@")[0], role, cli: spec.cli, ...(model ? { model } : {}), prompt });
+  }
+
   /** One plain turn for a support role (or a leaving member); returns the reply, or undefined on failure. */
   private async oneShot(
     id: string,
@@ -1483,6 +1495,7 @@ export class Room {
     const spec = this.spec(id);
     let text = "";
     let failed: string | undefined;
+    const traced = this.trace(id, this.personas.has(id.split("@")[0]) ? "member" : "support", spec, prompt);
     try {
       const access = accessNote(this.o.repo, this.dirs(), id === "assistant");
       for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: `${systemPrompt}\n\n${access}`, readOnly: true, sessionId, signal })) {
@@ -1492,6 +1505,7 @@ export class Room {
         } else if (e.type === "usage") {
           this.usage(id, spec.cli, e.quotaUtilization, e.rateLimited);
           this.spent(id, spec, e);
+          traced.usage(e);
         }
         else if (e.type === "done" && e.sessionId) noteVendorSession(this.o.repo, { room: this.id, agent: id, cli: spec.cli, ...(spec.model ? { model: spec.model } : {}), session: e.sessionId });
         else if (e.type === "error") failed = e.message;
@@ -1499,6 +1513,7 @@ export class Room {
     } catch (err) {
       failed = err instanceof Error ? err.message : String(err);
     }
+    traced.end(text, failed ?? (signal?.aborted ? "aborted" : undefined));
     if (signal?.aborted) return undefined;
     if (failed && !text.trim()) {
       this.log({ type: "turn.failed", agent: id, message: failed });

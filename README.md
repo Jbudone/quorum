@@ -111,6 +111,10 @@ model = "haiku"
 ```
 
 
+## Tracing
+
+Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to trace channels and council sessions to Langfuse. It sends prompts and replies (truncated), so read [what gets sent](docs/langfuse-integration.md#what-gets-sent) first.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

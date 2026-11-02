@@ -65,11 +65,14 @@ export interface AgyOptions {
  * `--disable-slash-commands` must not be passed. Our prompts never start with "/".
  */
 export class AgyTransport extends SubprocessTransport {
+  readonly model?: string;
+
   constructor(
     id = "agy",
     private readonly o: AgyOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {

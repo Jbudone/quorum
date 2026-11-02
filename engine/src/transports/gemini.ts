@@ -54,11 +54,14 @@ export interface GeminiOptions {
 
 /** Drives `gemini -p -o stream-json` in plan (read-only) mode. Stateless: each turn is self-contained. */
 export class GeminiTransport extends SubprocessTransport {
+  readonly model?: string;
+
   constructor(
     id = "gemini",
     private readonly o: GeminiOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {

@@ -61,12 +61,14 @@ export interface CodexOptions {
 /** Drives `codex exec --json` on the user's ChatGPT subscription, read-only sandboxed. */
 export class CodexTransport extends SubprocessTransport {
   readonly supportsMcp = true;
+  readonly model?: string;
 
   constructor(
     id = "codex",
     private readonly o: CodexOptions = {},
   ) {
     super(id);
+    this.model = o.model;
   }
 
   protected mapper(): LineMapper {
