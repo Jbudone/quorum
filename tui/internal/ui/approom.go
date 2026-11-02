@@ -30,6 +30,9 @@ type roomUI struct {
 	assistIn   textarea.Model
 	feedFollow bool
 	asstFollow bool
+	// Where the highlights' rows start in the assistant's column, and the message each row is.
+	hlStart    int
+	hlSeqs     []int
 	hideStats  bool
 	wideAssist bool   // alt+w: the assistant column takes most of the width
 	opening    string // what we're waiting for ("opening", "reopening"); "" once something is on screen
@@ -439,7 +442,15 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
+	if r.spot != nil && key != "alt+h" {
+		if cmd, used := a.spotKey(key); used {
+			return cmd
+		}
+	}
 	switch key {
+	case "alt+h":
+		a.stepHighlight()
+		return nil
 	case "tab", "shift+tab":
 		if r.pane == paneRoom {
 			r.pane = paneAssistant
@@ -703,6 +714,16 @@ func (a *App) assistantColumn(width, height int) (top string, vpH int) {
 		}
 		parts = append(parts, sug)
 	}
+	// What changed the discussion, under anything that needs the human; each row jumps to its message.
+	a.rm.hlStart, a.rm.hlSeqs = 0, nil
+	if hl, seqs := renderHighlights(r, a.th, width); hl != "" {
+		if len(parts) > 0 {
+			a.rm.hlStart = lipgloss.Height(strings.Join(parts, "\n\n")) + 1
+		}
+		a.rm.hlStart++ // the HIGHLIGHTS header
+		a.rm.hlSeqs = seqs
+		parts = append(parts, hl)
+	}
 	parts = append(parts, renderNow(r, a.th, width, 3))
 	// The stats strip already shows the latest happenings when it's on screen.
 	if !a.statsShown() {
@@ -748,7 +769,10 @@ func (a *App) refreshRoom() {
 	u.feedVP.SetWidth(fw)
 	u.feedVP.SetHeight(fh)
 	u.feedVP.SetContent(renderFeed(r, a.th, fw-1, spin))
-	if u.feedFollow {
+	if s := r.spot; s != nil && s.jump && r.spotLine >= 0 {
+		u.feedVP.SetYOffset(max(r.spotLine-1, 0))
+		u.feedFollow, s.jump = false, false
+	} else if u.feedFollow {
 		u.feedVP.GotoBottom()
 	}
 	inner := aw - 2

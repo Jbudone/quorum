@@ -75,6 +75,13 @@ type docRef struct {
 
 // roomModel is the client-side view of a room, rebuilt from the snapshot and kept current by events.
 type roomModel struct {
+	// The message picked from the highlights, its line in the rendered feed (-1 when not drawn),
+	// the line of shortcuts under it, and where each shortcut sits on that line.
+	spot     *spotlight
+	spotLine int
+	spotBar  int
+	spotActs []spotAction
+
 	id, dir, topic string
 	workspace      string   // the project's folder name, for the header
 	name           string   // the channel's short name
@@ -579,6 +586,8 @@ const roomHelp = `Talking (left box):
 Your assistant (right box):
   ask it anything about the discussion; /catchup for a recap
   alt+n             go through its suggestions: ↑↓ choose, y approve, n decline, a approve all
+  alt+h             step back through the highlights (or click one): jumps to the message;
+                    a asks the assistant about it, d DMs its author, t replies in a thread
 
 Channel:
   alt+k             switch channel or thread, or start a new channel

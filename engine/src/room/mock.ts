@@ -140,7 +140,13 @@ class ScriptedRoomMock implements AgentTransport {
     const fresh = prompt.slice(prompt.indexOf("New since you last decided:"));
     const said = [...fresh.matchAll(/\[#(\d+)\] ([\w-]+)[^:\n]*:\n([^\n]*)/g)];
     const last = said.at(-1);
-    const tags = said.map(([, seq, from, text]) => ({ msg: Number(seq), kind: kindOf(text), headline: text.split(/\s+/).slice(0, 6).join(" ").replace(/[.,:;]$/, "") }));
+    const tags = said.map(([, seq, from, text]) => {
+      const kind = kindOf(text);
+      const headline = text.split(/\s+/).slice(0, 6).join(" ").replace(/[.,:;]$/, "");
+      // Critiques, evidence and decisions change the discussion, so they get a gist for the highlights.
+      const verb = { critique: "found a problem: ", evidence: "showed that ", decision: "settled on " }[kind as string];
+      return { msg: Number(seq), kind, headline, ...(verb && from !== "human" ? { gist: verb + headline.toLowerCase() } : {}) };
+    });
     const busy = new Set([...roster.matchAll(/^- ([\w-]+):.*\(speaking right now\)$/gm)].map((m) => m[1]));
     if (/This is a side thread/.test(prompt)) {
       // In a thread, one member answers the human's question, then it settles.

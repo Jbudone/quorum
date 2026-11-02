@@ -75,6 +75,12 @@ export interface MessageTag {
   against?: string;
   topic?: string;
   thread?: number;
+  /**
+   * For the few messages that change the discussion (a breaking flaw, new evidence, a new approach,
+   * a settled question): what the member did, in plain words, without their name, e.g. "found that
+   * shrinking the map silently deletes content". The human's highlights list reads these.
+   */
+  gist?: string;
 }
 
 export type RoomEvent = RoomEventBody & { seq: number; ts: string };

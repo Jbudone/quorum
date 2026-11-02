@@ -78,6 +78,8 @@ type (
 		Against  string `json:"against"`
 		Topic    string `json:"topic"`
 		Thread   int    `json:"thread"`
+		// Gist: for messages that changed the discussion, what the member did in plain words.
+		Gist string `json:"gist"`
 	}
 	// RoomSupportEvent says a support role (assistant, watch, chair, scribe, floor) started or stopped working.
 	// RoomStatus is the engine's one-line status of the room, sent when it changes.

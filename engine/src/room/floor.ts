@@ -70,10 +70,10 @@ export function floorPrompt(c: FloorContext): string {
     c.recent.length ? `Earlier${c.thread ? " in the thread" : " in the room"}:\n\n${renderEvents(c.recent, c.view.focus)}` : "",
     `New since you last decided:\n\n${renderEvents(c.fresh, c.view.focus)}`,
     `Who should speak next? Pick a member only when they have something genuinely new to add: their expertise is needed, a claim they can check or challenge, a question aimed at them, or a flaw they would catch. Several members may speak at once when each has something different to say (at most ${c.max}). A member named with @ by another member is a strong hint, not an obligation: skip them when the room already agrees or the question was answered. Do not pick someone just to agree or restate. Do not pick the author of the latest message unless someone asked them something. Do not pick a member who is speaking right now or already queued unless a new message asks them a direct question. Silence is fine: when the point is settled, the room is circling, or it is waiting on the human, pick nobody.`,
-    `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something.`,
+    `Also tag each new message for the human's dashboard: what it did to the discussion (one of ${TAG_KINDS.join(", ")}), a headline of at most eight words, and for a critique whom it challenges, for a concession whose point was accepted. "decision" means the room settled something. For the few messages that change the discussion (a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled), add a gist: what the member did, in plain words a newcomer understands, at most twelve words, starting with a past-tense verb and without their name, like "found that shrinking the map silently deletes content" or "proposed checking edits against the artist's stated intent". Leave the gist out for agreement, restating, small points and questions; most messages have none.`,
     `Answer with JSON only, in this shape:
 {"speak": [{"member": "<id>", "reply_to": <message number they answer>, "why": "<what they should bring, in a few words>"}],
- "tags": [{"msg": <message number>, "kind": "<kind>", "headline": "<at most eight words>", "against": "<member, optional>", "topic": "<topic slug, optional>"}]}
+ "tags": [{"msg": <message number>, "kind": "<kind>", "headline": "<at most eight words>", "against": "<member, optional>", "topic": "<topic slug, optional>", "gist": "<optional, see above>"}]}
 An empty speak list means nobody speaks.`,
   ]
     .filter(Boolean)
@@ -107,6 +107,7 @@ export function parseFloor(text: string, members: string[], max: number, fresh: 
     if (!msg || !TAG_KINDS.includes(kind) || tags.some((x) => x.seq === msg.seq)) continue;
     const against = String(t?.against ?? "").trim().replace(/^@/, "");
     const topic = String(t?.topic ?? "").trim();
+    const gist = String(t?.gist ?? "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").split(" ").slice(0, 16).join(" ").slice(0, 120);
     tags.push({
       seq: msg.seq,
       from: msg.from,
@@ -115,6 +116,7 @@ export function parseFloor(text: string, members: string[], max: number, fresh: 
       ...(against && against !== msg.from && (members.includes(against) || against === "human") ? { against } : {}),
       ...(topic ? { topic } : {}),
       ...(msg.thread ? { thread: msg.thread } : {}),
+      ...(gist ? { gist } : {}),
     });
   }
   return { picks: picks.slice(0, max), tags };

@@ -262,6 +262,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.listen(), c, a.tick())
 
 	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		if click, ok := m.(tea.MouseClickMsg); ok {
+			if c, used := a.roomClick(click); used {
+				a.refresh()
+				return a, tea.Batch(c, a.tick())
+			}
+		}
 		used, c := a.mouseSelect(m)
 		if used {
 			return a, tea.Batch(c, a.tick())

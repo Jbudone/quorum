@@ -311,6 +311,14 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	if r.view != 0 {
 		blocks = append(blocks, fg(th.Info).Render(fmt.Sprintf("side thread on #%d", r.view))+fg(th.Subtle).Render(" · esc back to the channel"))
 	}
+	r.spotLine, r.spotBar = -1, -1
+	lines := func() int { // lines drawn so far, blocks being joined by a blank line
+		n := 0
+		for _, b := range blocks {
+			n += lipgloss.Height(b) + 1
+		}
+		return n
+	}
 	activity := false
 	for _, it := range r.feed {
 		// In the channel, a reply inside a thread is one line, so the work there shows where it happens.
@@ -330,6 +338,19 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 		b := renderFeedItem(r, it, th, width)
 		if b == "" {
 			continue
+		}
+		// The message picked from the highlights: marked down its left edge, with shortcuts under it.
+		if s := r.spot; s != nil && it.ev.Seq == s.seq {
+			mark := fg(th.Accent2).Bold(true).Render("▌") + " "
+			plain := *it // drawn narrower for the mark, without disturbing the item's cache
+			plain.cache = ""
+			body := strings.Split(renderFeedItem(r, &plain, th, width-2), "\n")
+			for i, l := range body {
+				body[i] = mark + l
+			}
+			r.spotLine = lines()
+			r.spotBar = r.spotLine + len(body)
+			b = strings.Join(body, "\n") + "\n" + renderSpotBar(r, th)
 		}
 		// A message with a thread under it says so, in the channel.
 		if t, ok := r.threads[it.ev.Seq]; ok && r.view == 0 && it.ev.Type == "message" {
