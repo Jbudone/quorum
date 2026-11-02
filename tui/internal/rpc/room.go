@@ -47,7 +47,9 @@ type (
 		Persona string `json:"persona"`
 		CLI     string `json:"cli"`
 		Model   string `json:"model"`
-		Memo    string `json:"memo"`
+		// agent.swapped: what it ran on before.
+		Was  *SwapWas `json:"was"`
+		Memo string   `json:"memo"`
 		// agent.web: whether the member may now use the web.
 		On bool `json:"on"`
 
@@ -63,6 +65,10 @@ type (
 		// Workstreams: what done looks like, and who owns it.
 		Done    string   `json:"done"`
 		Members []string `json:"members"`
+	}
+	SwapWas struct {
+		CLI   string `json:"cli"`
+		Model string `json:"model"`
 	}
 	RoomPick struct {
 		Agent    string `json:"agent"`

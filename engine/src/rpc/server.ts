@@ -367,6 +367,8 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const clis: CliName[] = fake ? ["mock"] : (opts.usable ?? (() => usableClis(installedClis(), readHealth())))();
         const r = Room.open(String(p.id), { repo: String(p.repo), transports: transportsFor(personaIn(() => store.config())), assetsDir: opts.assetsDir, clis, modelMenu: menuFor(clis), defaultModel: defaultsFor(clis), price: priceFor(clis) });
         await adopt(r);
+        // A channel from before highlights gets them, in the background.
+        void r.backfillHighlights();
         return snapshot(r);
       }
       case "room.resume":

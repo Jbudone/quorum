@@ -134,3 +134,38 @@ export class BidFloor implements FloorPolicy {
     return c.members.length ? d : { picks: [], tags: d.tags };
   }
 }
+
+/**
+ * For channels from before highlights: reads back over members' messages and writes a gist for the
+ * few that changed the discussion, as the floor does for new messages.
+ */
+export function highlightsPrompt(transcript: string): string {
+  return [
+    `Members' messages in a discussion, oldest first:\n\n${transcript}`,
+    `Pick the few messages that changed the discussion: a flaw that breaks a plan, new evidence, a genuinely new approach, a question settled. For each, write a gist: what the member did, in plain words a newcomer understands, at most twelve words, starting with a past-tense verb and without their name, like "found that shrinking the map silently deletes content". Skip agreement, restating and small points; most messages get none. At most one in four messages, and no more than twelve in all.`,
+    `Answer with JSON only: {"highlights": [{"msg": <message number>, "kind": "<${TAG_KINDS.join("|")}>", "gist": "<the gist>"}]}`,
+  ].join("\n\n");
+}
+
+/** Reads highlightsPrompt's answer: gists for real member messages only. */
+export function parseHighlights(text: string, messages: readonly RoomEvent[]): MessageTag[] {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return [];
+  let raw: any;
+  try {
+    raw = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  const bySeq = new Map(messages.flatMap((e) => (e.type === "message" ? [[e.seq, e] as const] : [])));
+  const out: MessageTag[] = [];
+  for (const h of Array.isArray(raw?.highlights) ? raw.highlights : []) {
+    const msg = bySeq.get(Number(h?.msg));
+    const gist = String(h?.gist ?? "").trim().replace(/\s+/g, " ").replace(/[.\s]+$/, "").split(" ").slice(0, 16).join(" ").slice(0, 120);
+    const kind = (TAG_KINDS as string[]).includes(String(h?.kind)) ? (String(h.kind) as TagKind) : "idea";
+    if (!msg || msg.type !== "message" || !gist || out.some((x) => x.seq === msg.seq)) continue;
+    out.push({ seq: msg.seq, from: msg.from, kind, headline: "", gist, ...(msg.thread ? { thread: msg.thread } : {}) });
+  }
+  return out.slice(0, 12);
+}

@@ -7,7 +7,7 @@ import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
 import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
-import { BidFloor, mentioned, type FloorPick, type FloorPolicy } from "./floor.js";
+import { BidFloor, FLOOR_SYSTEM, highlightsPrompt, mentioned, parseHighlights, type FloorPick, type FloorPolicy } from "./floor.js";
 import {
   ASSISTANT_SYSTEM,
   accessNote,
@@ -77,7 +77,7 @@ export type RoomEmit =
   | { event: "room.turn.tool"; data: { agent: string; name: string; thread?: number } }
   | { event: "room.turn.end"; data: { agent: string; thread?: number } }
   /** A support role started or stopped working, so the human can see it isn't stuck. */
-  | { event: "room.support"; data: { role: SupportRole | "watch" | "brief"; busy: boolean } }
+  | { event: "room.support"; data: { role: SupportRole | "watch" | "brief" | "highlights"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
   /** What a member has used in this channel so far, after each of its turns. */
   | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } }
@@ -276,7 +276,7 @@ export class Room {
   private readonly backoff = new Map<string, number>();
   private wakeTimer?: ReturnType<typeof setTimeout>;
   private wakeAtMs?: number;
-  private readonly busy = new Set<SupportRole | "watch" | "brief">();
+  private readonly busy = new Set<SupportRole | "watch" | "brief" | "highlights">();
   /** Why the room is paused, for the status line. */
   private pausedFor: string | undefined;
   private lastStatus = "";
@@ -463,6 +463,28 @@ export class Room {
       const prompt = docBriefPrompt({ slug, version, text, topic: this.store.config().topic, accepted: d.accepted === version, ...(base ? { base, diff: unifiedDiff(this.store.readOutput(slug, base), text) } : {}) });
       const brief = (await this.oneShot("assistant", prompt, ASSISTANT_SYSTEM))?.trim();
       if (brief && brief !== "NOTHING") this.log({ type: "doc.brief", slug, version, text: brief });
+    });
+  }
+
+  /**
+   * Gives a channel from before highlights its highlights: once, when it opens, the floor's model
+   * reads back over the members' messages that have no gist and writes gists for the few that
+   * changed the discussion. Cheap, and runs paused or not.
+   */
+  backfillHighlights(): Promise<void> {
+    const events = this.store.events();
+    const done = Number(this.store.meta().gistSeq ?? 0);
+    const tagged = new Set(events.flatMap((e) => (e.type === "tags" || e.type === "gists" ? e.items.filter((t) => t.gist).map((t) => t.seq) : [])));
+    const who = new Set(this.members().concat(this.store.config().left?.map((a) => a.id) ?? []));
+    const old = events.filter((e) => e.type === "message" && e.seq > done && who.has(e.from) && !tagged.has(e.seq)).slice(-80);
+    // Only channels with history worth reading back; new ones get gists from the floor as they go.
+    if (old.length < 3 || events.some((e) => e.type === "gists")) return Promise.resolve();
+    return this.job("highlights", async () => {
+      const transcript = old.map((e) => (e.type === "message" ? `[#${e.seq}] ${e.from}:\n${e.text.slice(0, 1500)}` : "")).join("\n\n");
+      const reply = await this.oneShot("floor", highlightsPrompt(transcript), FLOOR_SYSTEM);
+      this.store.setMeta({ gistSeq: this.store.lastSeq });
+      const items = reply ? parseHighlights(reply, old) : [];
+      if (items.length) this.log({ type: "gists", items });
     });
   }
 
@@ -1992,7 +2014,7 @@ export class Room {
   }
 
   /** Runs a support job unless the same one is already running. */
-  private async job(name: SupportRole | "watch" | "brief", fn: () => Promise<void>): Promise<void> {
+  private async job(name: SupportRole | "watch" | "brief" | "highlights", fn: () => Promise<void>): Promise<void> {
     if (this.busy.has(name)) return;
     this.busy.add(name);
     this.emit({ event: "room.support", data: { role: name, busy: true } });

@@ -237,6 +237,12 @@ func (s *modelSearch) matches(m *rpc.CatalogModel, q searchQuery) (score int, ok
 				best = max(best, fuzzyScore(w, f))
 			}
 		}
+		// A harness's name ("codex") finds what runs on it, ahead of models that only have it in their name.
+		for _, rt := range rs {
+			if rt.Harness == w {
+				best = max(best, 120)
+			}
+		}
 		if best == 0 {
 			return 0, false, false
 		}

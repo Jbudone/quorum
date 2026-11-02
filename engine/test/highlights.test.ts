@@ -20,3 +20,27 @@ describe("highlights", () => {
     expect(tags[1].gist).toBeUndefined();
   });
 });
+
+describe("highlights for an older channel", () => {
+  it("reads back over messages without a gist, once, when the channel opens", async () => {
+    const { rig } = await import("./roomRig.js");
+    let answer = "";
+    const r = rig({ floor: () => [], floorModel: () => answer });
+    try {
+      const room = r.create({});
+      for (const [from, text] of [["arch", "Resize silently deletes content outside the new bounds."], ["skeptic", "Agreed."], ["arch", "Seams appear where two seeds meet."], ["skeptic", "Fine."]] as const)
+        room.store.append({ type: "message", from, to: "room", text });
+      const seqs = room.store.events().filter((e) => e.type === "message" && e.from === "arch").map((e) => e.seq);
+      answer = (`{"highlights": [{"msg": ${seqs[0]}, "kind": "critique", "gist": "found that resizing deletes content."}, {"msg": 999, "gist": "not a message"}]}`);
+      await room.backfillHighlights();
+      const gists = room.store.events().filter((e) => e.type === "gists");
+      expect(gists).toHaveLength(1);
+      expect(gists[0].type === "gists" && gists[0].items).toEqual([{ seq: seqs[0], from: "arch", kind: "critique", headline: "", gist: "found that resizing deletes content" }]);
+      // Once only.
+      await room.backfillHighlights();
+      expect(room.store.events().filter((e) => e.type === "gists")).toHaveLength(1);
+    } finally {
+      await r.closeAll();
+    }
+  });
+});

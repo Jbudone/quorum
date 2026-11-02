@@ -27,6 +27,8 @@ export type RoomEventBody =
   | { type: "floor"; picks: { agent: string; why: string; replyTo?: number; thread?: number }[] }
   /** What each message did to the discussion, as the floor read it; feeds the stats panel. Members never see it. */
   | { type: "tags"; items: MessageTag[] }
+  /** Gists written afterwards for messages tagged before highlights existed (each item: seq, from, kind, gist). */
+  | { type: "gists"; items: MessageTag[] }
   /** A starter workstream: a side thread owned by a few members, with what done looks like. */
   | { type: "workstream"; thread: number; title: string; done?: string; members: string[] }
   /** The outcome of a side conversation, posted back to the channel when it settles. */
@@ -457,6 +459,7 @@ export function visibleTo(agent: string, e: RoomEvent): boolean {
     case "budget":
     case "floor":
     case "tags":
+    case "gists":
     case "doc.brief":
       return false;
     default:

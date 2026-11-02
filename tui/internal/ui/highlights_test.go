@@ -87,3 +87,18 @@ func TestHeldMembersShowInTheRosterUntilReleased(t *testing.T) {
 	h.event(rpc.RoomEvent{Type: "budget", Seq: 961, Level: "release", CLI: "mock", Members: []string{"perf-researcher"}, Detail: "perf-researcher is back on mock sonnet"})
 	lacks(t, h.screen(), "sitting out a limit")
 }
+
+func TestOlderChannelsGetHighlightsFromGists(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	contains(t, h.screen(), "HIGHLIGHTS  none yet")
+	h.send(engineMsg{rpc.Event{Name: "room.support", Data: rpc.RoomSupportEvent{Role: "highlights", Busy: true}}})
+	contains(t, h.screen(), "reading back through the channel")
+	m := firstMemberMessage(t, h)
+	h.event(rpc.RoomEvent{Type: "gists", Seq: 970, Items: []rpc.MessageTag{{Seq: m.Seq, From: m.From, Kind: "idea", Gist: "proposed an in-process cache per instance"}}})
+	h.send(engineMsg{rpc.Event{Name: "room.support", Data: rpc.RoomSupportEvent{Role: "highlights", Busy: false}}})
+	s := h.screen()
+	contains(t, s, m.From+" proposed an in-process cache")
+	lacks(t, s, "none yet")
+}

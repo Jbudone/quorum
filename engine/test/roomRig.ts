@@ -37,6 +37,8 @@ export interface RigOptions {
   scribe?: string[];
   assistant?: string[];
   floor?: FloorScript;
+  /** What the floor's model answers when called directly (e.g. to write highlights for old messages). */
+  floorModel?: () => string;
   /** Extra events after each member reply (e.g. usage reports). */
   extra?: (agent: string, turn: number) => AgentEvent[];
   delayMs?: number;
@@ -80,7 +82,9 @@ export function rig(o: RigOptions = {}) {
         return;
       }
       const script = support[spec.id];
-      if (script) {
+      if (spec.id === "floor" && o.floorModel) {
+        yield { type: "text", delta: o.floorModel() };
+      } else if (script) {
         yield { type: "text", delta: script[Math.min(n - 1, script.length - 1)] };
       } else {
         const out = /You are leaving this Quorum room/.test(prompt) ? `- ${spec.id} memo` : member(spec.id, n, prompt);

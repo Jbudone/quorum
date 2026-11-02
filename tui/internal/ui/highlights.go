@@ -47,7 +47,12 @@ func (r *roomModel) highlights() []rpc.MessageTag {
 func renderHighlights(r *roomModel, th theme.Theme, width int) (block string, seqs []int) {
 	all := r.highlights()
 	if len(all) == 0 {
-		return "", nil
+		// Always there, in one line, so it's clear where they'll appear.
+		note := "  none yet: key findings land here"
+		if r.busy["highlights"] {
+			note = "  reading back through the channel…"
+		}
+		return ansi.Truncate(fg(th.Info).Bold(true).Render("HIGHLIGHTS")+fg(th.Subtle).Italic(true).Render(note), width, "…"), nil
 	}
 	shown := all[max(len(all)-highlightsShown, 0):]
 	head := fg(th.Info).Bold(true).Render("HIGHLIGHTS")

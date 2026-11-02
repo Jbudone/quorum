@@ -46,12 +46,13 @@ export function parseAgyModels(out: string): ModelInfo[] {
     .map(([id, label]) => ({ id: id.trim(), label: label.trim() }));
 }
 
-/** Codex keeps the models its account can use in ~/.codex/models_cache.json. */
+/** Codex keeps the models its account can use in ~/.codex/models_cache.json, each marked listed or hidden. */
 export function codexModels(file = join(homedir(), ".codex", "models_cache.json")): ModelInfo[] {
   try {
     const d = JSON.parse(readFileSync(file, "utf8"));
+    // Models Codex itself hides from its picker (internal or retired ones) are left out too.
     return (Array.isArray(d?.models) ? d.models : []).flatMap((m: any) =>
-      typeof m?.slug === "string" ? [{ id: m.slug, ...(typeof m.display_name === "string" ? { label: m.display_name } : {}) }] : [],
+      typeof m?.slug === "string" && m.visibility !== "hide" ? [{ id: m.slug, ...(typeof m.display_name === "string" ? { label: m.display_name } : {}) }] : [],
     );
   } catch {
     return [];

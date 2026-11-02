@@ -291,6 +291,19 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		return
 	case "tags":
 		r.tags = append(r.tags, e.Items...)
+	case "gists":
+		// Gists written later for messages tagged before highlights existed.
+		for _, g := range e.Items {
+			found := false
+			for i := range r.tags {
+				if r.tags[i].Seq == g.Seq {
+					r.tags[i].Gist, found = g.Gist, true
+				}
+			}
+			if !found {
+				r.tags = append(r.tags, g)
+			}
+		}
 		return
 	case "workstream":
 		r.thread(e.Thread).title = "Workstream: " + e.Title

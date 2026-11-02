@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -206,8 +207,11 @@ func TestRoomJourney(t *testing.T) {
 	contains(t, s, "DISCUSSIONS")
 	contains(t, s, "MEMBERS")
 	contains(t, s, "plan v2 accepted")
-	contains(t, s, "NOW ") // the assistant's pinned status
-	contains(t, s, "Not on the reading list")
+	contains(t, s, "NOW ")       // the assistant's pinned status
+	contains(t, s, "HIGHLIGHTS") // always there, even before any
+	if !slices.ContainsFunc(h.app.rm.room.asides, func(n noteItem) bool { return strings.Contains(n.text, "Not on the reading list") }) {
+		t.Fatal("the reading-list note is missing from the assistant's column")
+	}
 	contains(t, s, "↳ thread: ") // threads under their messages in the channel
 	contains(t, s, "· settled")
 	contains(t, s, "↳ perf-researcher in #51 ") // ...and each reply in them as one line

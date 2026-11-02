@@ -30,6 +30,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return "";
     case "mail.out":
       return `[#${e.seq}] — mail sent to ${e.to}: "${e.subject}" (${e.path ?? `.quorum/mail/${e.file}`})`;
+    case "gists":
+      return "";
     case "tags":
       return "";
     case "topic.raised":
