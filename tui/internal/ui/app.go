@@ -385,6 +385,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 				s.apply(v)
 			case a.rm.room != nil:
 				a.rm.room.apply(v)
+				a.autoOpenReview()
 			case s != nil:
 				s.apply(v)
 			}

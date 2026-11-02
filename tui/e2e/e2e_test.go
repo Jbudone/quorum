@@ -279,14 +279,25 @@ func TestRealBinaryMockRoom(t *testing.T) {
 	tm.send("\r") // apply
 	tm.waitFor("● LIVE", 20*time.Second)
 	tm.snapshot("room-3-talking")
-	tm.waitFor("accepted by the chair", 60*time.Second)
-	tm.waitFor("❚❚ PAUSED · milestone: plan v2 accepted", 10*time.Second)
-	s := tm.waitFor("Plan v2 answers every objection", 10*time.Second) // the Chair speaks just after the milestone pause
+	// The Chair puts the plan up for review; the review screen opens over the feed, the assistant beside it.
+	tm.waitFor("REVIEW plan v2", 60*time.Second)
+	tm.waitFor("❚❚ PAUSED · ready for review: plan v2", 10*time.Second)
+	tm.waitFor("a approve", 5*time.Second)
+	tm.snapshot("room-3-review-doc")
+	tm.send("]") // next section
+	tm.waitFor("reviewing plan v2 · ", 5*time.Second)
+	tm.send("a") // approve, then the export prompt
+	tm.waitFor("Export it to the project?", 10*time.Second)
+	tm.waitFor("docs/plan.md", 5*time.Second)
+	tm.send("\x1b") // skip the export
+	time.Sleep(200 * time.Millisecond)
+	s := tm.waitFor("accepted by you", 10*time.Second)
 	for _, want := range []string{"↩ ", "RECENT", "DISCUSSIONS", "MEMBERS"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("settled channel is missing %q:\n%s", want, s)
 		}
 	}
+	tm.waitFor("Plan v2 answers every objection", 10*time.Second) // the Chair spoke as it proposed the plan
 	tm.waitFor("Agreed on an in-process LRU", 10*time.Second)
 	tm.snapshot("room-3-milestone")
 

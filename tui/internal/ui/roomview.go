@@ -94,6 +94,9 @@ func renderStatusBar(r *roomModel, th theme.Theme, width int, spin string) strin
 	switch {
 	case r.state == "paused":
 		text := " ❚❚ PAUSED · " + r.pauseReason() + ".  Nobody is talking; what you say waits for you to resume.  alt+p resume "
+		if d, ok := r.awaitingReview(); ok && r.rev == nil {
+			text = fmt.Sprintf(" ◆ READY FOR REVIEW · %s v%d.  ctrl+r to review it · alt+p to resume without it ", d.Slug, d.Ready)
+		}
 		bar := lipgloss.NewStyle().Background(th.Warn).Foreground(lipgloss.Color("#201F26")).Bold(true)
 		return bar.Render(padRight(ansiCut(text, width), width))
 	case r.flash != "" && r.frame < r.flashTo:
@@ -177,7 +180,21 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 	case "mail.out":
 		out = event("✉", th.Info, fmt.Sprintf("mail to %s: “%s”  · .quorum/mail/%s", e.To, e.Subject, e.File))
 	case "doc.accepted":
-		out = fg(th.OK).Bold(true).Render(fmt.Sprintf("✓ %s v%d accepted by the %s", e.Slug, e.Version, e.By))
+		by := "the " + e.By
+		if e.By == "human" {
+			by = "you"
+		}
+		out = fg(th.OK).Bold(true).Render(fmt.Sprintf("✓ %s v%d accepted by %s", e.Slug, e.Version, by))
+	case "doc.ready":
+		out = fg(th.Warn).Bold(true).Render(fmt.Sprintf("◆ %s v%d is ready for your review", e.Slug, e.Version)) + fg(th.Subtle).Render("  · ctrl+r to review")
+	case "doc.reviewed":
+		what := "You asked about"
+		if e.Action == "revise" {
+			what = "You asked for changes to"
+		}
+		out = event("✎", th.Accent2, fmt.Sprintf("%s %s v%d%s", what, e.Slug, e.Version, suffix(", ", e.Section)))
+	case "workstream.closed":
+		out = event("✓", th.OK, fmt.Sprintf("workstream #%d closed", e.Thread))
 	case "agent.joined":
 		out = event("+", th.OK, fmt.Sprintf("%s joined (%s on %s)", e.Agent, e.Persona, e.CLI))
 	case "agent.left":
@@ -329,23 +346,30 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-// renderNow is the top of the assistant column: what's being discussed and where it stands.
+// renderNow is the top of the assistant column. Its first line is the engine's own status (who's
+// speaking, what's queued, what waits on you), so it's always current; under it, the assistant's
+// one-line read of where things stand.
 func renderNow(r *roomModel, th theme.Theme, width, maxLines int) string {
-	now := r.focusTitle()
-	if r.view != 0 {
+	now := r.status
+	switch {
+	case r.rev != nil:
+		now = fmt.Sprintf("reviewing %s v%d", r.rev.slug, r.rev.version) + suffix(" · ", r.rev.section())
+	case r.view != 0:
 		now = r.thread(r.view).title
-	}
-	if now == "" {
-		now = firstLine(r.topic)
+	case now == "":
+		now = orDefault(r.focusTitle(), firstLine(r.topic))
 	}
 	lines := []string{fg(th.Info).Bold(true).Render("NOW ") + fg(th.Text).Bold(true).Render(ansi.Truncate(orDefault(now, "nothing yet"), width-4, "…"))}
 	if r.digest == "" {
-		lines = append(lines, fg(th.Subtle).Italic(true).Render("No summary yet. Ask me where things stand."))
+		lines = append(lines, fg(th.Subtle).Italic(true).Render("Ask me where things stand."))
 		return strings.Join(lines, "\n")
 	}
-	body := strings.Split(renderMarkdown(r.digest, width, th), "\n")
+	body := strings.Split(ansi.Wrap(strings.Join(strings.Fields(r.digest), " "), width, ""), "\n")
 	if len(body) > maxLines {
 		body = append(body[:max(maxLines-1, 1)], fg(th.Subtle).Render("… ask me for more"))
+	}
+	for i, l := range body {
+		body[i] = fg(th.Muted).Render(l)
 	}
 	return strings.Join(append(lines, body...), "\n")
 }
@@ -476,6 +500,9 @@ func (r *roomModel) docList() []docRef {
 		if d.Accepted > 0 {
 			label += fmt.Sprintf("  ✓ v%d accepted", d.Accepted)
 		}
+		if d.Ready > d.Accepted {
+			label += fmt.Sprintf("  ◆ v%d ready for your review", d.Ready)
+		}
 		refs = append(refs, docRef{name: d.Slug, label: label})
 	}
 	for _, n := range r.notes {
@@ -524,6 +551,12 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	}
 	if r.review {
 		parts = []string{k("↑↓", "choose"), k("y", "approve"), k("e", "edit"), k("n", "decline"), k("a", "approve all"), k("esc", "done")}
+	}
+	if r.rev != nil && r.overlay == nil && r.pane != paneAssistant {
+		parts = nil
+		for _, kv := range reviewKeys(r.rev) {
+			parts = append(parts, k(kv[0], kv[1]))
+		}
 	}
 	if r.overlay != nil {
 		parts = []string{k("esc", "close"), k("↑↓", "move"), k("enter", "open")}

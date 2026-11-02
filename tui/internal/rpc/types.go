@@ -295,6 +295,8 @@ func Decode(line []byte) (Message, error) {
 		data = new(AssistantDelta)
 	case "room.support":
 		data = new(RoomSupportEvent)
+	case "room.status":
+		data = new(RoomStatus)
 	case "setup.delta":
 		data = new(SetupDelta)
 	case "setup.reply":
@@ -358,6 +360,8 @@ func derefs(p any) any {
 	case *AssistantDelta:
 		return *v
 	case *RoomSupportEvent:
+		return *v
+	case *RoomStatus:
 		return *v
 	case *SetupDelta:
 		return *v

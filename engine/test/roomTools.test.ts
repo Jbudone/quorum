@@ -145,7 +145,7 @@ describe("Room tools", () => {
       "Notebook saved.",
       "check TTL\n",
     ]);
-    expect(room.docs()).toEqual([{ slug: "plan", version: 2, kind: "plan" }]);
+    expect(room.docs()).toEqual([{ slug: "plan", version: 2, kind: "plan", by: "arch" }]);
     expect(room.store.events().filter((e) => e.type === "doc.revised").at(-1)).toMatchObject({ note: "tighter", by: "arch" });
 
     // On a fresh start the member sees its notebook and the documents.
@@ -177,9 +177,11 @@ describe("Room support roles", () => {
     ]);
     expect(room.topics().map((t) => t.slug)).toContain("rollout");
     expect(room.pending()).toMatchObject([{ from: "chair", action: "focus", args: ["rollout"], why: "next" }]);
-    expect(room.docs()[0]).toMatchObject({ slug: "plan", accepted: 1 });
+    // The Chair only puts the version up for review; it isn't accepted until the human says so.
+    expect(room.docs()[0]).toMatchObject({ slug: "plan", ready: 1 });
+    expect(room.docs()[0].accepted).toBeUndefined();
     expect(room.state).toBe("paused");
-    expect(room.store.events().find((e) => e.type === "paused")).toMatchObject({ reason: "milestone: plan v1 accepted" });
+    expect(room.store.events().find((e) => e.type === "paused")).toMatchObject({ reason: "ready for review: plan v1" });
 
     await room.resolve(room.pending()[0].id, true);
     expect(room.focus()).toBe("rollout");
@@ -253,7 +255,7 @@ describe("Room support roles", () => {
     ]);
     expect(room.digest()).toBe("- LRU agreed (#3)");
     expect(room.pending()).toMatchObject([{ action: "add", args: ["security", "claude"] }]);
-    expect(r.calls.filter((c) => c.agent === "assistant")[1].prompt).toContain("Your current two-line status for the human:\n- LRU agreed (#3)");
+    expect(r.calls.filter((c) => c.agent === "assistant")[1].prompt).toContain("Your previous status line (it may be stale; the live state wins):\n- LRU agreed (#3)");
   });
 
   it("a removed member writes an exit memo and can be brought back", async () => {

@@ -25,6 +25,7 @@ type roomUI struct {
 	feedVP     viewport.Model
 	assistVP   viewport.Model
 	overlayVP  viewport.Model
+	reviewVP   viewport.Model // the document under review, in the feed's place
 	roomIn     textarea.Model
 	assistIn   textarea.Model
 	feedFollow bool
@@ -80,7 +81,7 @@ func (a *App) newRoomUI(opening string) {
 		channels = a.rm.channels
 	}
 	a.rm = &roomUI{
-		feedVP: viewport.New(), assistVP: viewport.New(), overlayVP: viewport.New(),
+		feedVP: viewport.New(), assistVP: viewport.New(), overlayVP: viewport.New(), reviewVP: viewport.New(),
 		roomIn: in, assistIn: as, feedFollow: true, asstFollow: true, opening: opening, channels: channels,
 	}
 	a.rm.feedVP.MouseWheelEnabled = true
@@ -233,8 +234,38 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 	case "room.doc":
 		var d rpc.RoomDocText
 		if rpc.DecodeResult(r.Result, &d) == nil && u.room != nil {
+			if d.Version > 0 {
+				// A channel output opens for review, beside the assistant.
+				u.room.overlay, u.room.rev = nil, newReview(d, a.th)
+				u.reviewVP.GotoTop()
+				return true
+			}
 			u.room.overlay = &docOverlay{title: d.Name, text: d.Text}
 			u.overlayVP.GotoTop()
+		}
+	case "room.review":
+		var res rpc.ReviewResult
+		if rpc.DecodeResult(r.Result, &res) != nil || u.room == nil {
+			return true
+		}
+		rv := u.room.rev
+		if res.ExportPath != "" && rv != nil {
+			rv.accepted, rv.mode = res.Version, reviewExport
+			rv.in.SetValue(res.ExportPath)
+			rv.in.CursorEnd()
+			return rv.in.Focus() == nil
+		}
+		u.room.rev = nil
+		u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Sent. The room is working on it and will pause again for you when it's done."})
+		u.asstFollow = true
+	case "room.exportDoc":
+		var res struct {
+			Path string `json:"path"`
+		}
+		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
+			u.room.rev = nil
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: "Exported to " + res.Path + "."})
+			u.asstFollow = true
 		}
 	case "room.export":
 		var res struct {
@@ -313,6 +344,11 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	r := u.room
 	if r.edit != nil {
 		return a.handleEditKey(k)
+	}
+	if r.rev != nil && r.overlay == nil {
+		if cmd, done := a.handleReviewKey(k); done {
+			return cmd
+		}
 	}
 	if r.overlay != nil {
 		o := r.overlay
@@ -440,6 +476,11 @@ func (a *App) handleRoomKey(k tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+o":
 		r.overlay = &docOverlay{title: "Documents", list: r.docList()}
 		return nil
+	case "ctrl+r":
+		if slug := r.reviewTarget(); slug != "" {
+			a.call("room.doc", map[string]any{"name": slug})
+		}
+		return nil
 	case "pgup":
 		a.roomScroll(-1, true)
 		return nil
@@ -484,6 +525,10 @@ func (a *App) submitRoom() tea.Cmd {
 		r.asking, r.answer = true, ""
 		u.asstFollow = true
 		params := map[string]any{"text": q}
+		if rv := r.rev; rv != nil {
+			// The assistant answers about the document you have open, and the part you're on.
+			params["doc"] = map[string]any{"slug": rv.slug, "version": rv.version, "section": rv.section()}
+		}
 		if imgs := a.takeImages(q); len(imgs) > 0 {
 			params["images"] = imgs
 		}
@@ -702,6 +747,19 @@ func (a *App) refreshRoom() {
 	if u.asstFollow {
 		u.assistVP.GotoBottom()
 	}
+	if rv := r.rev; rv != nil {
+		h := fh
+		if rv.mode != reviewReading {
+			h = max(fh-reviewInputH, 3)
+		}
+		u.reviewVP.SetWidth(fw - 1)
+		u.reviewVP.SetHeight(h)
+		u.reviewVP.SetContent(renderReview(rv, a.th, fw-1))
+		if rv.jump && rv.cur < len(rv.offsets) {
+			u.reviewVP.SetYOffset(max(rv.offsets[rv.cur]-1, 0))
+			rv.jump = false
+		}
+	}
 	if r.overlay != nil {
 		u.overlayVP.SetWidth(a.w - 4)
 		u.overlayVP.SetHeight(a.roomBodyH())
@@ -805,6 +863,9 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 	vp, follow := &u.feedVP, &u.feedFollow
 	if inAssist {
 		vp, follow = &u.assistVP, &u.asstFollow
+	} else if u.room != nil && u.room.rev != nil {
+		reviewFollow := false
+		vp, follow = &u.reviewVP, &reviewFollow
 	}
 	if m.Mouse().Button == tea.MouseWheelUp {
 		vp.ScrollUp(3)
@@ -833,7 +894,14 @@ func (a *App) roomView() string {
 	fh, ah := a.paneHeights()
 	fw, aw := a.feedW(), a.assistW()
 
-	feed := lipgloss.NewStyle().Width(fw).Height(fh).Render(u.feedVP.View())
+	feedView := u.feedVP.View()
+	if rv := r.rev; rv != nil {
+		feedView = u.reviewVP.View()
+		if rv.mode != reviewReading {
+			feedView = lipgloss.JoinVertical(lipgloss.Left, feedView, reviewInput(rv, a.th, fw-2))
+		}
+	}
+	feed := lipgloss.NewStyle().Width(fw).Height(fh).MaxHeight(fh).Render(feedView)
 	top, _ := a.assistantColumn(aw-2, ah)
 	col := u.assistVP.View()
 	if top != "" {

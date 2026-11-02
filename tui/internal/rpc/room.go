@@ -34,8 +34,10 @@ type (
 		// access.granted: a folder outside the project everyone may now read.
 		Path string `json:"path"`
 
-		Slug    string   `json:"slug"`
-		Title   string   `json:"title"`
+		Slug  string `json:"slug"`
+		Title string `json:"title"`
+		// doc.reviewed: the part of the document the human's feedback is about.
+		Section string   `json:"section"`
 		By      string   `json:"by"`
 		Version int      `json:"version"`
 		Kind    string   `json:"kind"`
@@ -76,6 +78,10 @@ type (
 		Thread   int    `json:"thread"`
 	}
 	// RoomSupportEvent says a support role (assistant, watch, chair, scribe, floor) started or stopped working.
+	// RoomStatus is the engine's one-line status of the room, sent when it changes.
+	RoomStatus struct {
+		Line string `json:"line"`
+	}
 	RoomSupportEvent struct {
 		Role string `json:"role"`
 		Busy bool   `json:"busy"`
@@ -238,6 +244,10 @@ type (
 		Version  int    `json:"version"`
 		Kind     string `json:"kind"`
 		Accepted int    `json:"accepted"`
+		// Ready is the version up for the human's review; Reviewed the last one they reviewed; By the latest author.
+		Ready    int    `json:"ready"`
+		Reviewed int    `json:"reviewed"`
+		By       string `json:"by"`
 	}
 	RoomTuning struct {
 		Parallel    int     `json:"parallel"`
@@ -266,6 +276,7 @@ type (
 		Support       RoomSupport    `json:"support"`
 		CLIs          []string       `json:"clis"`
 		Digest        string         `json:"digest"`
+		Status        string         `json:"status"`
 		Tuning        RoomTuning     `json:"tuning"`
 		Focus         string         `json:"focus"`
 		Topics        []RoomTopic    `json:"topics"`
@@ -294,8 +305,21 @@ type (
 		Channels []RoomListItem    `json:"channels"`
 		Members  []WorkspaceMember `json:"members"`
 	}
+	// RoomDocText is a document's text. For a channel output it also carries the versions the review
+	// screen needs; Base and BaseText are the version the human last reviewed, to diff against.
 	RoomDocText struct {
-		Name string `json:"name"`
-		Text string `json:"text"`
+		Name     string `json:"name"`
+		Text     string `json:"text"`
+		Version  int    `json:"version"`
+		Latest   int    `json:"latest"`
+		Accepted int    `json:"accepted"`
+		Ready    int    `json:"ready"`
+		Base     int    `json:"base"`
+		BaseText string `json:"baseText"`
+	}
+	// ReviewResult is what room.review returns; ExportPath comes back on approval.
+	ReviewResult struct {
+		Version    int    `json:"version"`
+		ExportPath string `json:"exportPath"`
 	}
 )

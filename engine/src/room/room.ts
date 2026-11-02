@@ -35,10 +35,12 @@ import {
   threadSummaryPrompt,
   SCRIBE_SYSTEM,
   scribePrompt,
+  awaitingReview,
   type FloorReason,
   type RoomView,
   type SetupProposal,
 } from "./prompts.js";
+import { sectionText, unifiedDiff } from "./review.js";
 import { computeSignals, describeSignals, looksStuck } from "./signals.js";
 import {
   RoomStore,
@@ -75,7 +77,9 @@ export type RoomEmit =
   | { event: "room.support"; data: { role: SupportRole | "watch"; busy: boolean } }
   | { event: "room.usage"; data: { agent: string; cli: string; quotaUtilization?: number; rateLimited?: boolean } }
   /** What a member has used in this channel so far, after each of its turns. */
-  | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } };
+  | { event: "room.spend"; data: { agent: string; cli: string; usage: UsageReport } }
+  /** The one-line status, sent when it changes. */
+  | { event: "room.status"; data: { line: string } };
 
 /** paused: nobody is woken. running: turns underway. idle: running, but nobody has anything new to answer. */
 export type RoomState = "paused" | "running" | "idle";
@@ -253,6 +257,9 @@ export class Room {
   private readonly quota = new Map<string, number>();
   private readonly warned = new Set<string>();
   private readonly busy = new Set<SupportRole | "watch">();
+  /** Why the room is paused, for the status line. */
+  private pausedFor: string | undefined;
+  private lastStatus = "";
   private supportAbort = new AbortController();
   private mailTimer?: ReturnType<typeof setInterval>;
   /** Run once, the next time the room resumes. */
@@ -333,13 +340,158 @@ export class Room {
   private log(body: RoomEventBody): RoomEvent {
     const e = this.store.append(body);
     this.emit({ event: "room.event", data: e });
+    this.emitStatus();
     return e;
   }
 
   private setState(state: RoomState, reason?: string): void {
+    if (state === "paused") this.pausedFor = reason;
+    else this.pausedFor = undefined;
     if (state === this._state) return;
     this._state = state;
     this.emit({ event: "room.state", data: { state, ...(reason ? { reason } : {}) } });
+    this.emitStatus();
+  }
+
+  /** Sends the one-line status when it changes; the TUI shows it at the top of the assistant column. */
+  private emitStatus(): void {
+    const line = this.status().line;
+    if (line === this.lastStatus) return;
+    this.lastStatus = line;
+    this.emit({ event: "room.status", data: { line } });
+  }
+
+  /**
+   * What's happening right now, from the engine's own state rather than anyone's reading of the log:
+   * who is mid-turn, who is queued and to answer what, which workstreams are open, and what waits on
+   * the human. `line` is the short form for the TUI; `detail` is for the assistant's prompt.
+   */
+  status(): { line: string; detail: string } {
+    const answering = (w: FloorReason) => (w.replyTo ? ` answering #${w.replyTo}` : "") + (w.to ? ` (privately, to ${w.to})` : "") + (w.thread ? ` in thread #${w.thread}` : "");
+    const speaking = [...this.running.values()];
+    const queued = [...this.wants.values()];
+    const support = [...this.busy];
+    const ws = this.workstreams();
+    const open = ws.filter((w) => !w.settled);
+    const docs = this.docs();
+    const review = docs.filter(awaitingReview);
+    const pending = this.pending().length;
+    const latest = docs.at(-1);
+    const state = this._state === "paused" ? `paused${this.pausedFor ? ` (${this.pausedFor})` : ""}` : this._state === "idle" ? "idle (nobody is speaking or queued)" : "running";
+    const detail = [
+      `Room: ${state}.`,
+      `Mid-turn now: ${speaking.length ? speaking.map((r) => r.agent + answering(r.why)).join("; ") : "nobody"}.`,
+      `Queued to speak next: ${queued.length ? queued.map((w) => `${w.agent}${answering(w)}${w.why ? ` — ${w.why}` : ""}`).join("; ") : "nobody"}.`,
+      support.length ? `Support roles working: ${support.join(", ")}.` : "",
+      ws.length ? `Workstreams: ${ws.map((w) => `#${w.thread} ${w.title} (${w.settled ? "settled" : "open"})`).join("; ")}.` : "",
+      docs.length
+        ? `Documents: ${docs.map((d) => `${d.slug} v${d.version}${d.by ? ` by ${d.by}` : ""}${d.accepted ? `, v${d.accepted} accepted` : ", not accepted"}${awaitingReview(d) ? `, v${d.ready} waiting for the human's review` : ""}${d.reviewed ? `, human last reviewed v${d.reviewed}` : ""}`).join("; ")}.`
+        : "",
+      `Waiting on the human: ${[review.length ? `review of ${review.map((d) => `${d.slug} v${d.ready}`).join(", ")}` : "", pending ? `${pending} suggestion${pending === 1 ? "" : "s"}` : ""].filter(Boolean).join("; ") || "nothing"}.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const head =
+      this._state === "paused"
+        ? review.length
+          ? `paused · review ${review[0].slug} v${review[0].ready}`
+          : `paused${this.pausedFor ? ` · ${this.pausedFor}` : ""}`
+        : speaking.length
+          ? `${speaking.map((r) => r.agent).join(", ")} speaking`
+          : this.deciding
+            ? "floor deciding"
+            : support.length
+              ? `${support.join(", ")} working`
+              : "quiet";
+    const bits = [
+      head,
+      this._state !== "paused" && queued.length ? `${queued.length} queued` : "",
+      open.length ? `${open.map((w) => `#${w.thread}`).join(" ")} open` : "",
+      latest && !review.length ? `${latest.slug} v${latest.version}` : "",
+    ].filter(Boolean);
+    return { line: bits.join(" · "), detail };
+  }
+
+  /** The Chair agreed a version, or a revision finished: the room pauses for the human to review it. */
+  private readyForReview(slug: string, version: number, by: string): void {
+    this.log({ type: "doc.ready", slug, version, by });
+    this.pause(`ready for review: ${slug} v${version}`);
+    void this.watch(`${slug} v${version} is up for the human's review and the room paused`);
+  }
+
+  /**
+   * The human's review of a document version. Approving accepts it and closes the open workstreams.
+   * A question goes to the document's authors; changes go to its latest author. Either way the room
+   * resumes until it goes quiet, then pauses again: with the new version up for review, or with the answers.
+   */
+  review(slug: string, action: "approve" | "clarify" | "revise", o: { version?: number; section?: string; text?: string } = {}): { version: number; exportPath?: string } {
+    const doc = this.docs().find((d) => d.slug === slug);
+    if (!doc) throw new Error(`no document "${slug}"`);
+    const version = o.version ?? doc.ready ?? doc.version;
+    if (!Number.isInteger(version) || version < 1 || version > doc.version) throw new Error(`${slug} has no v${version}`);
+    if (action === "approve") {
+      this.store.markAccepted(slug, version);
+      this.log({ type: "doc.accepted", slug, version, by: "human" });
+      for (const w of this.workstreams()) if (!w.settled) this.log({ type: "workstream.closed", thread: w.thread, by: "human" });
+      this.store.setMeta({ review: "" });
+      // The pause reason was the review; say what came of it.
+      if (this._state === "paused") {
+        this.pausedFor = `${slug} v${version} accepted`;
+        this.emitStatus();
+      }
+      return { version, exportPath: `docs/${slug}.md` };
+    }
+    const text = (o.text ?? "").trim();
+    if (!text) throw new Error(action === "revise" ? "say what to change" : "ask something first");
+    const authors = action === "revise" ? [doc.by ?? ""] : this.authors(slug);
+    const who = [...new Set(authors)].filter((a) => this.personas.has(a) && !this.leaving.has(a));
+    const where = `${slug} v${version}${o.section ? `, section "${o.section}"` : ""}`;
+    const lead = who.map((a) => `@${a}`).join(" ");
+    const body =
+      action === "revise"
+        ? `${lead} Review of ${where}: please revise it and save a new version.\n\n${text}`
+        : `${lead} Question about ${where}. Answer it; change the document only if the answer shows it's wrong.\n\n${text}`;
+    this.log({ type: "doc.reviewed", slug, version, action, ...(o.section ? { section: o.section } : {}), text });
+    this.store.setMeta({ review: JSON.stringify({ slug, action, from: doc.version }) });
+    this.post(body.trim());
+    if (this._state === "paused") this.resume();
+    return { version };
+  }
+
+  /** Members who wrote a version of a document, latest first. */
+  private authors(slug: string): string[] {
+    return [...new Set(this.store.events().flatMap((e) => (e.type === "doc.revised" && e.slug === slug ? [e.by] : [])).reverse())];
+  }
+
+  /** After review feedback, once the room goes quiet it pauses again; true when it did. */
+  private reviewFollowUp(): boolean {
+    const raw = String(this.store.meta().review ?? "");
+    if (!raw) return false;
+    this.store.setMeta({ review: "" });
+    let r: { slug: string; action: string; from: number };
+    try {
+      r = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    const doc = this.docs().find((d) => d.slug === r.slug);
+    if (doc && doc.version > r.from) this.readyForReview(r.slug, doc.version, "revision");
+    else this.pause(r.action === "revise" ? `review: no new version of ${r.slug} yet` : `review: answers on ${r.slug}`);
+    return true;
+  }
+
+  /**
+   * True when a member is already speaking, or queued to, in reply to the same sender in this
+   * conversation. Picking it again would only get the same answer twice.
+   */
+  private busyFor(agent: string, thread: number, replyTo?: number): boolean {
+    const sender = (seq?: number) => {
+      const e = seq ? this.store.events()[seq - 1] : undefined;
+      return e?.type === "message" ? e.from : undefined;
+    };
+    const s = sender(replyTo);
+    const owed = [...[...this.running.values()].map((r) => ({ ...r.why, agent: r.agent })), ...this.wants.values()];
+    return owed.some((w) => w.agent === agent && (w.thread ?? 0) === thread && (!s || sender(w.replyTo) === s || w.to === s));
   }
 
   // ---- derived state ----
@@ -365,8 +517,14 @@ export class Room {
   docs(): RoomView["docs"] {
     const out = new Map<string, RoomView["docs"][number]>();
     for (const e of this.store.events()) {
-      if (e.type === "doc.revised") out.set(e.slug, { ...out.get(e.slug), slug: e.slug, version: e.version, kind: e.kind });
-      if (e.type === "doc.accepted" && out.has(e.slug)) out.get(e.slug)!.accepted = e.version;
+      const d = "slug" in e ? out.get(e.slug) : undefined;
+      if (e.type === "doc.revised") out.set(e.slug, { ...d, slug: e.slug, version: e.version, kind: e.kind, by: e.by });
+      else if (!d) continue;
+      else if (e.type === "doc.accepted") {
+        d.accepted = e.version;
+        if (e.by === "human") d.reviewed = Math.max(d.reviewed ?? 0, e.version);
+      } else if (e.type === "doc.ready") d.ready = e.version;
+      else if (e.type === "doc.reviewed") d.reviewed = Math.max(d.reviewed ?? 0, e.version);
     }
     return [...out.values()];
   }
@@ -387,7 +545,7 @@ export class Room {
 
   /** Starter workstreams and whether each has settled. */
   workstreams(): NonNullable<RoomView["workstreams"]> {
-    const settled = new Set(this.store.events().flatMap((e) => (e.type === "thread.summary" ? [e.thread] : [])));
+    const settled = new Set(this.store.events().flatMap((e) => (e.type === "thread.summary" || e.type === "workstream.closed" ? [e.thread] : [])));
     return this.store.events().flatMap((e) => (e.type === "workstream" ? [{ thread: e.thread, title: e.title, ...(e.done ? { done: e.done } : {}), members: e.members, settled: settled.has(e.thread) }] : []));
   }
 
@@ -1039,7 +1197,7 @@ export class Room {
         const last = pub.at(-1)!;
         const snapshot = this.store.config().independent ? this.store.lastSeq : undefined;
         const chosen = d.picks
-          .filter((p) => p.agent !== last.from && !direct.some((x) => x.agent === p.agent && (x.thread ?? 0) === thread))
+          .filter((p) => p.agent !== last.from && !direct.some((x) => x.agent === p.agent && (x.thread ?? 0) === thread) && !this.busyFor(p.agent, thread, p.replyTo))
           .map((p) => ({ ...p, ...(thread ? { thread } : {}), ...(snapshot ? { snapshot } : {}) }));
         // The human is never left unanswered: if nobody was picked or summoned, whoever has spoken
         // least recently in this conversation takes it.
@@ -1121,11 +1279,14 @@ export class Room {
       void this.turn(w.agent, ctrl, w);
     }
     this.saveWants();
+    this.emitStatus();
     if (this.running.size || this.deciding) return this.setState("running");
     if (blocked.length) {
       const clis = [...new Set(blocked.map((a) => this.spec(a).cli))];
       return this.pause(`turn cap reached (${turnCap} turns each for ${clis.join(", ")})`);
     }
+    // A quiet room after the human's review feedback pauses again, for the human to look.
+    if (this.reviewFollowUp()) return;
     this.setState("idle");
     // A quiet room is the support roles' cue, if anything happened since each last looked.
     const m = this.store.meta();
@@ -1583,12 +1744,9 @@ export class Room {
           const slug = d.args[0];
           const doc = this.docs().find((x) => x.slug === slug);
           const version = Number((d.args[1] ?? "").replace(/^v/i, "")) || doc?.version;
-          if (!doc || !version || version > doc.version || doc.accepted === version) return;
-          this.store.markAccepted(slug, version);
-          this.log({ type: "doc.accepted", slug, version, by: "chair" });
-          // An agreed document is a milestone the human should look at before the room carries on.
-          this.pause(`milestone: ${slug} v${version} accepted`);
-          void this.watch(`the Chair accepted ${slug} v${version} and the room paused for the human to review it`);
+          if (!doc || !version || version > doc.version || (doc.accepted ?? 0) >= version || (doc.ready ?? 0) >= version) return;
+          // The Chair only puts an agreed version up for review; the human decides whether to accept it.
+          this.readyForReview(slug, version, "chair");
           return;
         }
         case "nudge": {
@@ -1645,7 +1803,27 @@ export class Room {
       this.store.events().filter((e) => e.type !== "docs.updated" && !(e.type === "aside" && e.kind === "digest")).slice(-60),
       this.focus(),
     );
-    return assistantContext({ view: this.view(), signals: describeSignals(this.signals()), budget, notes, recent, pending, digest: this.digest() });
+    return assistantContext({ view: this.view(), live: this.status().detail, signals: describeSignals(this.signals()), budget, notes, recent, pending, digest: this.digest() });
+  }
+
+  /** The document the human has open in review, for the assistant: the text, their section, and what changed. */
+  private reviewContext(doc: { slug: string; version?: number; section?: string }): string {
+    const d = this.docs().find((x) => x.slug === doc.slug);
+    if (!d) return "";
+    const v = doc.version ?? d.version;
+    const text = this.store.readOutput(d.slug, v);
+    const base = d.reviewed && d.reviewed < v ? d.reviewed : undefined;
+    const diff = base ? unifiedDiff(this.store.readOutput(d.slug, base), text) : "";
+    const section = doc.section ? sectionText(text, doc.section) : undefined;
+    const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}\n… (${t.length - n} more characters)` : t);
+    return [
+      `The human has ${d.slug} v${v} open for review${doc.section ? ` and is looking at the section "${doc.section}"` : ""}. Answer about this document unless they ask about something else.`,
+      section ? `That section:\n\n${clip(section, 4000)}` : "",
+      `The whole document:\n\n${clip(text, 12000)}`,
+      diff ? `What changed since v${base}, the version they last reviewed:\n\n${clip(diff, 4000)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   private actions(): string {
@@ -1697,10 +1875,10 @@ export class Room {
   }
 
   /** The human asks the assistant something; the answer streams through `onDelta` and is logged as an aside. */
-  async ask(question: string, onDelta?: (d: string) => void): Promise<string> {
+  async ask(question: string, onDelta?: (d: string) => void, doc?: { slug: string; version?: number; section?: string }): Promise<string> {
     if (!question.trim()) throw new Error("ask something first");
     this.log({ type: "aside", from: "human", text: question.trim() });
-    const context = this.assistantContext();
+    const context = [this.assistantContext(), doc ? this.reviewContext(doc) : ""].filter(Boolean).join("\n\n");
     let answer = "";
     await this.job("assistant", async () => {
       const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions()), ASSISTANT_SYSTEM, onDelta);

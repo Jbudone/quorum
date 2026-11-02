@@ -33,14 +33,15 @@ import { quorumTracing } from "../tracing.js";
  * presets.save {name, config}, doctor.
  *
  * Rooms: rooms.list {repo}, room.start {repo, mock?, preset? | config?, topic?, parallel?, turnCap?} (no preset: an empty room), room.open {repo, id},
- * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text}, room.resolve {id, accept, args?} (args: the human's edit),
+ * room.resume, room.pause {reason?}, room.post {text, to?}, room.ask {text, doc?: {slug, version?, section?}},
+ * room.review {slug, action: approve|clarify|revise, version?, section?, text?} (approve returns {version, exportPath}), room.exportDoc {slug, path}, room.resolve {id, accept, args?} (args: the human's edit),
  * room.configure {parallel?, turnCap?, quotaWarn?, quotaStop?}, room.focus {slug}, room.closeTopic {slug, why?},
  * room.raise {title}, room.add {persona, cli, model?}, room.remove {id, memo?}, room.rejoin {id}, room.doc {name, version?},
  * room.export {slug}, room.read {paths}, room.join {id, cli, model?, role?, persona?, brief?, reading?, question?, suggestion?},
  * persona.draft {line}, persona.get {key}, models.list {cli}, catalog.list {refresh?, mock?} (every model and how to run it),
  * catalog.favourite {key, on?}, catalog.used {key}, providers.get, providers.set {id, name?, env?, baseUrl?, models?, hidden?, remove?},
  * harnesses.order {order}, room.swap {id, cli, model?} (move a member or support role to another model). setup.start {channel: true} plans the open channel instead of a new one. Room events: room.event (a log entry), room.state, room.turn.start|delta|tool|end,
- * room.usage, room.support, room.assistant.delta. Closing stdin pauses the room.
+ * room.usage, room.support, room.assistant.delta, room.status {line}. Closing stdin pauses the room.
  *
  * Workspace and setup: workspace.open {repo} lists channels and members; setup.start {repo, mock?} begins a setup chat,
  * setup.say {text} talks in it (setup.delta, then setup.reply {text, proposal?}), and setup.create {proposal?} opens the
@@ -82,6 +83,7 @@ function snapshot(r: Room) {
     support: c.support,
     clis: r.clis,
     digest: r.digest() ?? "",
+    status: r.status().line,
     tuning: { parallel: c.parallel, turnCap: c.turnCap, quotaWarn: c.quotaWarn, quotaStop: c.quotaStop, independent: Boolean(c.independent) },
     focus: r.focus() ?? "",
     topics: r.topics(),
@@ -451,8 +453,19 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const r = needRoom();
         const text = withImages(p);
         if (!text.trim()) throw new Error("ask something first");
-        side(() => r.ask(text, (delta) => write({ event: "room.assistant.delta", data: { delta } })));
+        const d = p.doc as { slug?: unknown; version?: unknown; section?: unknown } | undefined;
+        const doc = d && typeof d.slug === "string" ? { slug: d.slug, ...(Number(d.version) ? { version: Number(d.version) } : {}), ...(typeof d.section === "string" && d.section ? { section: d.section } : {}) } : undefined;
+        side(() => r.ask(text, (delta) => write({ event: "room.assistant.delta", data: { delta } }), doc));
         return {};
+      }
+      case "room.review": {
+        const action = String(p.action);
+        if (action !== "approve" && action !== "clarify" && action !== "revise") throw new Error(`unknown review action "${action}"`);
+        return needRoom().review(String(p.slug), action, {
+          ...(Number(p.version) ? { version: Number(p.version) } : {}),
+          ...(typeof p.section === "string" && p.section ? { section: p.section } : {}),
+          ...(typeof p.text === "string" ? { text: p.text } : {}),
+        });
       }
       case "room.resolve": {
         const r = needRoom();
@@ -498,11 +511,28 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "room.doc": {
         const r = needRoom();
         const name = String(p.name ?? "").replace(/\.md$/, "");
-        if (r.docs().some((d) => d.slug === name)) return { name, text: r.store.readOutput(name, p.version ? Number(p.version) : undefined) };
+        const doc = r.docs().find((d) => d.slug === name);
+        if (doc) {
+          // An output comes with what the review screen needs: its versions, and the last reviewed one to diff against.
+          const version = p.version ? Number(p.version) : doc.ready && !doc.accepted ? doc.ready : doc.version;
+          const base = doc.reviewed && doc.reviewed < version ? doc.reviewed : undefined;
+          return {
+            name,
+            text: r.store.readOutput(name, version),
+            version,
+            latest: doc.version,
+            ...(doc.accepted ? { accepted: doc.accepted } : {}),
+            ...(doc.ready ? { ready: doc.ready } : {}),
+            ...(base ? { base, baseText: r.store.readOutput(name, base) } : {}),
+          };
+        }
         const text = RoomStore.isDocPath(`${name}.md`) ? r.store.readDoc(`${name}.md`) : "";
         if (!text) throw new Error(`nothing called "${name}"`);
         return { name, text };
       }
+      case "room.exportDoc":
+        // The human typed the path, so this is their approval; exportDoc still refuses paths outside the project.
+        return { path: needRoom().exportDoc(String(p.slug), String(p.path ?? "")) };
       case "room.export":
         return { url: await needRoom().exportIssue(String(p.slug)) };
       default:

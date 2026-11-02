@@ -40,6 +40,12 @@ export type RoomEventBody =
   | { type: "topic.closed"; slug: string; by: string; why?: string }
   | { type: "doc.revised"; slug: string; version: number; kind: DocKind; by: string; note?: string }
   | { type: "doc.accepted"; slug: string; version: number; by: string }
+  /** The Chair (or a finished revision) put a version up for the human's review; only the human accepts. */
+  | { type: "doc.ready"; slug: string; version: number; by: string }
+  /** The human's feedback on a version under review: a question for its authors, or changes to make. */
+  | { type: "doc.reviewed"; slug: string; version: number; action: "clarify" | "revise"; section?: string; text: string }
+  /** A workstream the human closed, e.g. by approving the document it fed into. */
+  | { type: "workstream.closed"; thread: number; by: string }
   | { type: "docs.updated"; files: string[]; by: string }
   | { type: "agent.joined"; agent: string; persona: string; cli: CliName; model?: string }
   | { type: "agent.left"; agent: string; memo?: string }

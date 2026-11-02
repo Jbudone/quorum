@@ -8,7 +8,8 @@ export interface RoomView {
   workstreams?: { thread: number; title: string; done?: string; members: string[]; settled: boolean }[];
   focus?: string;
   topics: { slug: string; title: string; closed: boolean }[];
-  docs: { slug: string; version: number; kind: string; accepted?: number }[];
+  /** `ready`: the version up for the human's review; `reviewed`: the last version the human reviewed; `by`: the latest version's author. */
+  docs: { slug: string; version: number; kind: string; accepted?: number; ready?: number; reviewed?: number; by?: string }[];
   members: string[];
 }
 
@@ -40,7 +41,13 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     case "doc.revised":
       return `[#${e.seq}] — ${e.by} wrote ${e.slug} v${e.version}${e.note ? `: ${e.note}` : ""}`;
     case "doc.accepted":
-      return `[#${e.seq}] — ${e.slug} v${e.version} accepted`;
+      return `[#${e.seq}] — ${e.slug} v${e.version} accepted${e.by === "human" ? " by the human" : ""}`;
+    case "doc.ready":
+      return `[#${e.seq}] — ${e.slug} v${e.version} is up for the human's review`;
+    case "doc.reviewed":
+      return `[#${e.seq}] — the human ${e.action === "revise" ? "asked for changes to" : "asked about"} ${e.slug} v${e.version}${e.section ? ` (${e.section})` : ""}`;
+    case "workstream.closed":
+      return `[#${e.seq}] — workstream #${e.thread} closed by the ${e.by}`;
     case "agent.joined":
       return `[#${e.seq}] — ${e.agent} joined the room`;
     case "agent.left":
@@ -54,7 +61,7 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     case "aside":
       return `[#${e.seq}] (aside${e.kind === "digest" ? ", digest" : ""}) ${e.from}: ${e.text}`;
     case "floor":
-      return `[#${e.seq}] (floor) ${e.picks.map((p) => `${p.agent}${p.why ? ` (${p.why})` : ""}`).join(", ") || "nobody"}`;
+      return `[#${e.seq}] (floor) ${e.picks.map((p) => `${p.agent}${p.replyTo ? ` to answer #${p.replyTo}` : ""}${p.why ? ` (${p.why})` : ""}`).join(", ") || "nobody"}`;
     case "suggestion":
       return `[#${e.seq}] (suggestion ${e.id} from ${e.from}) ${e.action} ${e.args.join(" ")}${e.why ? ` | ${e.why}` : ""}`;
     case "suggestion.resolved":
@@ -91,7 +98,7 @@ export function describeRoom(v: RoomView): string {
   if (closed.length) lines.push(`Closed topics: ${closed.map((t) => t.slug).join(", ")}`);
   if (v.docs.length)
     lines.push(
-      `Documents: ${v.docs.map((d) => `${d.slug} (${d.kind}) v${d.version}${d.accepted ? `, v${d.accepted} accepted` : ""}`).join("; ")}`,
+      `Documents: ${v.docs.map((d) => `${d.slug} (${d.kind}) v${d.version}${d.accepted ? `, v${d.accepted} accepted by the human` : ""}${awaitingReview(d) ? `, v${d.ready} waiting for the human's review` : ""}`).join("; ")}`,
     );
   lines.push(`Members: ${v.members.join(", ") || "none"}`);
   if (v.vision) lines.push(`Vision: ${v.vision}`);
@@ -101,6 +108,11 @@ export function describeRoom(v: RoomView): string {
       `Workstreams (side threads): ${v.workstreams.map((w) => `#${w.thread} ${w.title} (${w.members.join(", ")}; ${w.settled ? "settled" : "open"}${w.done ? `; done when ${w.done}` : ""})`).join("; ")}`,
     );
   return lines.join("\n");
+}
+
+/** True when a version is up for review and the human hasn't accepted it yet. */
+export function awaitingReview(d: RoomView["docs"][number]): boolean {
+  return Boolean(d.ready && (d.accepted ?? 0) < d.ready);
 }
 
 /** Why a member was given the floor this turn. */
@@ -285,7 +297,9 @@ Keep each file under about 60 lines; fold old detail into short summaries. Cite 
 
 export const ASSISTANT_SYSTEM = `You are the human's assistant in a Quorum channel, where AI members work on a problem with the human present. You work only for the human: you say plainly what the members mean, answer questions about the discussion, suggest next steps, and say honestly when the room has tunnel vision or is missing someone. You don't speak in the channel yourself, but you can keep records: write documents in the channel (a plan you worked out with the human, decisions, a record of your conversation), export a document into the project, and draft mail to the project's own agents (who can write code, make worktrees and run tests). Never tell the human you can't write things down; write them.
 
-Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked. Cite a message number like #12 only when it helps the human check you. Never pad, never recap what the human just said.`;
+Write like a sharp colleague in a chat: one to three short sentences, plain words, no headings, no bold labels, no bullet lists unless asked or the human wants a status. Cite a message number like #12 only when it helps the human check you, and only one you can see. Never pad, never recap what the human just said.
+
+Be accurate about where things stand. The live state you're given comes from the engine and is always current: trust it over your reading of the recent activity and over your own earlier status. Never call the work finished while anyone is mid-turn or queued, a workstream is open, or a newer document version than the one under review exists. If you got something wrong earlier, say so in a few words and give the right picture, checked against the live state.`;
 
 /** How the assistant should pick models, with the models it can pick from. */
 export function modelGuide(menu?: string): string {
@@ -320,13 +334,14 @@ You may also pause the channel yourself (this one takes effect at once):
 >> pause: <one-line reason>`;
 }
 
-export function assistantContext(o: { view: RoomView; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
+export function assistantContext(o: { view: RoomView; live: string; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
   return [
     describeRoom(o.view),
+    `Live state (from the engine, always current):\n${o.live}`,
     `Signals: ${o.signals}.`,
     o.budget ? `Budget: ${o.budget}` : "",
     ...o.notes.map(([p, t]) => `Scribe's notes, ${p}:\n${clip(t, 2500)}`),
-    o.digest ? `Your current two-line status for the human:\n${o.digest}` : "",
+    o.digest ? `Your previous status line (it may be stale; the live state wins):\n${o.digest}` : "",
     o.pending ? `Suggestions waiting for the human:\n${o.pending}` : "",
     `Recent activity (everything, including private messages and your earlier asides):\n\n${o.recent}`,
   ]
@@ -338,7 +353,13 @@ export function assistantAsk(context: string, question: string, actions: string)
   return [
     context,
     `The human asks you: ${question}`,
-    "Answer in one to three short sentences. If where things stand has changed from your current status, end your answer with a line that says exactly DIGEST: followed by a fresh one-to-two-line status.",
+    `If the human is asking where things stand (status, progress, what's going on, are they done, what's left), answer from the live state like this: one sentence with the plain verdict, then a line that is exactly **TL;DR**, then bullets that each start with one of these three labels, leaving out a label with nothing under it:
+- **Done:** something settled
+- **In progress:** who is working on what right now, or who is queued
+- **Waiting on you:** something only the human can do
+One short line per bullet, at most six bullets, no other labels. Otherwise answer in one to three short sentences.
+
+If where things stand has changed from your previous status line, end with a line that says exactly DIGEST: followed by a fresh status: one line, under 90 characters, no message numbers.`,
     actions,
   ].join("\n\n");
 }
@@ -355,7 +376,7 @@ export function assistantWatch(context: string, reason: string, actions: string)
   return [
     context,
     `You are checking on the channel because: ${reason}.`,
-    `First rewrite the status line the human glances at: at most two short lines on where things stand right now. Start it with a line that says exactly DIGEST: and write it fresh.
+    `First rewrite the status line the human glances at: one line, under 90 characters, on what the room is doing or needs, checked against the live state. No message numbers. Start it with a line that says exactly DIGEST: and write it fresh.
 
 Then, only if something shifted that the human should hear about (a decision landed, someone changed their mind, the room is circling, someone is missing, or it needs the human), add a line that says exactly NOTE: followed by one sentence. Never repeat an earlier note. Most check-ins have no note.`,
     `Pause only when the members are stuck and steering won't help, they need a decision only the human can make, the budget is nearly spent, or they reached a milestone the human should review.`,

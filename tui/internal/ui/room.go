@@ -42,6 +42,7 @@ type threadInfo struct {
 	replies int
 	last    int    // seq of its latest message
 	summary string // the outcome posted back to the channel, once it settled
+	closed  bool   // the human closed it (e.g. by approving the document it fed)
 }
 
 // feedItem is one log entry shown in the room feed, cached per width.
@@ -88,6 +89,7 @@ type roomModel struct {
 	docs           []rpc.RoomDoc
 	notes          []string // shared notes the scribe has written
 	digest         string   // the assistant's pinned summary of where the room stands
+	status         string   // the engine's one-line status: who's speaking, what's queued, what waits on you
 	lastPause      string   // why the room last paused, from the log
 
 	feed    []*feedItem
@@ -114,15 +116,18 @@ type roomModel struct {
 	meters  *rpc.Meters      // quota and balances from OpenUsage, polled
 	pane    roomPane
 	overlay *docOverlay
-	edit    *sugEdit // a suggestion being edited before it is approved
-	frame   int
-	calm    bool
+	rev     *docReview // a document open for review, over the channel feed
+	// openReview is set when a version comes up for review live, so the app opens it once.
+	openReview string
+	edit       *sugEdit // a suggestion being edited before it is approved
+	frame      int
+	calm       bool
 }
 
 func newRoom(s rpc.RoomSnapshot, calm bool) *roomModel {
 	r := &roomModel{
 		id: s.ID, dir: s.Dir, name: s.Name, reading: s.Reading, clis: s.CLIs, topic: s.Topic, state: s.State, support: s.Support, tuning: s.Tuning,
-		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest,
+		agents: s.Agents, left: s.Left, focus: s.Focus, topics: s.Topics, docs: s.Docs, pending: s.Pending, digest: s.Digest, status: s.Status,
 		authors: map[int]string{}, texts: map[int]string{}, threads: map[int]*threadInfo{}, busy: map[string]bool{},
 		live: map[string]*liveTurn{}, colors: map[string]int{}, quota: map[string]float64{}, usage: s.Usage, calm: calm,
 	}
@@ -166,6 +171,12 @@ func (r *roomModel) apply(ev rpc.Event) {
 	switch v := ev.Data.(type) {
 	case rpc.RoomEvent:
 		r.record(v)
+		// Only a live one opens the review screen; a replayed history never does.
+		if v.Type == "doc.ready" {
+			r.openReview = v.Slug
+		}
+	case rpc.RoomStatus:
+		r.status = v.Line
 	case rpc.RoomStateEvent:
 		// Coming back from a pause says so, unless something more specific is already showing
 		// (a brand-new channel was never paused, and a reopened one says it picked up where it left off).
@@ -294,18 +305,31 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 		found := false
 		for i := range r.docs {
 			if r.docs[i].Slug == e.Slug {
-				r.docs[i].Version, r.docs[i].Kind, found = e.Version, e.Kind, true
+				r.docs[i].Version, r.docs[i].Kind, r.docs[i].By, found = e.Version, e.Kind, e.By, true
 			}
 		}
 		if !found {
-			r.docs = append(r.docs, rpc.RoomDoc{Slug: e.Slug, Version: e.Version, Kind: e.Kind})
+			r.docs = append(r.docs, rpc.RoomDoc{Slug: e.Slug, Version: e.Version, Kind: e.Kind, By: e.By})
 		}
-	case "doc.accepted":
+	case "doc.accepted", "doc.ready", "doc.reviewed":
 		for i := range r.docs {
-			if r.docs[i].Slug == e.Slug {
+			if r.docs[i].Slug != e.Slug {
+				continue
+			}
+			switch {
+			case e.Type == "doc.ready":
+				r.docs[i].Ready = e.Version
+			case e.Type == "doc.accepted":
 				r.docs[i].Accepted = e.Version
+				if e.By == "human" {
+					r.docs[i].Reviewed = max(r.docs[i].Reviewed, e.Version)
+				}
+			default:
+				r.docs[i].Reviewed = max(r.docs[i].Reviewed, e.Version)
 			}
 		}
+	case "workstream.closed":
+		r.thread(e.Thread).closed = true
 	case "docs.updated":
 		for _, f := range e.Files {
 			name := strings.TrimSuffix(f, ".md")
@@ -538,6 +562,9 @@ Channel:
   alt+g             plan next steps with your assistant: it asks, then proposes
                     members, workstreams and what to consider (or /plan)
   alt+p             pause / resume           ctrl+o   documents and notes
+  ctrl+r            review the document waiting for you (or the latest):
+                    [ ] section, a approve, c ask its authors, r request changes,
+                    d diff since you last reviewed, tab ask your assistant about it
   alt+s             show / hide the stats strip
   alt+v             budget column: this sitting, this channel, or the whole project
   alt+u             usage & cost: quotas and resets, members, support roles, models
