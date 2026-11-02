@@ -80,7 +80,7 @@ export class CodexTransport extends SubprocessTransport {
     const sandbox = opts.readOnly === false ? "workspace-write" : "read-only";
     const args = ["exec"];
     if (opts.sessionId) args.push("resume");
-    args.push("--json", "--skip-git-repo-check", "-c", `sandbox_mode="${sandbox}"`);
+    args.push("--json", "--skip-git-repo-check", "-c", `sandbox_mode="${sandbox}"`, "-c", `web_search="${opts.web && !opts.noTools ? "live" : "disabled"}"`);
     if (this.o.model) args.push("-m", this.o.model);
     if (opts.mcp) args.push(...codexMcpArgs(opts.mcp));
     if (opts.sessionId) args.push(opts.sessionId);

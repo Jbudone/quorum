@@ -190,3 +190,23 @@ func TestApprovedReceiptShowsWhatYouChangedItTo(t *testing.T) {
 	contains(t, s, "README2.md")
 	contains(t, s, "suggested:")
 }
+
+func TestWebIsGrantedPerMember(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.typ("/web perf-researcher")
+	h.press("enter")
+	c := h.expectCall("room.web")
+	if c.params["id"] != "perf-researcher" || c.params["on"] != true {
+		t.Fatalf("web params: %v", c.params)
+	}
+	h.replyID(c.id, map[string]any{})
+	h.event(rpc.RoomEvent{Type: "agent.web", Seq: 970, Agent: "perf-researcher", On: true, By: "human"})
+	contains(t, h.screen(), "perf-researcher can now search the web")
+	// A suggestion to grant it reads plainly.
+	h.event(rpc.RoomEvent{Type: "suggestion", Seq: 971, ID: 41, From: "assistant", Action: "web", Args: []string{"product-engineer"}, Why: "prior art"})
+	contains(t, h.screen(), "let product-engineer search the web")
+	h.typ("/web nobody")
+	h.press("enter")
+	contains(t, h.screen(), "/web takes a member")
+}

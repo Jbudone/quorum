@@ -80,6 +80,17 @@ describe("OpencodeTransport invocation", () => {
     expect(i.cwd).toBe("/repo");
     expect(i.args).toContain("--standalone");
   });
+  it("allows web fetch and search only when the member was granted the web", () => {
+    const off = JSON.parse(inv({}).env.OPENCODE_CONFIG_CONTENT).agent.quorum.permission;
+    expect(off).toMatchObject({ webfetch: "deny", websearch: "deny" });
+    const on = JSON.parse(inv({ web: true }).env.OPENCODE_CONFIG_CONTENT).agent.quorum.permission;
+    expect(on).toMatchObject({ webfetch: "allow", websearch: "allow", edit: "deny" });
+  });
+  it("codex runs with web search off unless granted", () => {
+    const args = (o = {}) => (new CodexTransport() as any).invocation("hi", o).args as string[];
+    expect(args()).toContain('web_search="disabled"');
+    expect(args({ web: true })).toContain('web_search="live"');
+  });
   it("denies every tool for calls that need none", () => {
     const cfg = JSON.parse(inv({ noTools: true }).env.OPENCODE_CONFIG_CONTENT).agent.quorum;
     expect(cfg.permission["*"]).toBe("deny");

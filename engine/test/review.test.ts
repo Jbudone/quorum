@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { floorPrompt } from "../src/room/floor.js";
-import { parseSetup } from "../src/room/prompts.js";
+import { parseSetup, SETUP_SYSTEM } from "../src/room/prompts.js";
 import { changedSections, lineDiff, sections, sectionText, unifiedDiff } from "../src/room/review.js";
 import { ENGINE_BUILD } from "../src/room/room.js";
 import { messages, rig } from "./roomRig.js";
@@ -258,6 +258,55 @@ describe("support calls", () => {
     const p = parseSetup("Which mode?\n>> question: Mode | What kind of work?\n>> option: Research | open\n>> option: Review | go/no-go\n>> member: arch | claude | architect");
     expect(p.questions).toHaveLength(1);
     expect(p.proposal).toBeUndefined();
+  });
+});
+
+describe("the web", () => {
+  it("is off until the human grants it to one member, who is then told how to use it", async () => {
+    const r = setup({ member: (agent, n) => (n === 1 ? `${agent} first` : "PASS") });
+    const room = r.create({ parallel: 1 });
+    expect(room.store.config().agents.every((a) => !a.web)).toBe(true);
+    room.setWeb("arch", true, "human");
+    room.resume();
+    await room.settled();
+    const arch = r.calls.find((c) => c.agent === "arch")!;
+    expect(arch.opts?.web).toBe(true);
+    expect(arch.opts?.systemPrompt).toContain("never put project contents into a URL");
+    const skeptic = r.calls.find((c) => c.agent === "skeptic")!;
+    expect(skeptic.opts?.web).toBeUndefined();
+    expect(skeptic.opts?.systemPrompt).not.toContain("search and fetch the web");
+    expect(room.store.events().filter((e) => e.type === "agent.web")).toMatchObject([{ agent: "arch", on: true, by: "human" }]);
+  });
+
+  it("the assistant can only suggest it; approving grants it", async () => {
+    const r = setup();
+    const room = r.create();
+    (room as any).assistantActions([{ verb: "web", args: ["skeptic"], why: "check prior art" }]);
+    const s = room.pending().find((x) => x.action === "web")!;
+    expect(s.args).toEqual(["skeptic"]);
+    expect(room.store.config().agents.find((a) => a.id === "skeptic")?.web).toBeUndefined();
+    await room.resolve(s.id, true);
+    expect(room.store.config().agents.find((a) => a.id === "skeptic")?.web).toBe(true);
+  });
+
+  it("a plan can mark a seat +web", () => {
+    const p = parseSetup(">> channel: c | t\n>> member: scout | claude sonnet +web | Literature scout | Finds prior work.");
+    expect(p.proposal?.members[0]).toMatchObject({ id: "scout", cli: "claude", model: "sonnet", web: true });
+  });
+});
+
+describe("framing", () => {
+  it("members and the assistant are told the channel works for its own project", async () => {
+    const r = setup({ member: (agent, n) => (n === 1 ? `${agent} first` : "PASS") });
+    const room = r.create({ parallel: 1 });
+    room.resume();
+    await room.settled();
+    expect(r.memberCalls()[0].opts?.systemPrompt).toContain(`This channel works for the project at \`${r.repo}\``);
+  });
+
+  it("the planner turns lessons from another project into changes here, asking only when it's ambiguous", () => {
+    expect(SETUP_SYSTEM).toContain("what happened there is evidence: its lessons become changes here");
+    expect(SETUP_SYSTEM).toContain("ask one question about which project the results are for");
   });
 });
 

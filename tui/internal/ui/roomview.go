@@ -195,6 +195,12 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 		out = event("✎", th.Accent2, fmt.Sprintf("%s %s v%d%s", what, e.Slug, e.Version, suffix(", ", e.Section)))
 	case "workstream.closed":
 		out = event("✓", th.OK, fmt.Sprintf("workstream #%d closed", e.Thread))
+	case "agent.web":
+		what := " can now search the web"
+		if !e.On {
+			what = " is offline again"
+		}
+		out = event("⌕", th.Info, e.Agent+what)
 	case "doc.exported":
 		out = event("⇪", th.OK, fmt.Sprintf("%s v%d exported to %s", e.Slug, e.Version, e.Path))
 	case "turn.aborted":

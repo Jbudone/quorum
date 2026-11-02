@@ -43,6 +43,8 @@ export interface SendOptions {
    * turn tools off; elsewhere it falls back to read-only.
    */
   noTools?: boolean;
+  /** Web search and fetch on top of the read tools, where the CLI can do it; off otherwise. */
+  web?: boolean;
   signal?: AbortSignal;
   /** Extra MCP server for this turn; only honored by transports with `supportsMcp`. */
   mcp?: McpServerSpec;

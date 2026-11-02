@@ -255,7 +255,7 @@ func renderProposal(p *rpc.SetupProposal, th theme.Theme, width int) string {
 	}
 	section("consider", mapped(p.Considerations, func(c string) string { return fg(th.Text).Render("· " + c) }))
 	section("who", mapped(p.Members, func(m rpc.SetupMember) string {
-		return fg(th.Text).Bold(true).Render(m.ID) + fg(th.Subtle).Render(" · "+orDefault(strings.TrimSpace(m.CLI+" "+m.Model), "as before")) + fg(th.Muted).Render("  "+m.Role)
+		return fg(th.Text).Bold(true).Render(m.ID) + fg(th.Subtle).Render(" · "+orDefault(strings.TrimSpace(m.CLI+" "+m.Model), "as before")) + webTag(m.Web, th) + fg(th.Muted).Render("  "+m.Role)
 	}))
 	section("workstreams", mapped(p.Topics, func(t rpc.PlanTopic) string {
 		return fg(th.Text).Render("↳ "+t.Title) + fg(th.Subtle).Render("  "+strings.Join(t.Members, ", "))
@@ -677,7 +677,7 @@ func (a *App) planFormView(height int) string {
 		case "member":
 			m := f.p.Members[r.index]
 			model := orDefault(strings.TrimSpace(m.CLI+" "+m.Model), "as before")
-			text = fg(th.Text).Bold(true).Render(m.ID) + fg(th.Muted).Render("  "+m.Role) + fg(th.Accent).Render("  "+model)
+			text = fg(th.Text).Bold(true).Render(m.ID) + fg(th.Muted).Render("  "+m.Role) + fg(th.Accent).Render("  "+model) + webTag(m.Web, th)
 		case "topic":
 			t := f.p.Topics[r.index]
 			text = t.Title + fg(th.Subtle).Render("  "+strings.Join(t.Members, ", "))
@@ -702,4 +702,12 @@ func (a *App) planFormView(height int) string {
 		lines = lines[start:]
 	}
 	return lipgloss.NewStyle().Padding(0, 2).Height(height).MaxHeight(height).Render(strings.Join(lines, "\n"))
+}
+
+// webTag marks a member who may search the web.
+func webTag(on bool, th theme.Theme) string {
+	if !on {
+		return ""
+	}
+	return fg(th.Info).Render(" +web")
 }

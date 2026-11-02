@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { agentFile, ARG_LIMIT, KimiMapper, KimiTransport, promptArg } from "../src/transports/kimi.js";
-import { ZCODE_WRITE_TOOLS, ZcodeMapper, ZcodeTransport } from "../src/transports/zcode.js";
+import { ZCODE_WRITE_TOOLS, ZCODE_WEB_TOOLS, ZcodeMapper, ZcodeTransport } from "../src/transports/zcode.js";
 import type { AgentEvent } from "../src/transports/types.js";
 
 const feed = (m: { push(l: string): AgentEvent[]; end(): AgentEvent[] }, lines: string[]) => [...lines.flatMap((l) => m.push(l)), ...m.end()];
@@ -97,10 +97,12 @@ describe("ZcodeTransport invocation", () => {
   it("removes write tools and the subagent tool on every read-only turn, resumed or not", () => {
     for (const a of [args({}), args({ sessionId: "sess_1" })]) {
       const dis = a[a.indexOf("--disallowed-tools") + 1].split(" ");
-      expect(dis).toEqual(ZCODE_WRITE_TOOLS);
+      expect(dis).toEqual([...ZCODE_WRITE_TOOLS, ...ZCODE_WEB_TOOLS]); // offline unless granted the web
       expect(dis).toContain("Agent");
     }
     expect(args({ readOnly: false })).not.toContain("--disallowed-tools");
+    const web = args({ web: true });
+    expect(web[web.indexOf("--disallowed-tools") + 1].split(" ")).not.toContain("WebSearch");
     const none = args({ noTools: true });
     expect(none[none.indexOf("--disallowed-tools") + 1].split(" ")).toEqual(expect.arrayContaining(["Read", "Grep", "Glob", "Agent"]));
   });

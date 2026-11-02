@@ -366,6 +366,12 @@ func (r *roomModel) record(e rpc.RoomEvent) {
 				r.agents[i].CLI, r.agents[i].Model = e.CLI, e.Model
 			}
 		}
+	case "agent.web":
+		for i := range r.agents {
+			if r.agents[i].ID == e.Agent {
+				r.agents[i].Web = e.On
+			}
+		}
 	case "agent.left":
 		for _, a := range r.agents {
 			if a.ID == e.Agent {
@@ -538,6 +544,8 @@ func suggestionLabel(s rpc.RoomEvent) string {
 		}
 	case "read":
 		return "let everyone read " + args
+	case "web":
+		return "let " + args + " search the web"
 	case "pointer":
 		return "tell the project's agents about Quorum mail (add a note to " + args + ")"
 	}
@@ -592,6 +600,8 @@ Typing works as in a terminal: ctrl+a/e start/end, ctrl+u/k delete to start/end,
 ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /read <path>…     set the reading list members work through (folders or files);
                     a folder outside the project lets everyone read it
+  /web <member>     let one member search the web (members are offline otherwise);
+                    /web off <member> takes it back
   /focus <topic>    move the focus           /close <topic>   /raise <title>
   /topics           list topics              /doc <name>      open a document
   /add <member> <cli> [model]   (quick add)   /remove <member>   /rejoin <member>
@@ -676,6 +686,20 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 			return roomCommand{method: "room.configure", params: map[string]any{"independent": false}, echo: "Independent takes off."}
 		}
 		return roomCommand{err: "/independent takes on or off"}
+	case strings.HasPrefix(in, "/web"):
+		f := strings.Fields(word("/web"))
+		on := true
+		if len(f) == 2 && f[0] == "off" {
+			on, f = false, f[1:]
+		}
+		if len(f) != 1 || !r.isMember(f[0]) {
+			return roomCommand{err: "/web takes a member, e.g. /web lit-scout (or /web off lit-scout); it lets that member search the web"}
+		}
+		echo := f[0] + " can search the web from its next turn."
+		if !on {
+			echo = f[0] + " is offline again."
+		}
+		return roomCommand{method: "room.web", params: map[string]any{"id": f[0], "on": on}, echo: echo}
 	case strings.HasPrefix(in, "/read"):
 		paths := strings.Fields(word("/read"))
 		if len(paths) == 0 {

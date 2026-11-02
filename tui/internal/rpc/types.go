@@ -145,6 +145,8 @@ type (
 		Model   string `json:"model"`
 		Persona string `json:"persona"`
 		Role    string `json:"role"`
+		// Web: the human let this member search and fetch the web.
+		Web bool `json:"web"`
 	}
 	// ChairSpec is which agent CLI (and optionally model) plays the Chair.
 	ChairSpec struct {

@@ -58,6 +58,8 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
       return `[#${e.seq}] — ${e.agent} left the room`;
     case "access.granted":
       return `[#${e.seq}] — everyone can now read ${e.path}`;
+    case "agent.web":
+      return `[#${e.seq}] — ${e.agent} ${e.on ? "can now search the web" : "is offline again"}`;
     case "agent.swapped":
       return `[#${e.seq}] — ${e.agent} now runs on ${e.cli}${e.model ? ` ${e.model}` : ""}`;
     case "pass":
@@ -329,6 +331,8 @@ Be accurate about where things stand. The live state you're given comes from the
 
 When the human asks what a document is or what it changes, explain it for someone who hasn't followed the discussion: what kind of document it is, whether it describes things already done or only proposes them, and its main points as a few short bullets in plain words, without message numbers, citations or file references. The human reviews a document with ctrl+r: a approves it (and then offers to export it and to mail it to the project's agents to carry out), c asks its authors a question, r asks for changes.
 
+When a research channel keeps refining framing without testing anything (another round of the same argument, about ten member turns without new evidence), say so and propose the cheapest probe: a mail asking the project's agents to run it, or a member with web access to check prior work.
+
 Before proposing a lineup or a steer for an open-ended request, ask one short question to confirm the kind of work (a go/no-go review, open-ended research, or building something) and what it should produce, unless the human already said.`;
 
 /** How the assistant should pick models, with the models it can pick from. */
@@ -355,6 +359,7 @@ To propose a change, end with action lines; the human approves or declines each,
 >> add: <member> <cli> <model> | <why>   bring back a workspace member${members.length ? ` (${members.join(", ")})` : ""}
 >> swap: <member> | <cli> <model> | <why>   move a member (or assistant, chair, scribe, floor) to another harness or model; it keeps its memory
 >> read: <folder> | <why>               let everyone in the channel read a folder outside the project
+>> web: <member> | <why>                 let one member search and fetch the web (e.g. a literature scout); members are offline otherwise
 >> steer: <text>                          post a steering message to the channel as the human: name the channel document that is the single source of truth, say what done looks like for this round, and never ask members, the scribe or the Chair to write project files
 >> remove: <member> | <why>               have a member leave (it writes an exit memo first)
 >> focus: <topic-slug> | <why>            move the focus
@@ -421,7 +426,9 @@ Talk like a sharp colleague: one to three short sentences, plain words, no headi
 
 Work in two phases. First narrow down, by asking the human questions as choice cards (see the format below), one to three at a time: what they're really trying to achieve, constraints, what success looks like, what's already been tried, where earlier notes live. Ask only questions whose answers change the plan, and stop asking once you know enough. Then propose the plan.
 
-A good plan treats a hard, open problem like a research program. It names the things that must be considered. It staffs a group the way you'd staff a research lab rather than a review board: real specialties that fit this problem, for example a research lead who treats it as a research problem, specialists in the relevant fields, a UX researcher, someone who brings real use cases, an edge-case hunter, a feasibility analyst who maps what's impossible, and an engineer who'd have to build it. Use three to five members with distinct angles (six at most; if the human wants more voices or a model sweep, fold them into existing roles or workstreams), mixing CLIs where it helps and putting the strongest models on the roles that need the most judgment. Reuse workspace members when they fit, since they bring their memory. It also sets starter workstreams that are prerequisites for the main discussion, each owned by two or three members working in parallel: finding edge cases, collecting real use cases, generating feature ideas, formalizing the vision, mapping what's impossible and which boundaries to push.`;
+A channel works for the project it runs in. Every deliverable in the plan (the vision, the workstreams' "done", the steer) should be something this project can act on. When the request involves another project, for example reviewing a trial that ran there, what happened there is evidence: its lessons become changes here (for a tool, its prompts, defaults, model choices and layouts). Don't plan work on the other project itself, or a separate track that ends in advice for it, unless the human asks for that. When the request could honestly mean either, ask one question about which project the results are for; otherwise assume this one, and say so in the vision.
+
+A good plan treats a hard, open problem like a research program. It names the things that must be considered. It staffs a group the way you'd staff a research lab rather than a review board: real specialties that fit this problem, for example a research lead who treats it as a research problem, specialists in the relevant fields, a UX researcher, someone who brings real use cases, an edge-case hunter, a feasibility analyst who maps what's impossible, and an engineer who'd have to build it. Use three to five members with distinct angles (six at most; if the human wants more voices or a model sweep, fold them into existing roles or workstreams), mixing CLIs where it helps and putting the strongest models on the roles that need the most judgment. Reuse workspace members when they fit, since they bring their memory. Give every seat a different job: never the same role on several models (several "idea generators" talk past each other; a model comparison is one seat swapped between models, or a workstream). When the work needs evidence rather than argument, staff for it: an experimentalist who designs the smallest probe that would settle a claim and drafts mail asking the project's agents to run it, and, for anything that depends on prior work, a literature scout with web access (mark it +web; the human approves). It also sets starter workstreams that are prerequisites for the main discussion, each owned by two or three members working in parallel: finding edge cases, collecting real use cases, generating feature ideas, formalizing the vision, mapping what's impossible and which boundaries to push.`;
 
 export function setupPrompt(o: {
   repo: string;
@@ -449,10 +456,11 @@ When you know enough, propose the plan with these lines at the end of your reply
 ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision: <two to four sentences: what the group is trying to achieve and what great looks like>
 >> consider: <one thing that must be considered>          one line each, three to eight
 >> read: <path relative to the project>                    folders or files everyone reads first
->> member: <id> | <cli> <model> | <role, a few words> | <persona: two or three sentences on expertise and how they think>
+>> member: <id> | <cli> <model> [+web] | <role, a few words> | <persona: two or three sentences on expertise and how they think>
 >> member: <existing-id>                                   to reuse a workspace member as they are
+(+web lets that one member search the web; members are offline otherwise. Use it only where the role needs it.)
 >> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
->> steer: <optional first instruction to the whole group>
+>> steer: <optional first instruction to the whole group: name the channel document that is the single source of truth and the one member who merges changes into it, say what done looks like for the first round and that the group stops there, and never ask anyone to write project files. For research: keep several ideas alive, walk each through concrete scenarios including edge cases, name the cheapest probe for any claim text can't settle, and end the round with a ranked shortlist, each entry with the prior work it beats, the scenario most likely to break it, and what would kill it>
 Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.
 
 ${modelGuide(o.models)}
@@ -481,7 +489,7 @@ export interface SetupProposal {
   vision?: string;
   considerations: string[];
   reading: string[];
-  members: { id: string; cli?: string; model?: string; role?: string; persona?: string }[];
+  members: { id: string; cli?: string; model?: string; role?: string; persona?: string; web?: boolean }[];
   topics: { title: string; done?: string; members: string[] }[];
   steer?: string;
 }
@@ -535,8 +543,10 @@ export function parseSetup(text: string): { prose: string; questions: PlanQuesti
       case "member": {
         const id = parts[0].toLowerCase();
         if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) || p.members.some((x) => x.id === id)) break;
-        const [cli, model] = (parts[1] ?? "").split(/\s+/).filter(Boolean);
-        p.members.push({ id, ...(cli ? { cli } : {}), ...(model ? { model } : {}), ...(parts[2] ? { role: parts[2] } : {}), ...(parts[3] ? { persona: parts.slice(3).join(" | ") } : {}) });
+        const words = (parts[1] ?? "").split(/\s+/).filter(Boolean);
+        const web = words.some((w) => w.toLowerCase() === "+web");
+        const [cli, model] = words.filter((w) => w.toLowerCase() !== "+web");
+        p.members.push({ id, ...(cli ? { cli } : {}), ...(model ? { model } : {}), ...(web ? { web: true } : {}), ...(parts[2] ? { role: parts[2] } : {}), ...(parts[3] ? { persona: parts.slice(3).join(" | ") } : {}) });
         break;
       }
     }
@@ -597,7 +607,7 @@ export const EXIT_MEMO = `You are leaving this Quorum room. Write a short exit m
  * What an agent can read, said plainly. Agents run headless: a folder outside these fails with a
  * permission error that nobody can approve, so they must ask the human to grant it instead.
  */
-export function accessNote(repo: string, dirs: string[] = [], suggest = false): string {
+export function accessNote(repo: string, dirs: string[] = [], suggest = false, web = false): string {
   const where = [repo, ...dirs].map((d) => `\`${d}\``).join(", ");
-  return `You can read files in ${where}, and nowhere else. Nobody in Quorum (members, Chair, scribe, assistant) can create or edit project files. Shared work goes in channel documents (doc_draft for members${suggest ? ", `>> write:` for you" : ""}), and only the human puts one into the project, by approving an export. So never plan on anyone writing a project file. You run headless: there are no permission prompts, and nothing the human approves in chat changes your access, so never ask them to approve one. To read another folder, ask the human to type \`/read <folder>\`${suggest ? " or propose `>> read: <folder> | why`" : ""}; once they do, everyone can read it from their next turn.`;
+  return `This channel works for the project at \`${repo}\`: what it produces should be something that project can act on, and material from other projects is evidence for that, not work to do on them (unless the human asked for that). You can read files in ${where}, and nowhere else.${web ? " You can also search and fetch the web: cite what you find, and never put project contents into a URL or search query." : ""} Nobody in Quorum (members, Chair, scribe, assistant) can create or edit project files. Shared work goes in channel documents (doc_draft for members${suggest ? ", `>> write:` for you" : ""}), and only the human puts one into the project, by approving an export. So never plan on anyone writing a project file. You run headless: there are no permission prompts, and nothing the human approves in chat changes your access, so never ask them to approve one. To read another folder, ask the human to type \`/read <folder>\`${suggest ? " or propose `>> read: <folder> | why`" : ""}; once they do, everyone can read it from their next turn.`;
 }

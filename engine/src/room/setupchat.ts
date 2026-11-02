@@ -98,14 +98,15 @@ export class SetupChat {
     const known = new Map(ws.members().map((m) => [m.id, m]));
     return p.members.map((m) => {
       const old = known.get(m.id);
-      if (old && !m.persona) return { id: old.id, persona: old.persona, cli: (m.cli as CliName) ?? old.cli, ...((m.model ?? old.model) ? { model: m.model ?? old.model } : {}) };
+      const web = m.web ? { web: true } : {};
+      if (old && !m.persona) return { id: old.id, persona: old.persona, cli: (m.cli as CliName) ?? old.cli, ...((m.model ?? old.model) ? { model: m.model ?? old.model } : {}), ...web };
       const cli = (m.cli ?? old?.cli) as CliName | undefined;
       if (!cli || !this.o.clis.includes(cli)) throw new Error(`${m.id} needs a CLI from ${this.o.clis.join(", ")}`);
       if (!m.persona && !old) throw new Error(`${m.id} needs a persona`);
       if (m.persona) ws.writePersona(m.id, { name: m.id, role: m.role ?? m.id, body: m.persona });
       const spec: AgentSpec = { id: m.id, persona: m.persona ? m.id : old!.persona, cli, ...(m.model ? { model: m.model } : {}) };
       ws.saveMember({ ...spec, role: m.role ?? old?.role });
-      return spec;
+      return { ...spec, ...web };
     });
   }
 

@@ -34,6 +34,10 @@ describe("ClaudeTransport.buildArgs", () => {
     expect(a).toContain("--strict-mcp-config");
     expect(a.slice(a.indexOf("--tools"), a.indexOf("--tools") + 2)).toEqual(["--tools", "Read,Grep,Glob"]);
   });
+  it("adds web search and fetch only for a member granted the web", () => {
+    const a = t.buildArgs({ web: true });
+    expect(a[a.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,WebSearch,WebFetch");
+  });
   it("turns every tool off for calls that need none", () => {
     const a = t.buildArgs({ noTools: true });
     expect(a.slice(a.indexOf("--tools"), a.indexOf("--tools") + 2)).toEqual(["--tools", ""]);

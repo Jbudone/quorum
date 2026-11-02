@@ -178,6 +178,7 @@ export const SUGGESTION_FIELDS: Record<SuggestionAction, string[]> = {
   mail: ["to", "subject", "body"],
   pointer: ["file"],
   read: ["folder"],
+  web: ["member"],
 };
 
 /** The human's edit of a suggestion, checked: same fields, the required ones filled in. */
@@ -224,7 +225,7 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode"];
 
 const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw", "read"] as const;
+const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw", "read", "web"] as const;
 /** Assistant actions that carry a multi-line body, closed by `>> end`. */
 const ASSISTANT_BLOCKS = ["write", "mail"] as const;
 /** How often a running room looks for mail from the project's agents. */
@@ -682,13 +683,13 @@ export class Room {
     return computeSignals(this.store.events(), this.members());
   }
 
-  private spec(id: string): { id: string; cli: CliName; model?: string } {
+  private spec(id: string): { id: string; cli: CliName; model?: string; web?: boolean } {
     const c = this.store.config();
     if (id === "floor") return { id, ...(c.support.floor ?? c.support.scribe) };
     if ((SUPPORT_ROLES as string[]).includes(id)) return { id, ...c.support[id as Exclude<SupportRole, "floor">] };
     const a = [...c.agents, ...(c.left ?? [])].find((x) => x.id === id);
     if (!a) throw new Error(`unknown member "${id}"`);
-    return { id, cli: a.cli, model: a.model };
+    return { id, cli: a.cli, model: a.model, ...(a.web ? { web: true } : {}) };
   }
 
   // ---- control ----
@@ -1050,6 +1051,19 @@ export class Room {
     this.log({ type: "agent.swapped", agent: id, cli, ...(model ? { model } : {}), was: { cli: spec.cli, ...(spec.model ? { model: spec.model } : {}) } });
   }
 
+  /** Lets one member search and fetch the web from its next turn, or takes that away. */
+  setWeb(id: string, on: boolean, by: string): void {
+    const c = this.store.config();
+    const spec = c.agents.find((a) => a.id === id);
+    if (!spec) throw new Error(`no member "${id}"`);
+    if (Boolean(spec.web) === on) return;
+    const next: AgentSpec = { ...spec };
+    if (on) next.web = true;
+    else delete next.web;
+    this.store.setRoster(c.agents.map((a) => (a.id === id ? next : a)), c.left ?? []);
+    this.log({ type: "agent.web", agent: id, on, by });
+  }
+
   /** Whoever made suggestions takes them back (they were replaced, or no longer stand). */
   withdraw(ids: number[], by: string): void {
     for (const id of ids) {
@@ -1071,6 +1085,9 @@ export class Room {
         return;
       case "read":
         this.allowRead(args[0], "human");
+        return;
+      case "web":
+        this.setWeb(args[0], true, "human");
         return;
       case "steer":
         this.post(args[0]);
@@ -1444,8 +1461,9 @@ export class Room {
         for await (const e of transport.send(prompt, {
           cwd: this.o.repo,
           dirs: this.dirs(),
-          systemPrompt: [this.personas.get(agent)?.body, accessNote(this.o.repo, this.dirs())].filter(Boolean).join("\n\n"),
+          systemPrompt: [this.personas.get(agent)?.body, accessNote(this.o.repo, this.dirs(), false, Boolean(spec.web))].filter(Boolean).join("\n\n"),
           readOnly: this.o.readOnly ?? true,
+          ...(spec.web ? { web: true } : {}),
           sessionId: session,
           signal: ctrl.signal,
           mcp,

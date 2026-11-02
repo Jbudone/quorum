@@ -486,6 +486,9 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         const r = needRoom();
         return { ...r.usageReport(), ...(p.project ? { project: projectScope(r.store.root) } : {}) };
       }
+      case "room.web":
+        needRoom().setWeb(String(p.id ?? ""), p.on !== false, "human");
+        return {};
       case "room.swap":
         needRoom().swapModel(String(p.id ?? ""), String(p.cli ?? "") as CliName, p.model ? String(p.model) : undefined);
         return {};

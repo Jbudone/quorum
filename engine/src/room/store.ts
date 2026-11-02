@@ -7,7 +7,7 @@ import { appendJsonl, readJsonl, type Sitting, type UsageRow } from "./ledger.js
 export type Recipient = "room" | string;
 
 /** What a proposed change does; the human approves or declines each one. */
-export type SuggestionAction = "steer" | "add" | "hire" | "swap" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer" | "read";
+export type SuggestionAction = "steer" | "add" | "hire" | "swap" | "remove" | "focus" | "close" | "parallel" | "export" | "mail" | "pointer" | "read" | "web";
 
 export type DocKind = "plan" | "issue" | "decision" | "other";
 
@@ -56,6 +56,8 @@ export type RoomEventBody =
   | { type: "agent.joined"; agent: string; persona: string; cli: CliName; model?: string }
   | { type: "agent.left"; agent: string; memo?: string }
   /** A member (or support role) moved to another harness or model; its memory stays, its vendor session doesn't. */
+  /** A member allowed (or no longer allowed) to search and fetch the web. */
+  | { type: "agent.web"; agent: string; on: boolean; by: string }
   | { type: "agent.swapped"; agent: string; cli: CliName; model?: string; was: { cli: CliName; model?: string } }
   | { type: "access.granted"; path: string; by: string }
   | { type: "budget"; level: "warn" | "stop"; cli: string; detail: string };

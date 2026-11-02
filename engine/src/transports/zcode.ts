@@ -44,7 +44,8 @@ export const ZCODE_WRITE_TOOLS = [
 ];
 
 /** The read tools, also removed when a call needs no tools at all. */
-export const ZCODE_READ_TOOLS = ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch"];
+export const ZCODE_WEB_TOOLS = ["WebFetch", "WebSearch"];
+export const ZCODE_READ_TOOLS = ["Read", "Grep", "Glob", "LS", ...ZCODE_WEB_TOOLS];
 
 export interface ZcodeOptions {
   bin?: string;
@@ -73,7 +74,10 @@ export class ZcodeTransport extends SubprocessTransport {
     if (this.o.model) args.push("--model", this.o.model);
     if (opts.sessionId) args.push("--resume", opts.sessionId);
     // Tool removal applies to one run only, so every turn repeats it.
-    if (opts.readOnly !== false || opts.noTools) args.push("--disallowed-tools", [...ZCODE_WRITE_TOOLS, ...(opts.noTools ? ZCODE_READ_TOOLS : [])].join(" "));
+    if (opts.readOnly !== false || opts.noTools) {
+      const off = [...ZCODE_WRITE_TOOLS, ...(opts.noTools ? ZCODE_READ_TOOLS : opts.web ? [] : ZCODE_WEB_TOOLS)];
+      args.push("--disallowed-tools", off.join(" "));
+    }
     args.push("-p", promptArg(opts.sessionId ? prompt : repoNote(opts) + withPersona(prompt, opts)));
     return { cmd: this.o.bin ?? "zcode", args };
   }

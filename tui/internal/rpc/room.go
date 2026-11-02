@@ -48,6 +48,8 @@ type (
 		CLI     string `json:"cli"`
 		Model   string `json:"model"`
 		Memo    string `json:"memo"`
+		// agent.web: whether the member may now use the web.
+		On bool `json:"on"`
 
 		Level  string `json:"level"`
 		Detail string `json:"detail"`
@@ -131,6 +133,7 @@ type (
 		Model   string `json:"model,omitempty"`
 		Role    string `json:"role,omitempty"`
 		Persona string `json:"persona,omitempty"`
+		Web     bool   `json:"web,omitempty"`
 	}
 	RoomStateEvent struct {
 		State  string `json:"state"` // paused | running | idle

@@ -145,7 +145,7 @@ export class OpencodeTransport extends SubprocessTransport {
       mode: "primary",
       ...(opts.systemPrompt ? { prompt: opts.systemPrompt } : {}),
       permission: {
-        ...(readOnly ? { edit: "deny", bash: "deny", webfetch: "deny" } : {}),
+        ...(readOnly ? { edit: "deny", bash: "deny", webfetch: opts.web ? "allow" : "deny", websearch: opts.web ? "allow" : "deny" } : {}),
         ...(opts.noTools ? NO_TOOLS : {}),
         // Folders outside the project are asked about, and a headless run can't answer; these were granted.
         ...(opts.dirs?.length ? { external_directory: Object.fromEntries(opts.dirs.map((d) => [`${d}/**`, "allow"])) } : {}),

@@ -13,6 +13,8 @@ export interface AgentSpec {
   model?: string;
   /** Persona file name (without .md) from the personas directory. */
   persona: string;
+  /** May search and fetch the web (off by default; the human grants it per member). */
+  web?: boolean;
 }
 
 export interface CouncilConfig {
