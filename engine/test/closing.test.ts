@@ -17,3 +17,12 @@ describe("closing a round", () => {
     expect(docBriefPrompt({ slug: "plan", version: 2, text: "# Plan" })).toMatch(/\*\*Weak spots:\*\*/);
   });
 });
+
+describe("planning questions", () => {
+  it("never offers an 'I'll type it' option, and waits for what the human said they'd give", async () => {
+    const { setupPrompt } = await import("../src/room/prompts.js");
+    const s = setupPrompt({ repo: "/r", members: [], channels: [], clis: ["claude"], personas: [], history: [] });
+    expect(s).toMatch(/never add an option like "I'll type it"/);
+    expect(s).toMatch(/never fill in a guess for something the human said they would give you/);
+  });
+});

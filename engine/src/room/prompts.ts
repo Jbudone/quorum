@@ -459,6 +459,7 @@ export function setupPrompt(o: {
     `Reply to the human. To ask questions, add choice cards after your prose; the human picks with the keyboard or types their own answer:
 >> question: <short header> | <the question> [| multi]      add "multi" when several answers can apply
 >> option: <label> | <one-line description>                 two to five per question; put your recommendation first and end its label with (recommended)
+Every card already ends with a "type your own" row, so never add an option like "I'll type it" or "Other". When you need something only the human can type (a model ID, a path, a name), ask for it in your prose without a card, then wait for it: never fill in a guess for something the human said they would give you.
 
 When you know enough, propose the plan with these lines at the end of your reply (repeat the whole plan whenever you change it; the human sees it as an editable form):
 ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision: <two to four sentences: what the group is trying to achieve and what great looks like>

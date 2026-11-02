@@ -625,3 +625,29 @@ func TestRoomMailWithdrawAndNow(t *testing.T) {
 	contains(t, h.screen(), "devin ✉")
 	contains(t, h.screen(), "9/10 pass.")
 }
+
+func TestOptionThatPromisesTypingOpensTheAnswerBox(t *testing.T) {
+	for label, want := range map[string]bool{
+		"I'll type the ID": true, "I'll enter the model": true, "Let me paste it": true, "Other": true,
+		"Extra seventh seat": false, "Use the Codex seat (recommended)": false, "Typed config": false,
+	} {
+		if promisesTyping(label) != want {
+			t.Errorf("promisesTyping(%q) = %v", label, !want)
+		}
+	}
+
+	h := newRoomHarness(t, 150, 46)
+	h.answer(h.expectCall("workspace.open").id, 1)
+	h.answer(h.expectCall("setup.start").id, 2)
+	h.send(engineMsg{rpc.Event{Name: "setup.reply", Data: rpc.SetupReply{Text: "Which Nemotron?", Questions: []rpc.PlanQuestion{{
+		Header: "Nemotron ID", Text: "Which model ID?",
+		Options: []rpc.PlanOption{{Label: "Use my best guess"}, {Label: "I'll type the ID"}},
+	}}}}})
+	h.press("down", "enter") // "I'll type the ID" opens the box rather than answering
+	contains(t, h.screen(), "NEMOTRON ID")
+	h.send(tea.PasteMsg{Content: "nvidia/nemotron-3-ultra-550b-a55b"})
+	h.press("enter")
+	if c := h.expectCall("setup.say"); c.params["text"] != "Nemotron ID: nvidia/nemotron-3-ultra-550b-a55b" {
+		t.Fatalf("answer: %q", c.params["text"])
+	}
+}

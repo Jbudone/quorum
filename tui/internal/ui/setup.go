@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -112,10 +113,12 @@ func (a *App) handleQuestionKey(k tea.KeyPressMsg) tea.Cmd {
 		switch k.String() {
 		case "esc":
 			s.owning = false
+			s.own.Placeholder = "your own answer"
 			s.own.Blur()
 			return nil
 		case "enter":
 			if v := strings.TrimSpace(s.own.Value()); v != "" {
+				s.own.Placeholder = "your own answer"
 				a.answerCard(v)
 			}
 			return nil
@@ -142,6 +145,13 @@ func (a *App) handleQuestionKey(k tea.KeyPressMsg) tea.Cmd {
 			s.owning = true
 			return s.own.Focus()
 		}
+		// An option that promises to type something ("I'll enter the model") opens the answer box
+		// instead of sending its label as the answer.
+		if !q.Multi && promisesTyping(q.Options[s.qcur].Label) {
+			s.owning = true
+			s.own.Placeholder = strings.TrimSuffix(strings.TrimSpace(q.Options[s.qcur].Label), " (recommended)")
+			return s.own.Focus()
+		}
 		var labels []string
 		for i, o := range q.Options {
 			if q.Multi && s.picked[i] || !q.Multi && i == s.qcur || q.Multi && len(s.picked) == 0 && i == s.qcur {
@@ -156,6 +166,12 @@ func (a *App) handleQuestionKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	return nil
 }
+
+// promisesTyping reports whether an option's label means "I'll write the answer myself" rather
+// than being an answer, so picking it should open the text box.
+var typingOption = regexp.MustCompile(`(?i)\b(i'?ll|i will|let me|i can|i'd like to)\s+(type|enter|paste|write|give|provide|specify|add|put in|fill in)\b|^\s*(other|custom|something else|type (it|my own|your own)|enter (it|my own|manually))\b`)
+
+func promisesTyping(label string) bool { return typingOption.MatchString(label) }
 
 func renderQuestion(s *setupModel, th theme.Theme, width int) string {
 	q := s.questions[s.qi]
