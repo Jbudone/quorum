@@ -276,7 +276,7 @@ func (a *App) handleRoomResponse(method string, r rpc.Response) bool {
 		var res rpc.HandoffResult
 		if rpc.DecodeResult(r.Result, &res) == nil && u.room != nil {
 			u.room.rev = nil
-			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: fmt.Sprintf("Mailed it to the project's agents: .quorum/mail/%s. To start your coding agent on it, tell it: read .quorum/mail/%s and do what it asks.", res.File, res.File)})
+			u.room.asides = append(u.room.asides, noteItem{kind: "system", text: fmt.Sprintf("Mailed it to the project's agents: %s. To start your coding agent on it, tell it: read %s and do what it asks.", mailPath(res), mailPath(res))})
 			u.asstFollow = true
 		}
 	case "room.export":
@@ -961,4 +961,12 @@ func (a *App) roomView() string {
 	}
 	rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+// mailPath is where a hand-off's mail landed; older engines only sent the file name.
+func mailPath(r rpc.HandoffResult) string {
+	if r.Mail != "" {
+		return r.Mail
+	}
+	return ".quorum/mail/" + r.File
 }

@@ -178,7 +178,11 @@ func renderFeedItem(r *roomModel, it *feedItem, th theme.Theme, width int) strin
 	case "doc.revised":
 		out = event("✎", th.Accent, fmt.Sprintf("%s wrote %s v%d%s  · ctrl+o to read", e.By, e.Slug, e.Version, suffix(" — ", e.Note)))
 	case "mail.out":
-		out = event("✉", th.Info, fmt.Sprintf("mail to %s: “%s”  · .quorum/mail/%s", e.To, e.Subject, e.File))
+		path := e.Path
+		if path == "" {
+			path = ".quorum/mail/" + e.File
+		}
+		out = event("✉", th.Info, fmt.Sprintf("mail to %s: “%s”  · %s", e.To, e.Subject, path))
 	case "doc.accepted":
 		by := "the " + e.By
 		if e.By == "human" {

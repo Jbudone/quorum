@@ -1,10 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Mail between Quorum and a project's own agents (Devin, Claude Code, Codex…), kept in the
- * workspace: `<repo>/.quorum/mail/`, one markdown file per message with frontmatter. Quorum sends
- * as `quorum`; agents reply with `to: quorum` (or a channel's name) and it shows up in the channel.
+ * Mail between Quorum and a project's own agents (Devin, Claude Code, Codex…), one markdown file per
+ * message with frontmatter. Quorum sends as `quorum`; agents reply with `to: quorum` (or a channel's
+ * name) and it shows up in the channel. When the project already has its own agent mailbox (a
+ * `mail/` folder in the same format), Quorum uses that, so its mail lands where the agents already
+ * look; otherwise it keeps one in `<repo>/.quorum/mail/`. What Quorum has delivered is always
+ * tracked in `.quorum/mail/.delivered`, never in the project's folder.
  */
 export interface Mail {
   file: string;
@@ -62,6 +65,27 @@ file="$(date +%Y%m%d-%H%M%S)-\${from}-\${slug:-msg}.md"
 echo "sent: .quorum/mail/$file"
 `;
 
+/** The last line of every mail Quorum sends, so the recipient knows how to answer. */
+const replyLine = (file: string, rel: string) =>
+  `_To reply, write mail in \`${rel}/\` with \`to: quorum\` and \`in-reply-to: ${file}\`._`;
+const REPLY_LINE = /\n*_To reply, write mail in [^\n]*_\s*$/;
+
+/**
+ * The project's own agent mailbox, if it has one: a `mail/` folder that a mail script drives or
+ * that already holds mail in Quorum's format.
+ */
+export function projectMailDir(repo: string): string | undefined {
+  const dir = join(repo, "mail");
+  try {
+    if (!statSync(dir).isDirectory()) return undefined;
+    if (existsSync(join(repo, "scripts", "agent-mail.sh"))) return dir;
+    const md = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "README.md").slice(-20);
+    return md.some((f) => parseMail(f, readFileSync(join(dir, f), "utf8"))) ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const field = (head: string, key: string) => new RegExp(`^${key}:\\s*(.*)$`, "m").exec(head)?.[1].trim();
 
 export function parseMail(file: string, src: string): Mail | undefined {
@@ -73,19 +97,31 @@ export function parseMail(file: string, src: string): Mail | undefined {
   if (!to || !from || !subject) return undefined;
   const channel = field(m[1], "channel");
   const inReplyTo = field(m[1], "in-reply-to");
-  return { file, to, from, subject, date: field(m[1], "date") ?? "", ...(channel ? { channel } : {}), ...(inReplyTo ? { inReplyTo } : {}), body: m[2].trim() };
+  return { file, to, from, subject, date: field(m[1], "date") ?? "", ...(channel ? { channel } : {}), ...(inReplyTo ? { inReplyTo } : {}), body: m[2].replace(REPLY_LINE, "").trim() };
 }
 
 export class Mailbox {
+  /** Where mail is written and read. */
   readonly dir: string;
+  /** The same, relative to the repo, for showing people. */
+  readonly rel: string;
+  /** True when this is the project's own mailbox rather than Quorum's. */
+  readonly shared: boolean;
+  /** Quorum's own bookkeeping (what it delivered), kept out of a shared mailbox. */
+  private readonly state: string;
 
   constructor(repo: string) {
-    this.dir = join(repo, ".quorum", "mail");
+    const own = projectMailDir(repo);
+    this.shared = Boolean(own);
+    this.dir = own ?? join(repo, ".quorum", "mail");
+    this.rel = own ? "mail" : ".quorum/mail";
+    this.state = join(repo, ".quorum", "mail");
   }
 
-  /** Creates the folder with its README and send script, once. */
+  /** Creates the folder with its README and send script, once. A shared mailbox is left as it is. */
   ensure(): void {
-    mkdirSync(this.dir, { recursive: true });
+    mkdirSync(this.state, { recursive: true });
+    if (this.shared) return;
     if (!existsSync(join(this.dir, "README.md"))) writeFileSync(join(this.dir, "README.md"), README);
     if (!existsSync(join(this.dir, "send.sh"))) {
       writeFileSync(join(this.dir, "send.sh"), SEND);
@@ -110,21 +146,23 @@ export class Mailbox {
       ...(m.inReplyTo ? [`in-reply-to: ${m.inReplyTo}`] : []),
       "---",
     ];
-    writeFileSync(join(this.dir, file), `${head.join("\n")}\n\n${m.body.trim()}\n`);
+    const reply = m.from === QUORUM ? `\n\n${replyLine(file, this.rel)}` : "";
+    writeFileSync(join(this.dir, file), `${head.join("\n")}\n\n${m.body.trim()}${reply}\n`);
     return { ...m, file, date };
   }
 
-  /** All messages, oldest first. */
+  /** All messages, oldest first; in a shared mailbox, also the ones its agents archived to `read/`. */
   list(): Mail[] {
-    let files: string[];
-    try {
-      files = readdirSync(this.dir).filter((f) => f.endsWith(".md") && f !== "README.md").sort();
-    } catch {
-      return [];
-    }
-    return files.flatMap((f) => {
+    const files: [string, string][] = [];
+    for (const sub of this.shared ? ["", "read"] : [""]) {
       try {
-        const m = parseMail(f, readFileSync(join(this.dir, f), "utf8"));
+        for (const f of readdirSync(join(this.dir, sub))) if (f.endsWith(".md") && f !== "README.md") files.push([f, join(this.dir, sub, f)]);
+      } catch {}
+    }
+    files.sort((a, b) => a[0].localeCompare(b[0]));
+    return files.flatMap(([f, path]) => {
+      try {
+        const m = parseMail(f, readFileSync(path, "utf8"));
         return m ? [m] : [];
       } catch {
         return [];
@@ -135,13 +173,18 @@ export class Mailbox {
   /** Mail for Quorum (or this channel) that hasn't been delivered to a channel yet. */
   undelivered(channel: string): Mail[] {
     const done = this.delivered();
-    const mine = new Set([QUORUM, "all", channel, `#${channel}`]);
-    return this.list().filter((m) => !done.has(m.file) && m.from !== QUORUM && mine.has(m.to.toLowerCase()));
+    const all = this.list();
+    // A shared mailbox carries the project's own broadcasts; only answers to Quorum's mail count.
+    const ours = new Set(all.filter((m) => m.from === QUORUM).map((m) => m.file));
+    const mine = new Set([QUORUM, channel, `#${channel}`, ...(this.shared ? [] : ["all"])]);
+    return all.filter(
+      (m) => !done.has(m.file) && m.from !== QUORUM && (mine.has(m.to.toLowerCase()) || (m.to.toLowerCase() === "all" && m.inReplyTo !== undefined && ours.has(m.inReplyTo))),
+    );
   }
 
   delivered(): Set<string> {
     try {
-      return new Set(readFileSync(join(this.dir, ".delivered"), "utf8").split("\n").filter(Boolean));
+      return new Set(readFileSync(join(this.state, ".delivered"), "utf8").split("\n").filter(Boolean));
     } catch {
       return new Set();
     }
@@ -151,7 +194,7 @@ export class Mailbox {
     this.ensure();
     const done = this.delivered();
     done.add(file);
-    writeFileSync(join(this.dir, ".delivered"), [...done].join("\n") + "\n");
+    writeFileSync(join(this.state, ".delivered"), [...done].join("\n") + "\n");
   }
 }
 

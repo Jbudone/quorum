@@ -617,6 +617,10 @@ func TestRoomMailWithdrawAndNow(t *testing.T) {
 	// Mail out and replies in.
 	h.event(rpc.RoomEvent{Type: "mail.out", Seq: 902, To: "devin", Subject: "Build the probe", File: "x.md", By: "assistant"})
 	contains(t, h.screen(), "mail to devin: “Build the probe”")
+	contains(t, h.screen(), ".quorum/mail/x.md") // older engines send only the file name
+	// Mail into the project's own mailbox shows where it landed.
+	h.event(rpc.RoomEvent{Type: "mail.out", Seq: 904, To: "all", Subject: "Run it", File: "y.md", Path: "mail/y.md", By: "human"})
+	contains(t, h.screen(), "· mail/y.md")
 	h.event(rpc.RoomEvent{Type: "message", Seq: 903, From: "mail:devin", To: "room", Text: "**Mail: done**\n\n9/10 pass."})
 	contains(t, h.screen(), "devin ✉")
 	contains(t, h.screen(), "9/10 pass.")

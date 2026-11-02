@@ -43,7 +43,7 @@ import {
   type SetupProposal,
 } from "./prompts.js";
 import { sectionText, unifiedDiff } from "./review.js";
-import { computeSignals, describeSignals, looksStuck } from "./signals.js";
+import { computeSignals, describeSignals, looksAdrift, looksStuck } from "./signals.js";
 import {
   RoomStore,
   slugify,
@@ -514,7 +514,7 @@ export class Room {
    * Hands an approved document to the project's agents: mail asking them to carry it out, with the
    * brief, pointing at the exported copy (or the channel's own copy when it wasn't exported).
    */
-  handoff(slug: string, to = "all", note = ""): { file: string; path: string } {
+  handoff(slug: string, to = "all", note = ""): { file: string; path: string; mail: string } {
     const d = this.docs().find((x) => x.slug === slugify(slug));
     if (!d) throw new Error(`no document "${slug}"`);
     const version = d.accepted ?? d.version;
@@ -528,8 +528,8 @@ export class Room {
     ]
       .filter(Boolean)
       .join("\n\n");
-    const file = this.sendMail(to, `Carry out ${d.slug} v${version}`, body, "human");
-    return { file, path };
+    const sent = this.mail(to, `Carry out ${d.slug} v${version}`, body, "human");
+    return { file: sent.file, path, mail: sent.path };
   }
 
   /** Members who wrote a version of a document, latest first. */
@@ -1151,17 +1151,26 @@ export class Room {
 
   /** Sends mail to the project's agents; the first mail offers to tell them where to find it. */
   sendMail(to: string, subject: string, body: string, by: string, thread?: number): string {
+    return this.mail(to, subject, body, by, thread).file;
+  }
+
+  /** Sends mail and says where it went: the file name and its path in the repo. */
+  mail(to: string, subject: string, body: string, by: string, thread?: number): { file: string; path: string } {
     if (!to.trim() || !subject.trim()) throw new Error("mail needs a recipient and a subject");
     const box = new Mailbox(this.o.repo);
     const m = box.send({ to: to.trim(), from: QUORUM, subject: subject.trim(), body, channel: this.channelName() });
-    this.log({ type: "mail.out", file: m.file, to: m.to, subject: m.subject, by, ...(thread ? { thread } : {}) });
+    const path = `${box.rel}/${m.file}`;
+    this.log({ type: "mail.out", file: m.file, to: m.to, subject: m.subject, by, ...(thread ? { thread } : {}), path });
     const ws = new Workspace(this.o.repo);
-    if (!ws.flag("mailPointer")) {
+    // A project with its own mailbox already tells its agents to check it.
+    const notes = ["AGENTS.md", "CLAUDE.md"].filter((f) => existsSync(join(this.o.repo, f)));
+    const told = notes.some((f) => readFileSync(join(this.o.repo, f), "utf8").includes("## Quorum mail"));
+    if (!box.shared && !told && !ws.flag("mailPointer")) {
       ws.setFlag("mailPointer", "offered");
-      const target = ["AGENTS.md", "CLAUDE.md"].find((f) => existsSync(join(this.o.repo, f))) ?? "AGENTS.md";
+      const target = notes[0] ?? "AGENTS.md";
       this.suggest("assistant", "pointer", [target], `so the project's agents know to check .quorum/mail/ and how to reply`);
     }
-    return m.file;
+    return { file: m.file, path };
   }
 
   /** Adds a short section about Quorum mail to the project's agent notes. */
@@ -1181,7 +1190,7 @@ export class Room {
     for (const m of box.undelivered(name)) {
       if (m.channel && m.channel !== name && m.to === QUORUM) continue;
       const replyTo = m.inReplyTo ? sent.get(m.inReplyTo) : undefined;
-      const text = `**Mail: ${m.subject}**${replyTo ? ` (reply to "${replyTo.subject}")` : ""}\n\n${m.body}\n\n_(.quorum/mail/${m.file})_`;
+      const text = `**Mail: ${m.subject}**${replyTo ? ` (reply to "${replyTo.subject}")` : ""}\n\n${m.body}\n\n_(${box.rel}/${m.file})_`;
       this.log({ type: "message", from: `mail:${m.from}`, to: "room", text, ...(replyTo?.thread ? { thread: replyTo.thread } : {}) });
       box.markDelivered(m.file);
       any = true;
@@ -1420,7 +1429,9 @@ export class Room {
     if (this.memberMessagesAfter(Number(m.scribeSeq ?? 0)) >= EVERY.scribe) void this.runScribe();
     if (this.memberMessagesAfter(Number(m.chairSeq ?? 0)) >= EVERY.chair) void this.runChair("regular check-in");
     const s = this.signals();
+    const sinceWatch = this.memberMessagesAfter(Number(m.watchSeq ?? 0));
     if (looksStuck(s)) void this.watch(`the room may be stuck: ${describeSignals(s)}`);
+    else if (looksAdrift(s) && sinceWatch >= 3) void this.watch(`the room may be drifting from its record: ${describeSignals(s)}`);
     else if (this.memberMessagesAfter(Number(m.watchSeq ?? 0)) >= EVERY.watch) void this.watch("regular check-in");
   }
 

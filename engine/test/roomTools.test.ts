@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDirectives, parseFileBlocks } from "../src/room/directives.js";
-import { computeSignals } from "../src/room/signals.js";
+import { computeSignals, describeSignals, looksAdrift } from "../src/room/signals.js";
 import type { RoomEvent } from "../src/room/store.js";
 import { BRIDGE, ROOM_TOOLS, ToolServer } from "../src/room/tools.js";
 import { ClaudeTransport } from "../src/transports/claude.js";
@@ -323,7 +323,37 @@ describe("parsers and signals", () => {
       ev(6, { type: "pass", from: "a" }),
       ev(7, { type: "pass", from: "b" }),
     ];
-    expect(computeSignals(events, ["a", "b"])).toEqual({ sinceProgress: 3, passStreak: 2, repetition: 0.8, repeats: 2 });
+    expect(computeSignals(events, ["a", "b"])).toEqual({
+      sinceProgress: 3,
+      passStreak: 2,
+      repetition: 0.8,
+      repeats: 2,
+      docLag: { slug: "plan", version: 1, messages: 3, decisions: 0 },
+      unsentProbes: 0,
+    });
+  });
+
+  it("notices decisions the document hasn't caught up with, and probes nobody mailed", () => {
+    const ev = (seq: number, body: object) => ({ seq, ts: "", ...body }) as RoomEvent;
+    const say = (seq: number, from: string, text: string) => ev(seq, { type: "message", from, to: "room", text });
+    const decide = (seq: number, from: string) => ev(seq + 100, { type: "tags", items: [{ seq, from, kind: "decision", headline: "d" }] });
+    const events = [
+      ev(1, { type: "doc.revised", slug: "plan", version: 2, kind: "plan", by: "a" }),
+      say(2, "a", "We agree on the cache."),
+      decide(2, "a"),
+      say(3, "b", "A quick probe would settle the eviction question."),
+      decide(3, "b"),
+      say(4, "a", "Yes, an experiment on real traffic."),
+      decide(4, "a"),
+      ev(5, { type: "mail.out", file: "f.md", to: "devin", subject: "probe", by: "human" }),
+      say(6, "b", "While we wait: the probe should log misses."),
+    ];
+    const s = computeSignals(events, ["a", "b"]);
+    expect(s.docLag).toEqual({ slug: "plan", version: 2, messages: 4, decisions: 3 });
+    expect(s.unsentProbes).toBe(1);
+    expect(looksAdrift(s)).toBe(true);
+    expect(describeSignals(s)).toContain("plan v2 was saved 4 member messages ago and 3 decisions since aren't in it");
+    expect(describeSignals(s)).toContain("1 member messages discuss a probe");
   });
 });
 

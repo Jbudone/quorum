@@ -28,10 +28,10 @@ type (
 		Accepted bool     `json:"accepted"`
 		// Withdrawn: whoever suggested it took it back.
 		Withdrawn bool `json:"withdrawn"`
-		// Mail sent to the project's agents: its file in .quorum/mail/.
+		// Mail sent to the project's agents: its file name (Path is where it is in the repo).
 		File    string `json:"file"`
 		Subject string `json:"subject"`
-		// access.granted: a folder outside the project everyone may now read.
+		// access.granted: a folder outside the project everyone may now read; mail.out: the mail's path.
 		Path string `json:"path"`
 
 		Slug  string `json:"slug"`
@@ -330,6 +330,8 @@ type (
 	HandoffResult struct {
 		File string `json:"file"`
 		Path string `json:"path"`
+		// Mail is where the mail landed in the repo (the project's own mail/ folder, or .quorum/mail/).
+		Mail string `json:"mail"`
 	}
 	// ReviewResult is what room.review returns; ExportPath comes back on approval.
 	ReviewResult struct {

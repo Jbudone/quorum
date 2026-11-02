@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,5 +118,40 @@ describe("the assistant keeps records and talks to the project", () => {
     expect(r.results.arch[0].text).toMatch(/human approves/);
     expect(room.pending()).toMatchObject([{ from: "arch", action: "mail", args: ["devin", "Run the probe", "In a worktree."] }]);
     void callTool;
+  });
+});
+
+describe("a project's own mailbox", () => {
+  it("writes into the project's mail/ folder, leaves it untouched otherwise, and only takes answers to Quorum", () => {
+    const repo = mkdtempSync(join(tmpdir(), "mail-"));
+    mkdirSync(join(repo, "mail", "read"), { recursive: true });
+    writeFileSync(join(repo, "mail", "20261029-000000-qwen-hello.md"), "---\nto: all\nfrom: qwen\ndate: x\nsubject: hello everyone\n---\n\nhi\n");
+    const box = new Mailbox(repo);
+    expect(box.shared).toBe(true);
+    expect(box.rel).toBe("mail");
+    const sent = box.send({ to: "all", from: "quorum", subject: "Run the probe", body: "In a worktree." }, new Date("2026-10-30T18:00:00Z"));
+    expect(existsSync(join(repo, "mail", sent.file))).toBe(true);
+    expect(existsSync(join(repo, "mail", "README.md")) || existsSync(join(repo, "mail", "send.sh"))).toBe(false);
+    const raw = readFileSync(join(repo, "mail", sent.file), "utf8");
+    expect(raw).toContain(`in-reply-to: ${sent.file}`);
+    expect(parseMail(sent.file, raw)?.body).toBe("In a worktree.");
+    // A broadcast that answers Quorum's mail counts, archived or not; the project's own broadcasts don't.
+    writeFileSync(join(repo, "mail", "read", "20261030-190000-devin-done.md"), `---\nto: all\nfrom: devin\ndate: x\nsubject: done\nin-reply-to: ${sent.file}\n---\n\n9/10.\n`);
+    expect(box.undelivered("levels").map((m) => m.subject)).toEqual(["done"]);
+    box.markDelivered("20261030-190000-devin-done.md");
+    expect(box.undelivered("levels")).toEqual([]);
+    expect(existsSync(join(repo, "mail", ".delivered"))).toBe(false);
+    expect(existsSync(join(repo, ".quorum", "mail", ".delivered"))).toBe(true);
+  });
+
+  it("records where mail went and doesn't offer the pointer when the project has its own mailbox", async () => {
+    const r = setup({ member: () => "PASS", floor: () => [] });
+    mkdirSync(join(r.repo, "mail"), { recursive: true });
+    mkdirSync(join(r.repo, "scripts"), { recursive: true });
+    writeFileSync(join(r.repo, "scripts", "agent-mail.sh"), "#!/bin/sh\n");
+    const room = r.create({ name: "levels" });
+    const file = room.sendMail("devin", "Build the probe", "Please.", "human");
+    expect(room.store.events().find((e) => e.type === "mail.out")).toMatchObject({ file, path: `mail/${file}` });
+    expect(room.pending().some((p) => p.action === "pointer")).toBe(false);
   });
 });

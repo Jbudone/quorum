@@ -35,8 +35,8 @@ export type RoomEventBody =
   | { type: "suggestion"; id: number; from: string; action: SuggestionAction; args: string[]; why: string }
   /** `withdrawn`: whoever suggested it took it back. `args`: what the human changed it to before approving. */
   | { type: "suggestion.resolved"; id: number; accepted: boolean; withdrawn?: boolean; args?: string[] }
-  /** Mail sent to the project's agents (in .quorum/mail/). */
-  | { type: "mail.out"; file: string; to: string; subject: string; by: string; thread?: number }
+  /** Mail sent to the project's agents; `path` is the file relative to the repo (older rooms: in .quorum/mail/). */
+  | { type: "mail.out"; file: string; to: string; subject: string; by: string; thread?: number; path?: string }
   | { type: "topic.raised"; slug: string; title: string; by: string; why?: string }
   | { type: "topic.focus"; slug: string; by: string }
   | { type: "topic.closed"; slug: string; by: string; why?: string }

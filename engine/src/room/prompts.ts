@@ -29,7 +29,7 @@ export function renderEvent(e: RoomEvent, focus?: string): string {
     case "workstream":
       return "";
     case "mail.out":
-      return `[#${e.seq}] — mail sent to ${e.to}: "${e.subject}" (.quorum/mail/${e.file})`;
+      return `[#${e.seq}] — mail sent to ${e.to}: "${e.subject}" (${e.path ?? `.quorum/mail/${e.file}`})`;
     case "tags":
       return "";
     case "topic.raised":
@@ -262,7 +262,9 @@ export function threadSummaryPrompt(root: RoomEvent | undefined, thread: readonl
   return [root ? `The thread hangs off:\n${renderEvent(root)}` : "", `The thread:\n\n${renderEvents(thread)}`, "One sentence."].filter(Boolean).join("\n\n");
 }
 
-export const CHAIR_SYSTEM = `You chair a Quorum room: AI members discuss a problem with a human present. You don't argue a position. You keep the discussion productive: keep it on the topic in focus, notice when it circles or stalls, bring in quiet members, and decide when a document the room produced is agreed.`;
+export const CHAIR_SYSTEM = `You chair a Quorum room: AI members discuss a problem with a human present. You don't argue a position. You keep the discussion productive: keep it on the topic in focus, notice when it circles or stalls, bring in quiet members, and decide when a document the room produced is agreed.
+
+Before you accept a document, check it as a critic would. Accept only the latest version, and only when it has the decisions made since it was saved (the signals say when it's behind). Read the claims it rests on: if one has no evidence or reason behind it (a threshold nobody justified, a "this beats prior work" nobody checked), don't accept; nudge its owner to justify, test or drop that claim. When the room keeps describing a probe and nobody has drafted it as mail to the project's agents, say so.`;
 
 export function chairPrompt(o: { view: RoomView; roster: string; signals: string; recent: string; reason: string }): string {
   return [
@@ -308,14 +310,16 @@ export function docBriefPrompt(o: { slug: string; version: number; text: string;
   return [
     o.topic ? `The channel is working on: ${o.topic}` : "",
     `${o.slug} v${o.version} ${o.accepted ? "was approved, and the human is reading it again" : "is up for the human's review"}. They haven't followed the discussion and won't read the whole document first. Write them a brief of it.`,
-    `The document:\n\n${clip(o.text, 24000)}`,
+    `The document:\n\n${clip(o.text, 80000)}`,
     o.diff ? `What changed since v${o.base}, the version they last reviewed:\n\n${clip(o.diff, 4000)}` : "",
     `Write exactly this, in plain words a newcomer understands. No message numbers, citations, file paths or line numbers, and no terms the document invents unless you explain them in a few words.
 
 **What it is:** one sentence: what kind of document this is, and plainly whether it records things already done or proposes things nobody has done yet.
 **What it says:**
 - three to six bullets, the main points, most important first, one short sentence each
-${o.accepted ? "**Now that it's approved:** one sentence on what still has to happen (for example, someone still has to carry the changes out)." : "**If you approve:** one sentence on what approving means and what still has to happen after (for example, someone still has to carry the changes out)."}${o.diff ? `
+${o.accepted ? "**Now that it's approved:** one sentence on what still has to happen (for example, someone still has to carry the changes out)." : "**If you approve:** one sentence on what approving means and what still has to happen after (for example, someone still has to carry the changes out)."}
+**Weak spots:**
+- one to three bullets: claims the document leans on with no evidence or reason given (a threshold nobody justified, an untested "this works", a comparison with prior work nobody checked), or one bullet saying none stood out. Be specific and fair; this is a reviewer's check, not a verdict.${o.diff ? `
 **Changed since v${o.base}:**
 - one to three bullets` : ""}`,
   ]
@@ -330,6 +334,10 @@ Write like a sharp colleague in a chat: one to three short sentences, plain word
 Be accurate about where things stand. The live state you're given comes from the engine and is always current: trust it over your reading of the recent activity and over your own earlier status. Never call the work finished while anyone is mid-turn or queued, a workstream is open, or a newer document version than the one under review exists. If you got something wrong earlier, say so in a few words and give the right picture, checked against the live state.
 
 When the human asks what a document is or what it changes, explain it for someone who hasn't followed the discussion: what kind of document it is, whether it describes things already done or only proposes them, and its main points as a few short bullets in plain words, without message numbers, citations or file references. The human reviews a document with ctrl+r: a approves it (and then offers to export it and to mail it to the project's agents to carry out), c asks its authors a question, r asks for changes.
+
+Read the signals every time. When they say the latest document is behind (decisions made since it was saved), ask its owner to save a new version, or write it yourself, before anyone treats it as current. When they say members keep discussing a probe and no mail has gone out, draft that probe as \`>> mail:\` to the project's agents (or ask the member who proposed it to draft it): a probe left in the transcript never runs.
+
+Settle a proposal before you post it. Replacing your own suggestions again and again makes the human re-read them; withdraw one only when the human's answer or new facts change it. Leave the channel to the members: a channel where you post more than they do has gone wrong.
 
 When a research channel keeps refining framing without testing anything (another round of the same argument, about ten member turns without new evidence), say so and propose the cheapest probe: a mail asking the project's agents to run it, or a member with web access to check prior work.
 
@@ -367,7 +375,7 @@ To propose a change, end with action lines; the human approves or declines each,
 >> parallel: <n> | <why>                  change how many members may speak at once
 You may also pause the channel yourself (this one takes effect at once; turns already underway finish first):
 >> pause: <one-line reason>
-Before pausing because the work looks done, check that the latest saved document has every decision made since it was saved (write a new version first if not), and say which questions are still open.`;
+Before pausing because the work looks done, close the round: check that the latest saved document has every decision made since it was saved (write a new version first if not); say which questions are still open; list each probe or experiment the channel proposed and whether it was mailed, drafting any unsent one with \`>> mail:\` or saying why it's dropped; and name the suggestions still waiting on the human by number.`;
 }
 
 export function assistantContext(o: { view: RoomView; live: string; signals: string; budget: string; notes: [string, string][]; recent: string; pending: string; digest?: string }): string {
@@ -460,7 +468,7 @@ ${o.channel ? "" : ">> channel: <short-name> | <one-sentence topic>\n"}>> vision
 >> member: <existing-id>                                   to reuse a workspace member as they are
 (+web lets that one member search the web; members are offline otherwise. Use it only where the role needs it.)
 >> topic: <workstream title> | <what done looks like> | <member-id>, <member-id>
->> steer: <optional first instruction to the whole group: name the channel document that is the single source of truth and the one member who merges changes into it, say what done looks like for the first round and that the group stops there, and never ask anyone to write project files. For research: keep several ideas alive, walk each through concrete scenarios including edge cases, name the cheapest probe for any claim text can't settle, and end the round with a ranked shortlist, each entry with the prior work it beats, the scenario most likely to break it, and what would kill it>
+>> steer: <optional first instruction to the whole group: name the channel document that is the single source of truth and the one member who merges changes into it, say what done looks like for the first round and that the group stops there, and never ask anyone to write project files. For research: keep several ideas alive, walk each through concrete scenarios including edge cases, name the cheapest probe for any claim text can't settle, and end the round with a ranked shortlist, each entry with the prior work it beats, the scenario most likely to break it, and what would kill it (with the reason for that threshold); a member who didn't write an entry checks it before the shortlist counts as ranked>
 Member ids are short lowercase names like "pcg-researcher". CLIs available: ${o.clis.join(", ")}. Don't ask questions and propose a plan in the same reply.
 
 ${modelGuide(o.models)}
