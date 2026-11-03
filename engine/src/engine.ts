@@ -7,7 +7,6 @@ import { parseChairReport, type OpenQuestion } from "./protocols/chairReport.js"
 import { getProtocol, type Prior, type Turn } from "./protocols/index.js";
 import { Session } from "./session.js";
 import type { AgentTransport } from "./transports/index.js";
-import { quorumTracing, type QuorumTracing } from "./tracing.js";
 
 /** Events the engine emits to whoever drives it (RPC server, headless runner, tests). */
 export type EngineEvent =
@@ -39,8 +38,6 @@ export interface EngineOptions {
   assetsDir?: string;
   /** Draws a diagram for each reply in the background; omit to skip diagrams. */
   illustrate?: Illustrate;
-  /** Optional Langfuse tracing instance. If not provided, uses the global singleton. */
-  tracing?: QuorumTracing;
 }
 
 export class Engine {
@@ -56,25 +53,11 @@ export class Engine {
   private pending: Turn[][] = [];
   private abort = new AbortController();
   private listeners: ((e: EngineEvent) => void)[] = [];
-  private readonly tracing: QuorumTracing;
-  private currentRoundSpan: ReturnType<QuorumTracing["startRound"]> | undefined;
 
   constructor(private readonly o: EngineOptions) {
     this.session = Session.create(o.repo, o.config, o.topic);
     for (const a of o.config.agents) this.personas.set(a.id, loadPersona(a.persona, o.assetsDir));
     this.personas.set("chair", loadPersona("chair", o.assetsDir));
-    this.tracing = o.tracing ?? quorumTracing;
-
-    // Initialize tracing session if enabled
-    if (this.tracing.isEnabled()) {
-      const sessionId = this.session.id;
-      const userId = process.env.USER || process.env.USERNAME;
-      this.tracing.startSession(sessionId, userId, o.topic, {
-        protocol: o.config.protocol,
-        rounds: o.config.rounds,
-        agents: o.config.agents.map((a) => ({ id: a.id, persona: a.persona })),
-      });
-    }
   }
 
   on(listener: (e: EngineEvent) => void): () => void {
@@ -115,11 +98,6 @@ export class Engine {
         }
         const roundOver = this.pending.length === 0;
         if (roundOver && !this.abort.signal.aborted) this.emit({ event: "round.done", data: { round: this.round } });
-        if (roundOver) {
-          // A span is exported only once it ends.
-          this.currentRoundSpan?.end();
-          this.currentRoundSpan = undefined;
-        }
         if (pause === "message" || (pause === "round" && roundOver)) break;
       }
     }
@@ -132,13 +110,6 @@ export class Engine {
   private startRound(): void {
     this.round++;
     this.emit({ event: "round.start", data: { round: this.round } });
-
-    // Start Langfuse trace for this round
-    if (this.tracing.isEnabled()) {
-      const agents = this.o.config.agents.map((a) => a.id);
-      const plan = this.session.read("plan.md");
-      this.currentRoundSpan = this.tracing.startRound(this.round, agents, plan);
-    }
 
     this.roundOutputs = {};
     this.pending = getProtocol(this.o.config.protocol).planRound({
@@ -195,46 +166,11 @@ export class Engine {
       to === "chair" ? `\n\n${renderTranscript(this.session.transcript(), 30)}\n\nThe human asks: ${text}` : "";
     const prompt = to === "chair" ? `Topic: ${this.o.topic}${chairExtra}` : `The human says to you: ${text}`;
 
-    // Trace the interjection as a special turn
-    const transport = this.o.transportFor(to);
-    const interjectSpan = this.tracing.isEnabled()
-      ? this.tracing.startTurn(this.round, `human->${to}`, `Interjection to ${to}: ${text}`, transport.model)
-      : undefined;
-
-    try {
-      const result = await this.runTurn(this.round, { agent: to, prompt });
-      if (interjectSpan) {
-        this.tracing.endTurn(interjectSpan, result);
-      }
-      return result;
-    } catch (err) {
-      if (interjectSpan) {
-        this.tracing.recordError(interjectSpan, err instanceof Error ? err : new Error(String(err)));
-      }
-      throw err;
-    }
+    return this.runTurn(this.round, { agent: to, prompt });
   }
 
   stop(): void {
     this.abort.abort();
-  }
-
-  /** Flush any pending traces to Langfuse. Call before shutdown. */
-  async flushTracing(): Promise<void> {
-    await this.tracing.flush();
-  }
-
-  /**
-   * Ends this session's trace and sends it. The shared tracer stays up: the RPC server can start
-   * another session in the same process, and shutting it down would leave that one untraced.
-   */
-  async shutdownTracing(): Promise<void> {
-    if (this.tracing.isEnabled()) {
-      this.currentRoundSpan?.end();
-      this.currentRoundSpan = undefined;
-      this.tracing.endSession({ finished: this.finished, round: this.round });
-      await this.tracing.flush();
-    }
   }
 
   private async runTurn(round: number, turn: Turn): Promise<string> {
@@ -245,14 +181,8 @@ export class Engine {
     const wantsTldr = turn.artifact !== "chair-report" && turn.agent !== "chair"; // the Chair talks to the human directly
     const prompt = wantsTldr ? `${base}\n\n${TLDR_INSTRUCTION}` : base;
 
-    // Start Langfuse trace for this turn
-    const turnSpan = this.tracing.isEnabled()
-      ? this.tracing.startTurn(round, turn.agent, prompt, transport.model)
-      : undefined;
-
     this.emit({ event: "turn.start", data: { round, agent: turn.agent, artifact: turn.artifact } });
     let text = "";
-    let usage: { inputTokens?: number; outputTokens?: number; costUsd?: number } | undefined;
     for await (const e of transport.send(prompt, {
       cwd: this.o.repo,
       systemPrompt: persona.body,
@@ -267,10 +197,6 @@ export class Engine {
           break;
         case "tool":
           this.emit({ event: "turn.tool", data: { agent: turn.agent, name: e.name } });
-          // Record tool call in Langfuse
-          if (turnSpan && this.tracing.isEnabled()) {
-            this.tracing.recordToolCall(turnSpan, e.name);
-          }
           break;
         case "usage":
           if (e.quotaUtilization !== undefined || e.rateLimited)
@@ -278,18 +204,12 @@ export class Engine {
               event: "usage",
               data: { agent: turn.agent, quotaUtilization: e.quotaUtilization, rateLimited: e.rateLimited },
             });
-          // Capture token usage for Langfuse
-          if (e.inputTokens !== undefined || e.outputTokens !== undefined || e.costUsd !== undefined) {
-            usage = { inputTokens: e.inputTokens, outputTokens: e.outputTokens, costUsd: e.costUsd };
-            if (turnSpan) this.tracing.recordUsage(turnSpan, usage);
-          }
           break;
         case "done":
           if (e.sessionId) this.vendorSessions.set(turn.agent, e.sessionId);
           break;
         case "error":
           this.emit({ event: "error", data: { agent: turn.agent, message: e.message } });
-          if (turnSpan) this.tracing.recordError(turnSpan, e.message);
           break;
       }
     }
@@ -302,14 +222,6 @@ export class Engine {
       this.emit({ event: "turn.done", data: { round, agent: turn.agent, text: body, ...(tldr ? { tldr } : {}) } });
       this.applyArtifact(round, turn, body);
       if (tldr) this.illustrate(round, turn.agent, body, tldr);
-
-      // End the turn trace with the response
-      if (turnSpan) {
-        this.tracing.endTurn(turnSpan, body, tldr, usage);
-      }
-    } else if (turnSpan) {
-      // End trace even if no text (e.g., error)
-      this.tracing.endTurn(turnSpan, "", undefined, usage);
     }
     return text;
   }

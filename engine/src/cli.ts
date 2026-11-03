@@ -86,9 +86,6 @@ async function run(argv: string[]): Promise<void> {
   });
   await engine.continue();
   console.log(`\n\nSession saved to ${engine.session.dir}`);
-
-  // End the session trace and send everything to Langfuse before exit.
-  await engine.shutdownTracing();
 }
 
 async function room(argv: string[]): Promise<void> {

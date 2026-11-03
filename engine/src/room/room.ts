@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentSpec, CliName, Persona } from "../config.js";
 import type { AgentEvent, AgentTransport, McpServerSpec } from "../transports/index.js";
-import { parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
+import { ASSISTANT_BLOCKS, ASSISTANT_VERBS, CHAIR_VERBS, parseBlocks, parseDirectives, parseFileBlocks, type Directive } from "./directives.js";
 import { MAIL_POINTER, Mailbox, QUORUM } from "./mail.js";
 import { channelTerms, glossaryPrompt, noteTerms, parseGlossary, repoAdrs, type GlossaryEntry, type Said } from "./glossary.js";
 import { BidFloor, CARD_SYSTEM, shortGist, FLOOR_SYSTEM, GIST_WORDS, highlightCardPrompt, highlightsPrompt, mentioned, parseHighlights, type FloorPick, type FloorPolicy } from "./floor.js";
@@ -66,7 +66,9 @@ import { legacyTally, report, type Sitting, type UsageReport } from "./ledger.js
 import { newToken, ToolServer, type ToolHandler } from "./tools.js";
 import { noteVendorSession } from "./vendorlog.js";
 import { personaFor, readingFiles, readingPath, Workspace } from "./workspace.js";
-import { quorumTracing, type QuorumTracing, type TracedCall } from "../tracing.js";
+import { CallLog, knownRooms, readCalls, systemText, type CallHandle } from "../improve/calls.js";
+import { analyze, formatHealth } from "../improve/report.js";
+import type { Purpose } from "../improve/purposes.js";
 import { noteCreditRoute } from "../providers.js";
 
 /** What a Room tells whoever drives it. `room.event` mirrors the log; the rest is live-only. */
@@ -98,8 +100,6 @@ export interface RoomOptions {
   /** Target repo; the room is stored in its .quorum/ directory. */
   repo: string;
   transports: TransportFactory;
-  /** Langfuse tracing; defaults to the shared tracer, which is off unless LANGFUSE_* keys are set. */
-  tracing?: QuorumTracing;
   assetsDir?: string;
   readOnly?: boolean;
   /** Current commit of the repo (code notes are tagged with it). Defaults to `git rev-parse`. */
@@ -228,10 +228,6 @@ const MEMBER_NOISE = new Set<RoomEvent["type"]>(["pass", "docs.updated", "turn.f
 
 const DEFAULT_CLIS = ["claude", "codex", "gemini", "agy", "opencode", "kimi", "zcode"];
 
-const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
-const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw", "read", "web"] as const;
-/** Assistant actions that carry a multi-line body, closed by `>> end`. */
-const ASSISTANT_BLOCKS = ["write", "mail"] as const;
 /** How often a running room looks for mail from the project's agents. */
 const MAIL_POLL_MS = 5000;
 
@@ -290,16 +286,18 @@ export class Room {
   /** Run once, the next time the room resumes. */
   private resumeHooks: (() => void)[] = [];
   private _state: RoomState = "paused";
+  private readonly calls: CallLog;
 
   private constructor(
     readonly store: RoomStore,
     private readonly o: RoomOptions,
   ) {
+    this.calls = new CallLog(store.dir);
     for (const a of store.config().agents) this.personas.set(a.id, personaFor(o.repo, a.persona, o.assetsDir));
     try {
       for (const [key, w] of JSON.parse(String(store.meta().wants ?? "[]")) as [string, Want][]) this.wants.set(key, { ...w, agent: w.agent ?? key });
     } catch {}
-    this.floorPolicy = o.floor ?? new BidFloor((prompt, system, signal) => this.oneShot("floor", prompt, system, undefined, undefined, signal));
+    this.floorPolicy = o.floor ?? new BidFloor((prompt, system, signal) => this.oneShot("floor", "floor", prompt, system, { signal }));
   }
 
   /** Creates a paused room; with a topic, it is the room's first message. Call resume() to start it. */
@@ -462,7 +460,7 @@ export class Room {
       const text = this.store.readOutput(slug, version);
       const base = d.reviewed && d.reviewed < version ? d.reviewed : undefined;
       const prompt = docBriefPrompt({ slug, version, text, topic: this.store.config().topic, accepted: d.accepted === version, ...(base ? { base, diff: unifiedDiff(this.store.readOutput(slug, base), text) } : {}) });
-      const brief = (await this.oneShot("assistant", prompt, ASSISTANT_SYSTEM))?.trim();
+      const brief = (await this.oneShot("assistant", "doc.brief", prompt, ASSISTANT_SYSTEM))?.trim();
       if (brief && brief !== "NOTHING") this.log({ type: "doc.brief", slug, version, text: brief });
     });
   }
@@ -485,7 +483,7 @@ export class Room {
     if (!long.size && (old.length < 3 || events.some((e) => e.type === "gists"))) return Promise.resolve();
     return this.job("highlights", async () => {
       const transcript = old.map((e) => (e.type === "message" ? `[#${e.seq}]${long.has(e.seq) ? " ★" : ""} ${e.from}:\n${e.text.slice(0, 1500)}` : "")).join("\n\n");
-      const reply = await this.oneShot("floor", highlightsPrompt(transcript), FLOOR_SYSTEM);
+      const reply = await this.oneShot("floor", "highlights", highlightsPrompt(transcript), FLOOR_SYSTEM);
       this.store.setMeta({ gistSeq: this.store.lastSeq });
       const items = reply ? parseHighlights(reply, old) : [];
       // A long gist the model didn't rewrite is cut short rather than left to overflow.
@@ -503,6 +501,60 @@ export class Room {
    * names the channel keeps using, with briefs. Terms without a brief yet get one in the background
    * (a "glossary" event follows); `writing` says so.
    */
+  /** The prompt a message was written from, as markdown: who, which model and prompt version, and the full text. */
+  promptFor(seq: number): string {
+    const msg = this.store.events().find((e) => e.seq === seq);
+    if (!msg || msg.type !== "message") throw new Error(`#${seq} isn't a message`);
+    const calls = readCalls(this.store.dir).calls;
+    // Linked when the call logged it; otherwise the sender's last call that ended before it was posted.
+    const at = Date.parse(msg.ts);
+    const sender = msg.from.split("@")[0];
+    const c =
+      calls.find((x) => x.seq === seq) ??
+      [...calls].reverse().find((x) => x.agent === sender && x.ts + x.ms <= at + 1000 && !x.failed);
+    if (!c) throw new Error(`no prompt was logged for #${seq} (calls are logged from this version of Quorum on)`);
+    const fence = (t: string) => {
+      const ticks = "`".repeat(Math.max(3, ...[...t.matchAll(/`{3,}/g)].map((m) => m[0].length + 1)));
+      return `${ticks}text\n${t}\n${ticks}`;
+    };
+    const cap = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}\n\n… ${t.length - n} more characters in calls.jsonl (call ${c.n})` : t);
+    const system = systemText(this.store.dir, c.system) ?? "(not kept)";
+    const facts = [
+      c.agent,
+      [c.cli, c.model].filter(Boolean).join(" "),
+      `${c.purpose} prompt ${c.version}`,
+      `${(c.ms / 1000).toFixed(1)}s`,
+      c.in !== undefined ? `${c.in} in / ${c.out ?? 0} out tokens` : "",
+      c.tools ? `${c.tools} tool calls` : "",
+    ].filter(Boolean);
+    return [
+      `# The prompt behind #${seq}`,
+      facts.join(" · "),
+      c.resumed ? "_This turn continued the member's session with its CLI, so the prompt below is only what was new since its last turn; the rest the CLI already had._" : "",
+      c.problems?.length ? `**Broke the prompt's rules:** ${c.problems.join("; ")}` : "",
+      "## Prompt",
+      fence(cap(c.prompt, 40_000)),
+      "## System prompt",
+      fence(cap(system, 20_000)),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  /** How this channel's prompts are doing, and the findings across every channel. */
+  improve(): string {
+    const here = formatHealth(analyze([this.store.dir]), { title: `Prompt health in #${this.channelName()}`, examples: true });
+    const all = analyze(knownRooms());
+    if (all.rooms.filter((r) => r.calls).length < 2) return here;
+    const flagged = all.findings.filter((f) => f.level !== "ok");
+    return [
+      here,
+      `## Across all ${all.rooms.filter((r) => r.calls).length} channels`,
+      flagged.length ? flagged.map((f) => `- ${f.level === "poor" ? "✗" : "!"} **${f.purpose}:** ${f.text}`).join("\n") : "Nothing stands out.",
+      "`pnpm improve` prints the full report; `pnpm improve --diagnose` asks a model for edits.",
+    ].join("\n\n");
+  }
+
   glossary(): { entries: GlossaryEntry[]; writing: boolean } {
     const known = [...repoAdrs(this.o.repo), ...noteTerms(this.o.repo)];
     const events = this.store.events();
@@ -520,7 +572,7 @@ export class Room {
     const missing = terms.filter((t) => !briefs.has(t.term));
     if (missing.length)
       void this.job("glossary", async () => {
-        const reply = await this.oneShot("assistant", glossaryPrompt(missing, this.store.config().topic), CARD_SYSTEM);
+        const reply = await this.oneShot("assistant", "glossary", glossaryPrompt(missing, this.store.config().topic), CARD_SYSTEM);
         const got = reply ? parseGlossary(reply, missing.map((t) => t.term)) : [];
         // Terms it couldn't place are recorded too, so they aren't asked about every time.
         const items = missing.map((t) => got.find((g) => g.term === t.term) ?? { term: t.term, brief: "(not explained yet)" });
@@ -550,6 +602,7 @@ export class Room {
       const text = (
         await this.oneShot(
           "assistant",
+          "card",
           highlightCardPrompt({ from: msg.from, gist, text: msg.text, topic: this.store.config().topic, ...(before?.type === "message" ? { before: `${before.from}: ${before.text.slice(0, 1200)}` } : {}) }),
           CARD_SYSTEM,
         )
@@ -1031,7 +1084,7 @@ export class Room {
     if (o.brief) {
       const notes = (["decisions.md", "open-questions.md"] as const).flatMap((p): [string, string][] => (this.store.readDoc(p).trim() ? [[p, this.store.readDoc(p)]] : []));
       const recent = renderEvents(this.store.events().filter((e) => e.type === "message" && e.to === "room" && inMain(e)).slice(-30), this.focus());
-      brief = (await this.oneShot("scribe", briefPrompt({ view: this.view(), member: id, role: persona.role, persona: persona.body, digest: this.digest(), notes, recent }), BRIEF_SYSTEM))?.trim() || undefined;
+      brief = (await this.oneShot("scribe", "catchup", briefPrompt({ view: this.view(), member: id, role: persona.role, persona: persona.body, digest: this.digest(), notes, recent }), BRIEF_SYSTEM))?.trim() || undefined;
     }
     const st = this.store.agentState(id);
     const question = o.question?.trim() || undefined;
@@ -1048,7 +1101,7 @@ export class Room {
   async draftPersona(line: string): Promise<{ id: string; role: string; persona: string }> {
     if (!line.trim()) throw new Error("describe the member in a line first");
     const taken = new Set([...new Workspace(this.o.repo).members().map((m) => m.id), ...this.members()]);
-    const reply = await this.oneShot("assistant", personaDraftPrompt({ line: line.trim(), view: this.view(), taken: [...taken] }), PERSONA_SYSTEM);
+    const reply = await this.oneShot("assistant", "persona", personaDraftPrompt({ line: line.trim(), view: this.view(), taken: [...taken] }), PERSONA_SYSTEM);
     const d = reply ? parsePersonaDraft(reply) : undefined;
     if (!d) throw new Error("the assistant didn't produce a persona; try describing the member differently");
     let id = d.id;
@@ -1098,7 +1151,7 @@ export class Room {
     if (memo) {
       const st = this.store.agentState(id);
       const prompt = st.sessionId ? EXIT_MEMO : `${renderEvents(this.store.events().filter((e) => visibleTo(id, e) && inMain(e)).slice(-RECENT))}\n\n${EXIT_MEMO}`;
-      text = (await this.oneShot(id, prompt, this.personas.get(id)!.body, undefined, st.sessionId))?.trim();
+      text = (await this.oneShot(id, "member.exit", prompt, this.personas.get(id)!.body, { sessionId: st.sessionId }))?.trim();
       if (text) this.store.writeNotebook(id, `${this.store.notebook(id).trimEnd()}\n\n## Left #${this.channelName()}\n\n${text}`);
     }
     const c = this.store.config();
@@ -1504,7 +1557,7 @@ export class Room {
     if (busy || Number(this.store.meta()[`thread${thread}`] ?? 0) >= lastSeq || !messages.some((m) => m.type === "message" && m.from !== "human")) return;
     this.store.setMeta({ [`thread${thread}`]: lastSeq });
     void this.job("scribe", async () => {
-      const text = (await this.oneShot("scribe", threadSummaryPrompt(root, root?.seq === thread && root.type === "message" && root.thread ? [root, ...messages] : messages), THREAD_SUMMARY, undefined, undefined, this.supportAbort.signal))?.trim();
+      const text = (await this.oneShot("scribe", "thread.summary", threadSummaryPrompt(root, root?.seq === thread && root.type === "message" && root.thread ? [root, ...messages] : messages), THREAD_SUMMARY, { signal: this.supportAbort.signal }))?.trim();
       if (text && text !== "NOTHING") this.log({ type: "thread.summary", thread, text: text.split("\n")[0].slice(0, 300) });
     });
   }
@@ -1618,15 +1671,17 @@ export class Room {
     this.emit({ event: "room.turn.start", data: { agent, ...tag } });
     const reading = this.readingFor(agent, st);
     let sessionId = st.sessionId;
-    const run = async (prompt: string, session: string | undefined): Promise<{ text: string; failed?: string }> => {
+    let lastCall: CallHandle | undefined;
+    const run = async (prompt: string, session: string | undefined, purpose: Purpose = "member"): Promise<{ text: string; failed?: string }> => {
       let text = "";
       let failed: string | undefined;
-      const traced = this.trace(agent, "member", spec, prompt);
+      const system = [this.personas.get(agent)?.body, accessNote(this.o.repo, this.dirs(), false, Boolean(spec.web))].filter(Boolean).join("\n\n");
+      const traced = (lastCall = this.trace(agent, "member", purpose, spec, system, prompt, Boolean(session)));
       try {
         for await (const e of transport.send(prompt, {
           cwd: this.o.repo,
           dirs: this.dirs(),
-          systemPrompt: [this.personas.get(agent)?.body, accessNote(this.o.repo, this.dirs(), false, Boolean(spec.web))].filter(Boolean).join("\n\n"),
+          systemPrompt: system,
           readOnly: this.o.readOnly ?? true,
           ...(spec.web ? { web: true } : {}),
           sessionId: session,
@@ -1639,6 +1694,7 @@ export class Room {
           } else if (e.type === "tool") {
             // What a member writes before a tool call is thinking aloud; its message is what comes after the last one.
             text = "";
+            traced.tool();
             this.emit({ event: "room.turn.tool", data: { agent, name: e.name, ...tag } });
           } else if (e.type === "usage") {
             this.usage(agent, spec, e);
@@ -1662,7 +1718,7 @@ export class Room {
       const others = this.store.events().slice(why.snapshot).filter((e) => e.type === "message" && e.from !== agent && e.to === "room" && (e.thread ?? 0) === (thread ?? 0));
       if (others.length) {
         this.emit({ event: "room.turn.tool", data: { agent, name: "revise", ...tag } });
-        const second = await run(sessionId ? reviseIndependent(reply, others) : `${this.memberPrompt(agent, st, upTo, Boolean(mcp), why, reading)}\n\n${reviseIndependent(reply, others)}`, sessionId);
+        const second = await run(sessionId ? reviseIndependent(reply, others) : `${this.memberPrompt(agent, st, upTo, Boolean(mcp), why, reading)}\n\n${reviseIndependent(reply, others)}`, sessionId, "member.revise");
         if (!second.failed && second.text) reply = second.text;
       }
     }
@@ -1696,6 +1752,7 @@ export class Room {
       // A DM from a member who has since left goes to the room instead of nowhere.
       const to = why.to && (why.to === "human" || this.personas.has(why.to)) ? why.to : "room";
       this.log({ type: "message", from: agent, to, text: reply, ...(why.replyTo ? { replyTo: why.replyTo } : {}), ...(to === "room" && thread ? { thread } : {}) });
+      lastCall?.produced(this.store.lastSeq);
       if (to === "room" && !thread) this.afterMessage();
     }
     const fresh = sessionId !== st.sessionId;
@@ -2040,29 +2097,29 @@ export class Room {
 
   // ---- support roles ----
 
-  /** Starts a Langfuse trace for one CLI call; a no-op unless Langfuse keys are set. */
-  private trace(agent: string, role: "member" | "support", spec: { cli: CliName; model?: string }, prompt: string): TracedCall {
+  /** Logs one model call to the channel's calls.jsonl, for the improvement report and the prompt viewer. */
+  private trace(agent: string, role: "member" | "support", purpose: Purpose, spec: { cli: CliName; model?: string }, system: string, prompt: string, resumed = false): CallHandle {
     const model = spec.model || this.o.defaultModel?.(spec.cli);
-    return (this.o.tracing ?? quorumTracing).call({ channel: this.id, channelName: this.channelName(), agent: agent.split("@")[0], role, cli: spec.cli, ...(model ? { model } : {}), prompt });
+    return this.calls.call({ agent: agent.split("@")[0], role, purpose, cli: spec.cli, ...(model ? { model } : {}), system, prompt, resumed });
   }
 
   /** One plain turn for a support role (or a leaving member); returns the reply, or undefined on failure. */
   private async oneShot(
     id: string,
+    purpose: Purpose,
     prompt: string,
     systemPrompt: string,
-    onDelta?: (d: string) => void,
-    sessionId?: string,
-    signal?: AbortSignal,
+    o: { onDelta?: (d: string) => void; sessionId?: string; signal?: AbortSignal } = {},
   ): Promise<string | undefined> {
+    const { onDelta, sessionId, signal } = o;
     const spec = this.spec(id);
     let text = "";
     let failed: string | undefined;
-    const traced = this.trace(id, this.personas.has(id.split("@")[0]) ? "member" : "support", spec, prompt);
+    // Floor, scribe and Chair work from the transcript in their prompt; reading files only costs time.
+    const toolless = id === "floor" || id === "scribe" || id === "chair";
+    const system = toolless ? systemPrompt : `${systemPrompt}\n\n${accessNote(this.o.repo, this.dirs(), id === "assistant")}`;
+    const traced = this.trace(id, this.personas.has(id.split("@")[0]) ? "member" : "support", purpose, spec, system, prompt, Boolean(sessionId));
     try {
-      // Floor, scribe and Chair work from the transcript in their prompt; reading files only costs time.
-      const toolless = id === "floor" || id === "scribe" || id === "chair";
-      const system = toolless ? systemPrompt : `${systemPrompt}\n\n${accessNote(this.o.repo, this.dirs(), id === "assistant")}`;
       for await (const e of this.o.transports(spec).send(prompt, { cwd: this.o.repo, dirs: this.dirs(), systemPrompt: system, readOnly: true, ...(toolless ? { noTools: true } : {}), sessionId, signal })) {
         if (e.type === "text") {
           text += e.delta;
@@ -2125,11 +2182,10 @@ export class Room {
       this.store.setMeta({ chairSeq: upTo });
       const reply = await this.oneShot(
         "chair",
+        "chair",
         chairPrompt({ view: this.view(), roster: this.roster(), signals: describeSignals(this.signals()), recent: this.publicEvents(0, 40), reason }),
         CHAIR_SYSTEM,
-        undefined,
-        undefined,
-        this.supportAbort.signal,
+        { signal: this.supportAbort.signal },
       );
       if (reply === undefined) return;
       const { prose, directives } = parseDirectives(reply, CHAIR_VERBS);
@@ -2181,7 +2237,7 @@ export class Room {
       if (upTo <= after) return;
       const commit = (this.o.head ?? gitHead(this.o.repo))();
       const docs = this.store.docPaths().map((p): [string, string] => [p, this.store.readDoc(p)]);
-      const reply = await this.oneShot("scribe", scribePrompt({ view: this.view(), docs, recent: this.publicEvents(after, 80), commit }), SCRIBE_SYSTEM);
+      const reply = await this.oneShot("scribe", "scribe", scribePrompt({ view: this.view(), docs, recent: this.publicEvents(after, 80), commit }), SCRIBE_SYSTEM);
       if (reply === undefined) return;
       this.store.setMeta({ scribeSeq: upTo });
       const files = parseFileBlocks(reply);
@@ -2285,7 +2341,7 @@ export class Room {
     const context = [this.assistantContext(), doc ? this.reviewContext(doc) : ""].filter(Boolean).join("\n\n");
     let answer = "";
     await this.job("assistant", async () => {
-      const reply = await this.oneShot("assistant", assistantAsk(context, question.trim(), this.actions()), ASSISTANT_SYSTEM, onDelta);
+      const reply = await this.oneShot("assistant", "assistant.ask", assistantAsk(context, question.trim(), this.actions()), ASSISTANT_SYSTEM, { onDelta });
       if (reply === undefined) return;
       const { rest, blocks } = parseBlocks(reply, ASSISTANT_BLOCKS);
       const { prose, directives } = parseDirectives(rest, ASSISTANT_VERBS);
@@ -2302,7 +2358,7 @@ export class Room {
   watch(reason: string): Promise<void> {
     return this.job("watch", async () => {
       this.store.setMeta({ watchSeq: this.store.lastSeq });
-      const reply = await this.oneShot("assistant", assistantWatch(this.assistantContext(), reason, this.actions()), ASSISTANT_SYSTEM);
+      const reply = await this.oneShot("assistant", "assistant.watch", assistantWatch(this.assistantContext(), reason, this.actions()), ASSISTANT_SYSTEM);
       if (reply === undefined) return;
       const { rest, blocks } = parseBlocks(reply, ASSISTANT_BLOCKS);
       const { prose, directives } = parseDirectives(rest, ASSISTANT_VERBS);

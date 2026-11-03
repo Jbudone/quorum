@@ -95,3 +95,8 @@ export function parseFileBlocks(text: string): { path: string; text: string }[] 
   flush();
   return out;
 }
+
+export const CHAIR_VERBS = ["accept", "nudge", "raise", "focus", "close"] as const;
+export const ASSISTANT_VERBS = ["steer", "add", "hire", "swap", "remove", "focus", "close", "parallel", "pause", "export", "withdraw", "read", "web"] as const;
+/** Assistant actions that carry a multi-line body, closed by `>> end`. */
+export const ASSISTANT_BLOCKS = ["write", "mail"] as const;

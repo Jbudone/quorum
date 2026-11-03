@@ -34,13 +34,13 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 	contains(t, s, "HIGHLIGHTS")
 	contains(t, s, "╭─ HIGHLIGHTS ") // its own box across the top of the channel
 	contains(t, s, m.From+" found that stale prices outlive the cache")
-	lacks(t, s, "ask the assistant about it")
+	lacks(t, s, "ask your assistant")
 
 	// alt+h picks the newest highlight: the feed jumps to it, marks it and offers shortcuts.
 	h.press("alt+h")
 	s = h.screen()
 	contains(t, s, "❯ "+m.From)
-	contains(t, s, "a ask the assistant about it · d DM "+m.From+" · t reply in a thread · esc close")
+	contains(t, s, "a ask your assistant · d DM "+m.From+" · t reply in a thread · p its prompt · esc close")
 	contains(t, s, "▌ ")
 	if h.app.rm.feedFollow {
 		t.Fatal("the feed should stay on the picked message, not follow the bottom")
@@ -52,7 +52,7 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 	if q, _ := ask.params["text"].(string); !strings.Contains(q, "#") || !strings.Contains(q, "stale prices outlive the cache") {
 		t.Fatalf("ask: %q", q)
 	}
-	lacks(t, h.screen(), "ask the assistant about it")
+	lacks(t, h.screen(), "ask your assistant")
 
 	// A click on the highlight's row picks it too; d starts a DM to its author.
 	h.send(tea.MouseClickMsg{X: 6, Y: h.app.stripTop() + 1, Button: tea.MouseLeft})
@@ -66,7 +66,7 @@ func TestHighlightsJumpToTheMessageAndOfferShortcuts(t *testing.T) {
 	h.app.rm.roomIn.Reset()
 	h.press("alt+h")
 	h.press("x")
-	lacks(t, h.screen(), "ask the assistant about it")
+	lacks(t, h.screen(), "ask your assistant")
 	if v := h.app.rm.roomIn.Value(); v != "x" {
 		t.Fatalf("typing after the spotlight: %q", v)
 	}
@@ -176,7 +176,7 @@ func TestCardNamesLinkToTheGlossaryAndClickingOpensTheMessageWithItsSummary(t *t
 	s = h.screen()
 	contains(t, s, "SUMMARY  by your assistant")
 	contains(t, s, "They checked six objections against the plan.")
-	contains(t, s, "a ask the assistant about it")
+	contains(t, s, "a ask your assistant")
 	if r.spot == nil || r.spot.seq != m.Seq {
 		t.Fatalf("spot %+v", r.spot)
 	}
@@ -190,4 +190,38 @@ func TestCardNamesLinkToTheGlossaryAndClickingOpensTheMessageWithItsSummary(t *t
 	s = h.screen()
 	contains(t, s, "Where staged ops become the committed grid.")
 	contains(t, s, "used in this channel: #12")
+}
+
+func TestThePromptBehindAMessageAndPromptHealthOpenForReading(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	m := firstMemberMessage(t, h)
+	h.event(rpc.RoomEvent{Type: "tags", Seq: 990, Items: []rpc.MessageTag{{Seq: m.Seq, From: m.From, Kind: "idea", Gist: "proposed a per-instance cache"}}})
+	// p under a picked message asks for its prompt and opens it.
+	h.press("alt+h")
+	h.press("p")
+	c := h.callTo("room.prompt")
+	if c.params["seq"] != m.Seq {
+		t.Fatalf("prompt params %v", c.params)
+	}
+	h.reply("room.prompt", `{"text":"# The prompt behind #4\n\narch · claude opus · member prompt 1a2b3c4d\n\n## Prompt\n\n`+"```"+`text\nYou have the floor to answer #3\n`+"```"+`"}`)
+	s := h.screen()
+	contains(t, s, "The prompt behind #4")
+	contains(t, s, "member prompt 1a2b3c4d")
+	contains(t, s, "You have the floor to answer #3")
+	h.press("esc")
+	lacks(t, h.screen(), "The prompt behind #4")
+
+	// /prompt N does the same from the box; /improve opens the report.
+	h.typ("/prompt #7")
+	h.press("enter")
+	if c := h.callTo("room.prompt"); c.params["seq"] != 7 {
+		t.Fatalf("/prompt params %v", c.params)
+	}
+	h.typ("/improve")
+	h.press("enter")
+	h.callTo("room.improve")
+	h.reply("room.improve", `{"text":"# Prompt health in #cache\n\n## Findings\n\n- ✗ **card:** 6 of 14 replies broke the prompt's rules"}`)
+	contains(t, h.screen(), "6 of 14 replies broke the prompt's rules")
 }

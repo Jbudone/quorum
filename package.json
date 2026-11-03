@@ -9,7 +9,8 @@
     "test:go": "cd tui && go test ./...",
     "test:all": "pnpm test && cd tui && go test ./...",
     "history:sync": "pnpm -C engine exec tsx ../scripts/history-sync.ts",
-    "grade": "pnpm -C engine exec tsx ../scripts/grade-room.ts"
+    "grade": "pnpm -C engine exec tsx ../scripts/grade-room.ts",
+    "improve": "pnpm -C engine exec tsx ../scripts/improve.ts"
   },
   "type": "module"
 }

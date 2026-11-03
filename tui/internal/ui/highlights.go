@@ -137,11 +137,11 @@ func renderHighlightStrip(r *roomModel, th theme.Theme, width int) (string, [][]
 
 // spotActions are the shortcuts offered under the spotlit message.
 func spotActions(s *spotlight) []spotAction {
-	acts := []spotAction{{key: "a", label: "ask the assistant about it"}}
+	acts := []spotAction{{key: "a", label: "ask your assistant"}}
 	if s.from != "" && !strings.HasPrefix(s.from, "mail:") && s.from != "chair" {
 		acts = append(acts, spotAction{key: "d", label: "DM " + displayName(s.from)})
 	}
-	return append(acts, spotAction{key: "t", label: "reply in a thread"}, spotAction{key: "esc", label: "close"})
+	return append(acts, spotAction{key: "t", label: "reply in a thread"}, spotAction{key: "p", label: "its prompt"}, spotAction{key: "esc", label: "close"})
 }
 
 // renderSpotBar is the line of shortcuts under the spotlit message; it records where each one sits.
@@ -244,6 +244,10 @@ func (a *App) spotKey(key string) (tea.Cmd, bool) {
 		r.pane = paneRoom
 		u.assistIn.Blur()
 		return u.roomIn.Focus(), true
+	case "p":
+		r.spot = nil
+		a.call("room.prompt", map[string]any{"seq": s.seq})
+		return nil, true
 	case "esc":
 		r.spot = nil
 		return nil, true

@@ -8,6 +8,7 @@ import { cliInfo, doctor, installedClis, readHealth, resolveAvailable, usableCli
 import { Engine, type TransportFor } from "../engine.js";
 import { councilFromWire, savePreset } from "../library.js";
 import { createTransport } from "../transports/index.js";
+import { autoReport } from "../improve/report.js";
 import { scriptedMock } from "../mock/scripted.js";
 import { councilWorkflow } from "../workflows/council.js";
 import { checkEdit, METERED_CLIS, Room, type TransportFactory } from "../room/room.js";
@@ -22,7 +23,6 @@ import { meters } from "../usage.js";
 import { cachedCatalog, getCatalog, mockCatalog, modelMenu, resetCatalog } from "../catalog.js";
 import { noteRecent, readProviders, readRecent, updateProviders } from "../providers.js";
 import { personaFor, Workspace } from "../room/workspace.js";
-import { quorumTracing } from "../tracing.js";
 
 /**
  * NDJSON JSON-RPC over stdio. Client -> engine: {id, method, params}. Engine -> client:
@@ -258,8 +258,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         }
         return {};
       case "session.end": {
-        const e = need();
-        await e.shutdownTracing().catch(() => undefined);
+        need();
         engine = undefined;
         run = undefined;
         started = false;
@@ -369,6 +368,12 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
         await adopt(r);
         // A channel from before highlights gets them, in the background.
         void r.backfillHighlights();
+        // About once a day, a fresh prompt-health report (model-free); flagged prompts are mailed to Quorum's developers.
+        if (!process.env.VITEST && !fake) setTimeout(() => {
+          try {
+            autoReport();
+          } catch {}
+        }, 5000).unref();
         return snapshot(r);
       }
       case "room.resume":
@@ -543,6 +548,12 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       case "room.glossary":
         // ADRs, defined terms and the channel's code names, each with a brief.
         return needRoom().glossary();
+      case "room.prompt":
+        // The prompt a message was written from, as markdown.
+        return { text: needRoom().promptFor(Number(p.seq)) };
+      case "room.improve":
+        // How this channel's prompts are doing, as markdown.
+        return { text: needRoom().improve() };
       case "room.highlight":
         // The card for a highlighted message, written the first time it's asked for.
         return { text: await needRoom().highlightCard(Number(p.seq)) };
@@ -572,14 +583,7 @@ export function serve(input: Readable, output: Writable, opts: RpcOptions = {}):
       }
     }).on("close", async () => {
       // Closing the interface pauses the room; it resumes from disk next time.
-      // Pausing comes first: a tracing failure must never keep the room from saving.
       await Promise.all([running, room?.close()]);
-      try {
-        await engine?.shutdownTracing();
-        await quorumTracing.flush();
-      } catch {
-        // Traces that can't be sent are dropped.
-      }
       resolve();
     });
   });

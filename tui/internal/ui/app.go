@@ -420,7 +420,7 @@ func (a *App) handleEngine(m rpc.Message) tea.Cmd {
 func (a *App) handleResponse(r rpc.Response) {
 	method := a.reqs[r.ID]
 	delete(a.reqs, r.ID)
-	if a.cardResponse(r.ID, method, r) || a.glossaryResponse(method, r) || a.metersResponse(method, r) || a.usageResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
+	if a.cardResponse(r.ID, method, r) || a.glossaryResponse(method, r) || a.improveResponse(method, r) || a.metersResponse(method, r) || a.usageResponse(method, r) || a.catalogResponse(method, r) || a.handleRoomResponse(method, r) {
 		return
 	}
 	if r.Err != "" {

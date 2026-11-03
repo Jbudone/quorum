@@ -642,7 +642,8 @@ Your assistant (right box):
   ask it anything about the discussion; /catchup for a recap
   alt+n             go through its suggestions: ↑↓ choose, y approve, n decline, a approve all
   alt+h             step back through the highlights (or click one): jumps to the message;
-                    a asks the assistant about it, d DMs its author, t replies in a thread
+                    a asks the assistant about it, d DMs its author, t replies in a thread,
+                    p shows the prompt it was written from
 
 Channel:
   alt+k             switch channel or thread, or start a new channel
@@ -672,6 +673,8 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /swap <member>    move a member (or assistant, chair, scribe, floor) to another model
   /models           providers & models: favourites, harness order, keys (or alt+o)
   /usage            usage & cost in full (or alt+u)
+  /prompt N         the exact prompt behind message #N: model, prompt version, full text
+  /improve          prompt health: which prompts break their own rules, and whether edits helped
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -780,6 +783,14 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{err: "/ask takes a question; it starts a side thread"}
 	case in == "/terms" || in == "/glossary":
 		return roomCommand{local: "terms"}
+	case in == "/improve":
+		return roomCommand{method: "room.improve", params: map[string]any{}}
+	case strings.HasPrefix(in, "/prompt"):
+		n, err := strconv.Atoi(strings.TrimPrefix(word("/prompt"), "#"))
+		if err != nil || n < 1 {
+			return roomCommand{err: "/prompt takes a message number, e.g. /prompt 12"}
+		}
+		return roomCommand{method: "room.prompt", params: map[string]any{"seq": n}}
 	case strings.HasPrefix(in, "/thread"):
 		n, err := strconv.Atoi(strings.TrimPrefix(word("/thread"), "#"))
 		if err != nil || n < 1 {
