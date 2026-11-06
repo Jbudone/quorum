@@ -43,8 +43,23 @@ func (r *roomModel) highlights() []rpc.MessageTag {
 	return out
 }
 
-// The strip's size: rows of highlights inside its border, and columns side by side when wide.
-const stripRows = 3
+// The strip's size: rows of highlights inside its border (as many as there are highlights, up to
+// three, fewer on a short terminal so the channel keeps its room), and columns side by side when wide.
+func (a *App) stripRows() int {
+	n := 0
+	if a.rm != nil && a.rm.room != nil {
+		n = len(a.rm.room.highlights())
+	}
+	cols := stripCols(a.w)
+	limit := 3
+	switch {
+	case a.h < 28:
+		limit = 1
+	case a.h < 40:
+		limit = 2
+	}
+	return min(max(1, (n+cols-1)/cols), limit)
+}
 
 func stripCols(width int) int {
 	if width >= 110 {
@@ -53,8 +68,24 @@ func stripCols(width int) int {
 	return 1
 }
 
+// stripShown reports whether the strip is on screen: not while a modal or document has the body (it
+// needs every row on a small screen), and not on a very short terminal, where alt+h still works.
+func (a *App) stripShown() bool {
+	u := a.rm
+	if u == nil || u.room == nil || a.h < 18 {
+		return false
+	}
+	r := u.room
+	return u.join == nil && r.edit == nil && r.terms == nil && r.overlay == nil && r.rev == nil
+}
+
 // stripHeight is the strip's lines on screen: its border and rows, then a blank line before the room.
-func stripHeight() int { return stripRows + 3 }
+func (a *App) stripHeight() int {
+	if !a.stripShown() {
+		return 0
+	}
+	return a.stripRows() + 3
+}
 
 // highlightWindow is the highlights the strip shows, newest first: the latest that fit, shifted to
 // keep the one picked with alt+h in view.
@@ -77,7 +108,7 @@ func (r *roomModel) highlightWindow(n int) []rpc.MessageTag {
 
 // renderHighlightStrip is the highlights across the top of the channel, in their own box: one short
 // line each, newest first. grid has each cell's message (0 where empty), row by row.
-func renderHighlightStrip(r *roomModel, th theme.Theme, width int) (string, [][]int) {
+func renderHighlightStrip(r *roomModel, th theme.Theme, width, stripRows int) (string, [][]int) {
 	cols := stripCols(width)
 	inner := width - 4
 	colW := inner / cols
@@ -115,9 +146,20 @@ func renderHighlightStrip(r *roomModel, th theme.Theme, width int) (string, [][]
 	}
 	border := fg(th.Border)
 	title := fg(th.Info).Bold(true).Render(" HIGHLIGHTS ")
-	hint := " hover for more · click to jump · alt+h "
-	if more := len(all) - len(shown); more > 0 {
-		hint = fmt.Sprintf(" +%d earlier ·%s", more, hint)
+	// The longest hint that fits the border.
+	more := ""
+	if n := len(all) - len(shown); n > 0 {
+		more = fmt.Sprintf(" +%d earlier ·", n)
+	}
+	hint := ""
+	for _, h := range []string{more + " hover for more · click to jump · alt+h ", more + " alt+h ", fmt.Sprintf(" +%d ", len(all)-len(shown)), ""} {
+		if h == " +0 " {
+			continue
+		}
+		if width-2-1-lipgloss.Width(title)-lipgloss.Width(h)-1 >= 1 {
+			hint = h
+			break
+		}
 	}
 	hint = fg(th.Subtle).Render(hint)
 	fill := max(width-2-1-lipgloss.Width(title)-lipgloss.Width(hint)-1, 1)

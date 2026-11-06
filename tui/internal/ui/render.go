@@ -476,3 +476,27 @@ func footerHint(s *session, th theme.Theme, width int) string {
 	}
 	return ansi.Truncate(strings.Join(parts, sep), width, "")
 }
+
+// renderTabs is a row of numbered tabs. When they don't fit (a narrow screen), the others shrink
+// to their numbers and only the current one keeps its name.
+func renderTabs(th theme.Theme, names []string, cur, width int) string {
+	draw := func(short bool) string {
+		var tabs []string
+		for i, t := range names {
+			label := fmt.Sprintf(" %d %s ", i+1, t)
+			if i == cur {
+				tabs = append(tabs, lipgloss.NewStyle().Foreground(th.Text).Background(th.Accent).Bold(true).Render(label))
+				continue
+			}
+			if short {
+				label = fmt.Sprintf(" %d ", i+1)
+			}
+			tabs = append(tabs, fg(th.Muted).Render(label))
+		}
+		return strings.Join(tabs, " ")
+	}
+	if full := draw(false); lipgloss.Width(full) <= width {
+		return full
+	}
+	return draw(true)
+}

@@ -210,9 +210,9 @@ func (m *startModel) view(th theme.Theme, w, h int, repo string, loading bool, s
 		cw = 84
 	}
 	if cw < 40 {
-		cw = 40
+		cw = min(40, max(w-2, 20)) // a phone gets the whole width
 	}
-	compact := h < 38
+	compact := h < 38 || w < 60
 	if m.drawer != nil {
 		logo := fg(th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", frame, th.Accent2, th.Accent, th.Info, th.Speaker(2)) + fg(th.Accent2).Render(" ░▒▓")
 		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Width(cw).Render(logo+"\n\n"+m.drawer.view(th, cw, h)))

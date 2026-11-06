@@ -258,16 +258,7 @@ func (a *App) usageView() string {
 	r := a.rm.room
 	w := min(a.w-4, 150)
 	now := time.Now()
-	var tabs []string
-	for i, t := range scopeNames {
-		label := fmt.Sprintf(" %d %s ", i+1, t)
-		if i == u.tab {
-			tabs = append(tabs, lipgloss.NewStyle().Foreground(th.Text).Background(th.Accent).Bold(true).Render(label))
-		} else {
-			tabs = append(tabs, fg(th.Muted).Render(label))
-		}
-	}
-	head := []string{sectionTitle("usage & cost", w, th, true), strings.Join(tabs, " "), ""}
+	head := []string{sectionTitle("usage & cost", w, th, true), renderTabs(th, scopeNames[:], u.tab, w), ""}
 	body := []string{fg(th.Accent2).Bold(true).Render("Quota & balances")}
 	body = append(body, r.quotaLines(th, w, now, u.tab == scopeSitting)...)
 	body = append(body, "")

@@ -690,17 +690,30 @@ func (a *App) feedW() int {
 
 // statsShown reports whether the stats strip is on screen: it's hidden on short terminals and by alt+s.
 func (a *App) statsShown() bool {
-	return a.rm != nil && a.rm.room != nil && a.rm.room.overlay == nil && !a.rm.hideStats && a.h >= 30 && !a.rm.room.empty()
+	return a.rm != nil && a.rm.room != nil && a.rm.room.overlay == nil && !a.rm.hideStats && a.h >= 34 && a.roomSide() && !a.rm.room.empty()
 }
 
 func (a *App) roomBodyH() int {
 	// header, status bar, spacer, roster line, input boxes (rows + border), footer
 	h := a.h - 1 - 1 - 1 - 1 - (a.inputRows() + 2) - 1
+	if !a.inputsShown() {
+		h += 1 + a.inputRows() + 2
+	}
 	if a.statsShown() {
 		h -= statsHeight()
 	}
-	h -= stripHeight()
+	h -= a.stripHeight()
 	return max(h, 6)
+}
+
+// inputsShown reports whether the roster and text boxes are on screen. On a short terminal they make
+// way for the glossary, a document or the add-member modal, which have their own keys.
+func (a *App) inputsShown() bool {
+	u := a.rm
+	if u == nil || u.room == nil || a.h >= 30 {
+		return true
+	}
+	return u.join == nil && u.room.terms == nil && u.room.overlay == nil
 }
 
 // stripTop is the screen row the highlights strip starts on; bodyTop, where the feed starts.
@@ -712,7 +725,7 @@ func (a *App) stripTop() int {
 	return top
 }
 
-func (a *App) bodyTop() int { return a.stripTop() + stripHeight() }
+func (a *App) bodyTop() int { return a.stripTop() + a.stripHeight() }
 
 // paneHeights splits the body when the assistant sits under the feed.
 func (a *App) paneHeights() (feed, assist int) {
@@ -720,7 +733,16 @@ func (a *App) paneHeights() (feed, assist int) {
 	if a.roomSide() {
 		return bh, bh
 	}
-	feed = max(bh*55/100, 3)
+	// The pane you're typing in gets most of the height; on a short terminal (a phone), the other
+	// keeps a few lines so what needs you stays in sight.
+	share := 60
+	if a.rm.room != nil && a.rm.room.pane == paneAssistant {
+		share = 40
+	}
+	if bh < 16 {
+		share = (share-50)*2 + 50 // 70 / 30
+	}
+	feed = min(max(bh*share/100, 3), max(bh-4, 3))
 	return feed, max(bh-feed-1, 3)
 }
 
@@ -993,9 +1015,17 @@ func (a *App) roomView() string {
 	if a.statsShown() {
 		rows = append(rows, renderStats(r, a.th, a.w), "")
 	}
-	strip, grid := renderHighlightStrip(r, a.th, a.w)
-	u.hlGrid = grid
-	rows = append(rows, strip, "", body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
+	u.hlGrid = nil
+	if a.stripShown() {
+		strip, grid := renderHighlightStrip(r, a.th, a.w, a.stripRows())
+		u.hlGrid = grid
+		rows = append(rows, strip, "")
+	}
+	if a.inputsShown() {
+		rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
+	} else {
+		rows = append(rows, body, a.withToast(roomFooter(r, a.th, a.w)))
+	}
 	out := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	// The hovered (or picked) highlight's card floats over the room, under the strip.
 	if card, x, y := a.highlightCard(fh); card != "" {

@@ -330,16 +330,7 @@ func (a *App) providersView() string {
 	p := a.prov
 	th := a.th
 	w := min(a.w-4, 150)
-	var tabs []string
-	for i, t := range provTabs {
-		label := fmt.Sprintf(" %d %s ", i+1, t)
-		if provTab(i) == p.tab {
-			tabs = append(tabs, lipgloss.NewStyle().Foreground(th.Text).Background(th.Accent).Bold(true).Render(label))
-		} else {
-			tabs = append(tabs, fg(th.Muted).Render(label))
-		}
-	}
-	lines := []string{sectionTitle("providers & models", w, th, true), strings.Join(tabs, " "), ""}
+	lines := []string{sectionTitle("providers & models", w, th, true), renderTabs(th, provTabs[:], int(p.tab), w), ""}
 	keys := "alt+1/2/3 or alt+←→ tabs · alt+r re-ask harnesses · esc close"
 	c := a.catalog
 	switch {

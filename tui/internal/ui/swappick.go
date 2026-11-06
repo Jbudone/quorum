@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/jbud/quorum/tui/internal/rpc"
@@ -115,9 +116,17 @@ func (a *App) swapTo(m *rpc.CatalogModel, rt rpc.Route) bool {
 func renderWhoPick(w *whoPick, th theme.Theme, width int) []string {
 	lines := []string{
 		fg(th.Text).Bold(true).Render("Who are you changing?"),
-		fg(th.Muted).Render("Pick a member to move to another model (it keeps its memory), or bring in someone new."),
-		"",
 	}
+	lines = append(lines, strings.Split(fg(th.Muted).Render(ansi.Wrap("Pick a member to move to another model (it keeps its memory), or bring in someone new.", width, "")), "\n")...)
+	lines = append(lines, "")
+	// The names' column fits the longest name, within reason.
+	nameW := 12
+	for _, x := range w.who {
+		if x.action == "" {
+			nameW = max(nameW, lipgloss.Width(x.id)+2)
+		}
+	}
+	nameW = min(nameW, max(width/2, 12))
 	for i, x := range w.who {
 		if x.action == "new" {
 			lines = append(lines, "")
@@ -134,7 +143,7 @@ func renderWhoPick(w *whoPick, th theme.Theme, width int) []string {
 				line += fg(th.Subtle).Render("  alt+a in the channel")
 			}
 		} else {
-			line = mark + st.Render(fmt.Sprintf("%-20s", x.id)) + fg(th.Muted).Render("now "+orDefault(x.now, "its default"))
+			line = mark + st.Render(fmt.Sprintf("%-*s", nameW, ansi.Truncate(x.id, nameW-1, "…"))) + fg(th.Muted).Render("now "+orDefault(x.now, "its default"))
 			switch {
 			case x.held:
 				line += fg(th.Warn).Render("  ⏸ sitting out a limit")

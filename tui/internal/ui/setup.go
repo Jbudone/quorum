@@ -355,6 +355,7 @@ func (a *App) setupView() string {
 	}
 	header := fg(a.th.Accent2).Render("▓▒░ ") + theme.GradientShift("QUORUM", a.frame/2, a.th.Accent2, a.th.Accent, a.th.Info, a.th.Speaker(2)) +
 		fg(a.th.Accent2).Render(" ░▒▓ ") + fg(a.th.Muted).Render(workspaceName(a.opts.Repo)) + sep + fg(a.th.Text).Bold(true).Render(where)
+	header = ansi.Truncate(header, a.w, "…")
 	if s.form != nil {
 		h := max(a.h-1-1-1, 6)
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", a.planFormView(h), a.setupFooter())

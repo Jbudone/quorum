@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -96,7 +98,7 @@ type App struct {
 
 	catalog      *rpc.Catalog // every model and how to run it, once the engine sent it
 	catalogAsked bool
-	meters       *rpc.Meters // quota and balances, polled while a channel is open
+	meters       *rpc.Meters      // quota and balances, polled while a channel is open
 	prov         *providersScreen // the Providers & models screen (alt+o), over whatever is open
 	usage        *usageScreen     // the usage & cost screen (alt+u), over the channel
 }
@@ -897,6 +899,18 @@ func (a *App) layoutSide() (int, int) {
 // ---- view ----
 
 func (a *App) View() tea.View {
+	v := tea.NewView(fitScreen(a.highlight(a.content()), a.w, a.h))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	if a.screen == screenRoom {
+		v.MouseMode = tea.MouseModeAllMotion // hovering a highlight shows its card
+	}
+	v.WindowTitle = "Quorum"
+	return v
+}
+
+// content is the current screen as laid out for the terminal's size.
+func (a *App) content() string {
 	var content string
 	if a.prov != nil {
 		content = a.providersView()
@@ -913,14 +927,26 @@ func (a *App) View() tea.View {
 	} else {
 		content = a.sessionView()
 	}
-	v := tea.NewView(a.highlight(content))
-	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
-	if a.screen == screenRoom {
-		v.MouseMode = tea.MouseModeAllMotion // hovering a highlight shows its card
+	return content
+}
+
+// fitScreen keeps a frame within the terminal: a line wider than the screen would wrap and shift
+// everything under it (a phone over ssh, a window just made narrower), and extra lines would scroll
+// the top away. Screens lay themselves out for the size; this is the backstop.
+func fitScreen(s string, w, h int) string {
+	if w <= 0 || h <= 0 {
+		return s
 	}
-	v.WindowTitle = "Quorum"
-	return v
+	lines := strings.Split(s, "\n")
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	for i, l := range lines {
+		if ansi.StringWidth(l) > w {
+			lines[i] = ansi.Truncate(l, w, "")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) sessionView() string {

@@ -266,11 +266,21 @@ func renderTerms(r *roomModel, th theme.Theme, w, h int) string {
 	t := r.terms
 	items := r.termMatches()
 	t.cur = min(t.cur, max(len(items)-1, 0))
+	// Side by side when there's room; on a narrow screen the entry sits under the list.
+	narrow := w < 64
 	listW := min(max(w*2/5, 28), 48)
 	detailW := max(w-listW-3, 20)
+	if narrow {
+		listW, detailW = w, w
+	}
 	t.filter.SetWidth(w - 2)
-	head := []string{sectionTitle("glossary", w, th, true), fg(th.Muted).Render("ADRs, the terms the project's notes define, and the names this channel keeps using."), "", t.filter.View(), ""}
+	head := []string{sectionTitle("glossary", w, th, true)}
+	head = append(head, strings.Split(fg(th.Muted).Render(ansi.Wrap("ADRs, the terms the project's notes define, and the names this channel keeps using.", w, "")), "\n")...)
+	head = append(head, "", t.filter.View(), "")
 	rows := max(h-len(head)-2, 3)
+	if narrow {
+		rows = max(rows/2-1, 3)
+	}
 	top := max(0, t.cur-rows+1)
 	badge := map[string]string{"adr": "    ", "term": "term", "code": "code"}
 	var list []string
@@ -321,11 +331,14 @@ func renderTerms(r *roomModel, th theme.Theme, w, h int) string {
 		detail[i] = ansi.Truncate(detail[i], detailW, "…")
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listW).Render(strings.Join(list, "\n")), "   ", strings.Join(detail, "\n"))
+	if narrow {
+		body = strings.Join(list, "\n") + "\n" + fg(th.Subtle).Render(strings.Repeat("─", w)) + "\n" + strings.Join(detail, "\n")
+	}
 	foot := fmt.Sprintf("%d of %d", len(items), len(r.glossary))
 	if r.glossaryWriting {
 		foot += " · explaining the channel's names…"
 	}
-	return strings.Join(append(head, body, "", fg(th.Subtle).Render(foot+" · type to filter · ↑↓ choose · esc close")), "\n")
+	return strings.Join(append(head, body, "", fg(th.Subtle).Render(ansi.Truncate(foot+" · type to filter · ↑↓ choose · esc close", w, "…"))), "\n")
 }
 
 // summaryBlock is a highlight's card pinned above its message in the feed, clearly apart from it;
