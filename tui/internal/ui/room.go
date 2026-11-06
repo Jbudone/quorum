@@ -86,6 +86,8 @@ type roomModel struct {
 	cardHot   bool
 	cardLinks []termLink
 	feedLinks []termLink
+	// Where each message sits in the feed, as last drawn, for a double tap.
+	feedRows []feedRow
 	// The glossary, once asked for; terms is the glossary modal when open.
 	glossary        []rpc.GlossaryEntry
 	glossaryAsked   bool
@@ -675,6 +677,9 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /usage            usage & cost in full (or alt+u)
   /prompt N         the exact prompt behind message #N: model, prompt version, full text
   /improve          prompt health: which prompts break their own rules, and whether edits helped
+  /touch on|off|auto  phone gestures (auto: on at phone width): drag to scroll, swipe left
+                    to go forward (the assistant, the next tab), right to go back or close;
+                    double tap a message for its shortcuts, tap a footer hint to run it
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -783,6 +788,12 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 		return roomCommand{err: "/ask takes a question; it starts a side thread"}
 	case in == "/terms" || in == "/glossary":
 		return roomCommand{local: "terms"}
+	case in == "/touch" || strings.HasPrefix(in, "/touch "):
+		mode := word("/touch")
+		if mode != "on" && mode != "off" && mode != "auto" {
+			return roomCommand{err: "/touch takes on, off or auto (on by itself on a phone-sized screen): with it on, a drag scrolls and a sideways swipe goes forward or back, instead of selecting text"}
+		}
+		return roomCommand{local: "touch", params: map[string]any{"mode": mode}}
 	case in == "/improve":
 		return roomCommand{method: "room.improve", params: map[string]any{}}
 	case strings.HasPrefix(in, "/prompt"):

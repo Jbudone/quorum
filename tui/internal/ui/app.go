@@ -91,6 +91,7 @@ type App struct {
 	sideTop    string // roster, notes and plan title, rebuilt in refresh
 
 	sel       selection // text being selected with the mouse
+	touch     touch     // taps and swipes from a phone (gestures.go)
 	lastLines []string  // the last frame drawn, for copying a selection out of it
 	toast     string    // a short message flashed in the footer
 	toastTo   int       // the frame the toast lasts until
@@ -265,6 +266,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.listen(), c, a.tick())
 
 	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		// On a phone, a drag is a gesture (scroll, swipe) and a release ends a tap.
+		if a.touchMode() {
+			if c, used := a.touchMouse(m); used {
+				a.refresh()
+				return a, tea.Batch(c, a.tick())
+			}
+		}
 		if motion, ok := m.(tea.MouseMotionMsg); ok && !a.sel.dragging {
 			if a.roomHover(motion) {
 				return a, a.tick()
@@ -274,6 +282,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if c, used := a.roomClick(click); used {
 				a.refresh()
 				return a, tea.Batch(c, a.tick())
+			}
+			if click.Mouse().Button == tea.MouseLeft && a.inChannel() {
+				c, used := a.tapExtras(click)
+				if used {
+					a.refresh()
+					return a, tea.Batch(c, a.tick())
+				}
+				if c != nil {
+					// It moved typing to the pane; the press still starts a selection.
+					_, c2 := a.mouseSelect(m)
+					a.refresh()
+					return a, tea.Batch(c, c2, a.tick())
+				}
 			}
 		}
 		used, c := a.mouseSelect(m)
@@ -308,6 +329,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, c
 
 	case tea.MouseWheelMsg:
+		// A sideways swipe arrives as sideways wheel steps (content following the finger).
+		if b := m.Mouse().Button; b == tea.MouseWheelLeft || b == tea.MouseWheelRight {
+			c := a.swipe(b == tea.MouseWheelLeft, m.Mouse().X, m.Mouse().Y)
+			a.refresh()
+			return a, c
+		}
 		if a.screen == screenRoom {
 			a.roomWheel(m)
 			a.refresh()

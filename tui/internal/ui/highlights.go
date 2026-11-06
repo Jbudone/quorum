@@ -216,8 +216,14 @@ func (a *App) spotOn(seq int) {
 			tag = t
 		}
 	}
+	if tag.From == "" {
+		tag.From = r.authors[seq]
+	}
 	r.spot = &spotlight{seq: seq, from: tag.From, gist: tag.Gist, jump: true}
-	a.askCard(seq)
+	// A highlight gets its card; any other message (picked with a double tap) just its shortcuts.
+	if tag.Gist != "" {
+		a.askCard(seq)
+	}
 	a.askGlossary()
 	r.view = 0
 	for _, it := range r.feed {

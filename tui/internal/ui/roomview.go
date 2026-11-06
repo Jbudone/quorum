@@ -316,7 +316,7 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 	if r.view != 0 {
 		blocks = append(blocks, fg(th.Info).Render(fmt.Sprintf("side thread on #%d", r.view))+fg(th.Subtle).Render(" · esc back to the channel"))
 	}
-	r.spotLine, r.spotBar, r.feedLinks = -1, -1, nil
+	r.spotLine, r.spotBar, r.feedLinks, r.feedRows = -1, -1, nil, nil
 	lines := func() int { // lines drawn so far, blocks being joined by a blank line
 		n := 0
 		for _, b := range blocks {
@@ -355,13 +355,20 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 			}
 			// Its summary sits above it, boxed apart from the message itself.
 			r.spotLine = lines()
-			summary, links := summaryBlock(r, th, s.seq, min(width-2, 96))
-			for _, l := range links {
-				l.row += r.spotLine
-				r.feedLinks = append(r.feedLinks, l)
+			// A highlight's summary sits above it; a message picked any other way has none.
+			top := ""
+			if _, carded := r.cards[s.seq]; carded || s.gist != "" {
+				summary, links := summaryBlock(r, th, s.seq, min(width-2, 96))
+				for _, l := range links {
+					l.row += r.spotLine
+					r.feedLinks = append(r.feedLinks, l)
+				}
+				top = summary + "\n\n"
 			}
-			top := summary + "\n\n"
-			r.spotBar = r.spotLine + lipgloss.Height(summary) + 1 + len(body)
+			r.spotBar = r.spotLine + lipgloss.Height(top) - 1 + len(body)
+			if top == "" {
+				r.spotBar = r.spotLine + len(body)
+			}
 			b = top + strings.Join(body, "\n") + "\n" + renderSpotBar(r, th)
 		}
 		// A message with a thread under it says so, in the channel.
@@ -371,6 +378,10 @@ func renderFeed(r *roomModel, th theme.Theme, width int, spin string) string {
 				state += " · settled"
 			}
 			b += "\n" + fg(th.Info).Render("↳ thread: "+state) + fg(th.Subtle).Render(fmt.Sprintf(" · /thread %d", t.root))
+		}
+		if it.ev.Type == "message" && it.ev.Seq != 0 {
+			from := lines()
+			r.feedRows = append(r.feedRows, feedRow{from: from, to: from + lipgloss.Height(b), seq: it.ev.Seq})
 		}
 		blocks = append(blocks, b)
 		activity = false
@@ -590,6 +601,12 @@ func renderOverlay(o *docOverlay, th theme.Theme, width int) string {
 }
 
 func roomFooter(r *roomModel, th theme.Theme, width int) string {
+	s, _ := roomFooterKeys(r, th, width)
+	return s
+}
+
+// roomFooterKeys is the footer and where each hint sits, so a tap on one runs it.
+func roomFooterKeys(r *roomModel, th theme.Theme, width int) (string, []footKey) {
 	k := func(key, what string) string { return fg(th.Text).Render(key) + " " + fg(th.Muted).Render(what) }
 	sep := fg(th.Subtle).Render(" · ")
 	pause := k("alt+p", "pause")
@@ -619,5 +636,18 @@ func roomFooter(r *roomModel, th theme.Theme, width int) string {
 	for len(parts) > 1 && lipgloss.Width(strings.Join(parts, sep)) > width {
 		parts = parts[:len(parts)-1]
 	}
-	return ansi.Truncate(strings.Join(parts, sep), width, "")
+	var spans []footKey
+	x := 0
+	for i, p := range parts {
+		if i > 0 {
+			x += lipgloss.Width(sep)
+		}
+		w := lipgloss.Width(p)
+		// Each hint starts with its key.
+		if f := strings.Fields(ansi.Strip(p)); len(f) > 0 {
+			spans = append(spans, footKey{from: x, to: min(x+w, width), key: f[0]})
+		}
+		x += w
+	}
+	return ansi.Truncate(strings.Join(parts, sep), width, ""), spans
 }

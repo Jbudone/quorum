@@ -32,6 +32,9 @@ type roomUI struct {
 	asstFollow bool
 	// The message in each cell of the highlights strip, row by row, as last drawn.
 	hlGrid [][]int
+	// The footer's row and its tappable hints, as last drawn.
+	footY    int
+	footKeys []footKey
 	// Card requests in flight (request id → message), and the card's height as last drawn.
 	cardReqs   map[int]int
 	cardH      int
@@ -622,6 +625,10 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "terms":
 		return a.openTerms("")
+	case "touch":
+		a.touch.mode = cmd.params["mode"].(string)
+		a.notify(map[string]string{"on": "Touch on: drag to scroll, swipe left or right to go forward or back.", "off": "Touch off: dragging selects text.", "auto": "Touch follows the screen size: on when it's phone-sized."}[a.touch.mode])
+		return nil
 	case "open-thread":
 		u.openThread = true
 	}
@@ -898,16 +905,19 @@ func (a *App) roomScroll(dir int, page bool) {
 	*follow = vp.AtBottom()
 }
 
-func (a *App) roomWheel(m tea.MouseWheelMsg) {
+func (a *App) roomWheel(m tea.MouseWheelMsg) { a.wheelBy(m, 3) }
+
+// wheelBy scrolls the pane under the pointer by n lines per wheel step.
+func (a *App) wheelBy(m tea.MouseWheelMsg, n int) {
 	u := a.rm
 	if u == nil {
 		return
 	}
 	if u.setup != nil {
 		if m.Mouse().Button == tea.MouseWheelUp {
-			u.setup.vp.ScrollUp(3)
+			u.setup.vp.ScrollUp(n)
 		} else {
-			u.setup.vp.ScrollDown(3)
+			u.setup.vp.ScrollDown(n)
 		}
 		u.setup.follow = u.setup.vp.AtBottom()
 		return
@@ -917,9 +927,9 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 	}
 	if u.room.overlay != nil {
 		if m.Mouse().Button == tea.MouseWheelUp {
-			u.overlayVP.ScrollUp(3)
+			u.overlayVP.ScrollUp(n)
 		} else {
-			u.overlayVP.ScrollDown(3)
+			u.overlayVP.ScrollDown(n)
 		}
 		return
 	}
@@ -934,9 +944,9 @@ func (a *App) roomWheel(m tea.MouseWheelMsg) {
 		vp, follow = &u.reviewVP, &reviewFollow
 	}
 	if m.Mouse().Button == tea.MouseWheelUp {
-		vp.ScrollUp(3)
+		vp.ScrollUp(n)
 	} else if m.Mouse().Button == tea.MouseWheelDown {
-		vp.ScrollDown(3)
+		vp.ScrollDown(n)
 	}
 	*follow = vp.AtBottom()
 }
@@ -1021,12 +1031,20 @@ func (a *App) roomView() string {
 		u.hlGrid = grid
 		rows = append(rows, strip, "")
 	}
+	foot, keys := roomFooterKeys(r, a.th, a.w)
 	if a.inputsShown() {
-		rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(roomFooter(r, a.th, a.w)))
+		rows = append(rows, body, renderRoomRoster(r, a.th, a.w, spin), inputs, a.withToast(foot))
 	} else {
-		rows = append(rows, body, a.withToast(roomFooter(r, a.th, a.w)))
+		rows = append(rows, body, a.withToast(foot))
 	}
 	out := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	u.footY = lipgloss.Height(out) - 1
+	// A toast in front of the footer moves its hints right.
+	shift := lipgloss.Width(a.withToast(foot)) - lipgloss.Width(foot)
+	u.footKeys = u.footKeys[:0]
+	for _, k := range keys {
+		u.footKeys = append(u.footKeys, footKey{from: k.from + shift, to: k.to + shift, key: k.key})
+	}
 	// The hovered (or picked) highlight's card floats over the room, under the strip.
 	if card, x, y := a.highlightCard(fh); card != "" {
 		out = lipgloss.NewCompositor(lipgloss.NewLayer(out), lipgloss.NewLayer(card).X(x).Y(y).Z(1)).Render()
