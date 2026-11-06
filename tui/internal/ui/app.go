@@ -268,6 +268,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.listen(), c, a.tick())
 
 	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		// A drag across the header bar swipes, in any mode.
+		if c, used := a.barMouse(m); used {
+			a.refresh()
+			return a, tea.Batch(c, a.tick())
+		}
 		// On a phone, a drag is a gesture (scroll, swipe) and a release ends a tap.
 		if a.touchMode() {
 			if c, used := a.touchMouse(m); used {

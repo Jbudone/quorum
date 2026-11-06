@@ -23,6 +23,8 @@ type touch struct {
 	synth bool   // a gesture is pressing a key
 
 	down       bool
+	bar        bool // a press on the header bar: a drag there swipes, in any mode
+	replay     bool // passing a header press on as a plain click
 	press      tea.MouseClickMsg
 	x0, y0     int // where the finger went down
 	lastY      int // last row the drag scrolled to
@@ -184,6 +186,45 @@ func (a *App) touchMouse(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return a.tap(t.press), true
+	}
+	return nil, false
+}
+
+// barRows is the top of the screen (the header and status bar), where a one-finger drag sideways
+// swipes in any mode; nothing there is worth selecting.
+const barRows = 2
+
+// barMouse makes a drag across the header bar a swipe: a press there doesn't start a selection, and
+// a release that didn't travel far is passed on as a plain click. It reports whether it used the
+// event.
+func (a *App) barMouse(msg tea.Msg) (tea.Cmd, bool) {
+	t := &a.touch
+	if t.replay {
+		return nil, false
+	}
+	switch m := msg.(type) {
+	case tea.MouseClickMsg:
+		if m.Mouse().Button != tea.MouseLeft || m.Mouse().Y >= barRows {
+			return nil, false
+		}
+		t.bar, t.press = true, m
+		t.x0, t.y0 = m.Mouse().X, m.Mouse().Y
+		return nil, true
+	case tea.MouseMotionMsg:
+		return nil, t.bar
+	case tea.MouseReleaseMsg:
+		if !t.bar {
+			return nil, false
+		}
+		t.bar = false
+		if dx := m.Mouse().X - t.x0; abs(dx) >= swipeMin-2 {
+			return a.swipe(dx > 0, t.x0, t.y0), true
+		}
+		t.replay = true
+		_, c1 := a.Update(t.press)
+		_, c2 := a.Update(m)
+		t.replay = false
+		return tea.Batch(c1, c2), true
 	}
 	return nil, false
 }

@@ -680,7 +680,8 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /touch on|off|auto  phone gestures (auto: on at phone width): drag to scroll, swipe left
                     to go forward (the assistant, the next tab), right to go back or close;
                     double tap a message for its shortcuts, tap a footer hint to run it
-                    (on a PC: shift+scroll swipes; /inputlog records what your terminal sends)
+                    (any mode: drag sideways across the header bar; on a PC, shift+scroll too;
+                    /inputlog records what your terminal sends)
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh

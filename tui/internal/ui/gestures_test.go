@@ -187,3 +187,35 @@ func TestShiftWheelSwipesAndTheInputLogShowsWhatArrives(t *testing.T) {
 		t.Fatalf("log:\n%s", b)
 	}
 }
+
+func TestDraggingAcrossTheHeaderBarSwipesWithoutSelecting(t *testing.T) {
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	h.screen()
+	if h.app.touchMode() {
+		t.Fatal("touch mode should be off at desktop width")
+	}
+	drag := func(x0, x1 int) {
+		h.send(tea.MouseClickMsg{X: x0, Y: 0, Button: tea.MouseLeft})
+		for x := x0; x != x1; x += map[bool]int{true: 1, false: -1}[x1 > x0] {
+			h.send(tea.MouseMotionMsg{X: x, Y: 0, Button: tea.MouseLeft})
+		}
+		h.send(tea.MouseReleaseMsg{X: x1, Y: 0, Button: tea.MouseLeft})
+		h.app.touch.lastSwipe = h.app.touch.lastSwipe.Add(-swipeEvery)
+	}
+	drag(60, 40) // finger moving left: forward
+	if h.app.rm.room.pane != paneAssistant || h.app.sel.shown || h.app.sel.dragging {
+		t.Fatalf("a leftward drag on the header should swipe to the assistant without selecting (pane %v)", h.app.rm.room.pane)
+	}
+	drag(40, 60)
+	if h.app.rm.room.pane != paneRoom {
+		t.Fatal("a rightward drag on the header should swipe back")
+	}
+	// A short drag in the feed still selects text.
+	h.send(tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft})
+	h.send(tea.MouseMotionMsg{X: 30, Y: 20, Button: tea.MouseLeft})
+	if !h.app.sel.dragging {
+		t.Fatal("dragging in the feed should still select")
+	}
+}
