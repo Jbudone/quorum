@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,7 +19,8 @@ import (
 // needed), and a tap on a pane moves typing there.
 
 type touch struct {
-	mode string // "auto" (on below roomSideMin columns), "on" or "off"
+	mode  string // "auto" (on below roomSideMin columns), "on" or "off"
+	synth bool   // a gesture is pressing a key
 
 	down       bool
 	press      tea.MouseClickMsg
@@ -26,6 +30,38 @@ type touch struct {
 	lastSwipe  time.Time
 	lastTap    time.Time
 	tapX, tapY int
+}
+
+// logInput writes key and mouse events to the input log while /inputlog is on, to see what a
+// terminal (or a multiplexer in front of it) actually sends for a swipe or a key.
+func (a *App) logInput(msg tea.Msg) {
+	if a.inputLog == "" || a.touch.synth {
+		return
+	}
+	var line string
+	switch m := msg.(type) {
+	case tea.MouseWheelMsg:
+		line = fmt.Sprintf("wheel   %-22s at %d,%d", m.Mouse().String(), m.Mouse().X, m.Mouse().Y)
+	case tea.MouseClickMsg:
+		line = fmt.Sprintf("press   %-22s at %d,%d", m.Mouse().String(), m.Mouse().X, m.Mouse().Y)
+	case tea.MouseReleaseMsg:
+		line = fmt.Sprintf("release %-22s at %d,%d", m.Mouse().String(), m.Mouse().X, m.Mouse().Y)
+	case tea.MouseMotionMsg:
+		if m.Mouse().Button == tea.MouseNone {
+			return // plain hovering would flood the log
+		}
+		line = fmt.Sprintf("drag    %-22s at %d,%d", m.Mouse().String(), m.Mouse().X, m.Mouse().Y)
+	case tea.KeyPressMsg:
+		line = fmt.Sprintf("key     %q", m.String())
+	case tea.WindowSizeMsg:
+		line = fmt.Sprintf("size    %dx%d", m.Width, m.Height)
+	default:
+		return
+	}
+	if f, err := os.OpenFile(a.inputLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		fmt.Fprintf(f, "%s %s touch=%v\n", time.Now().Format("15:04:05.000"), line, a.touchMode())
+		f.Close()
+	}
 }
 
 // footKey is a tappable hint in the footer: its columns and the key it stands for.
@@ -101,7 +137,9 @@ func (a *App) pressKey(s string) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	a.touch.synth = true // not logged as typed
 	_, c := a.Update(k)
+	a.touch.synth = false
 	return c
 }
 
@@ -258,4 +296,16 @@ func (a *App) scrollAt(x, y, n int) {
 		// The wheel scrolls three lines; a drag moves one per row the finger travels.
 		a.wheelBy(tea.MouseWheelMsg{X: x, Y: y, Button: b}, 1)
 	}
+}
+
+// inputLogPath is where /inputlog writes: Quorum's state folder.
+func inputLogPath() string {
+	dir := os.Getenv("XDG_STATE_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".local", "state")
+	}
+	dir = filepath.Join(dir, "quorum")
+	_ = os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, "input.log")
 }

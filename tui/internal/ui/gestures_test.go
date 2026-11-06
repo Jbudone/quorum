@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -155,5 +157,33 @@ func TestTapsPickAMessageRunAHintAndMoveTyping(t *testing.T) {
 	h.tapAt(a.feedW()+5, top+3)
 	if r.pane != paneAssistant {
 		t.Fatal("a tap on the assistant should move typing there")
+	}
+}
+
+func TestShiftWheelSwipesAndTheInputLogShowsWhatArrives(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	h := newRoomHarness(t, 150, 46)
+	h.setup()
+	h.press("esc")
+	h.screen()
+	h.typ("/inputlog")
+	h.press("enter")
+	h.send(tea.MouseWheelMsg{X: 20, Y: 20, Button: tea.MouseWheelDown, Mod: tea.ModShift})
+	if h.app.rm.room.pane != paneAssistant {
+		t.Fatal("shift+wheel down should swipe forward to the assistant")
+	}
+	h.app.touch.lastSwipe = h.app.touch.lastSwipe.Add(-swipeEvery)
+	h.send(tea.MouseWheelMsg{X: 20, Y: 20, Button: tea.MouseWheelUp, Mod: tea.ModShift})
+	if h.app.rm.room.pane != paneRoom {
+		t.Fatal("shift+wheel up should swipe back")
+	}
+	h.typ("/inputlog off")
+	h.press("enter")
+	b, err := os.ReadFile(inputLogPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "wheel   shift+wheeldown") || strings.Contains(string(b), `key     "tab"`) {
+		t.Fatalf("log:\n%s", b)
 	}
 }

@@ -680,6 +680,7 @@ ctrl+w delete word, alt+b/f by word, alt+enter new line.
   /touch on|off|auto  phone gestures (auto: on at phone width): drag to scroll, swipe left
                     to go forward (the assistant, the next tab), right to go back or close;
                     double tap a message for its shortcuts, tap a footer hint to run it
+                    (on a PC: shift+scroll swipes; /inputlog records what your terminal sends)
   /parallel N       most members talking at once      /turns N   turn cap per CLI
   /independent on|off   members picked together draft without seeing each other, then revise
   /export <issue>   file an issue document with gh
@@ -794,6 +795,8 @@ func (r *roomModel) parseRoomInput(in string) roomCommand {
 			return roomCommand{err: "/touch takes on, off or auto (on by itself on a phone-sized screen): with it on, a drag scrolls and a sideways swipe goes forward or back, instead of selecting text"}
 		}
 		return roomCommand{local: "touch", params: map[string]any{"mode": mode}}
+	case in == "/inputlog" || in == "/inputlog off":
+		return roomCommand{local: "inputlog", params: map[string]any{"on": in == "/inputlog"}}
 	case in == "/improve":
 		return roomCommand{method: "room.improve", params: map[string]any{}}
 	case strings.HasPrefix(in, "/prompt"):

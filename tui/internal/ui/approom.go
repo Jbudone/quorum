@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -625,6 +626,16 @@ func (a *App) submitRoom() tea.Cmd {
 		return nil
 	case "terms":
 		return a.openTerms("")
+	case "inputlog":
+		if cmd.params["on"].(bool) {
+			a.inputLog = inputLogPath()
+			_ = os.Remove(a.inputLog)
+			a.notify("Logging input to " + a.inputLog + ": swipe, scroll, tap, then /inputlog off.")
+		} else {
+			a.inputLog = ""
+			a.notify("Input log off.")
+		}
+		return nil
 	case "touch":
 		a.touch.mode = cmd.params["mode"].(string)
 		a.notify(map[string]string{"on": "Touch on: drag to scroll, swipe left or right to go forward or back.", "off": "Touch off: dragging selects text.", "auto": "Touch follows the screen size: on when it's phone-sized."}[a.touch.mode])

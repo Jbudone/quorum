@@ -92,6 +92,7 @@ type App struct {
 
 	sel       selection // text being selected with the mouse
 	touch     touch     // taps and swipes from a phone (gestures.go)
+	inputLog  string    // /inputlog: where every key and mouse event is written, to see what a terminal sends
 	lastLines []string  // the last frame drawn, for copying a selection out of it
 	toast     string    // a short message flashed in the footer
 	toastTo   int       // the frame the toast lasts until
@@ -232,6 +233,7 @@ func (a *App) tick() tea.Cmd {
 // ---- update ----
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	a.logInput(msg)
 	switch m := msg.(type) {
 	case meterTick:
 		a.askMeters()
@@ -329,9 +331,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, c
 
 	case tea.MouseWheelMsg:
-		// A sideways swipe arrives as sideways wheel steps (content following the finger).
-		if b := m.Mouse().Button; b == tea.MouseWheelLeft || b == tea.MouseWheelRight {
-			c := a.swipe(b == tea.MouseWheelLeft, m.Mouse().X, m.Mouse().Y)
+		// A sideways swipe arrives as sideways wheel steps (content following the finger); shift
+		// with the wheel is sideways too, for a touchpad or terminal that doesn't send them.
+		b, shift := m.Mouse().Button, m.Mouse().Mod.Contains(tea.ModShift)
+		if b == tea.MouseWheelLeft || b == tea.MouseWheelRight || shift && (b == tea.MouseWheelUp || b == tea.MouseWheelDown) {
+			c := a.swipe(b == tea.MouseWheelLeft || b == tea.MouseWheelUp, m.Mouse().X, m.Mouse().Y)
 			a.refresh()
 			return a, c
 		}
